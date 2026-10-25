@@ -50,6 +50,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 7. Ostatnio: miasto było częściowo pod wodą (morze przykrywało ląd). Naprawione w `terrain.js` (dolna granica lądu) i w `grid.js` (plaża sprawdzana przed rzeką). Podkład terenu leży teraz 5 cm niżej i jest płaski.
 8. „Latająca powierzchnia” nad rzeką: punkty siatki w korycie miały typ ulicy, więc dostawały chodnik, którego rogi rzutowano na OBA brzegi (płyta wisiała nad wodą, auto mogło po niej jechać, mogli tam stać pasażerowie). Teraz punkty w korycie to `T_WATER`, a ćwiartka chodnika jest rzutowana tylko na brzeg swojego punktu (`clampToBank(x, z, side)`, `bankSide`).
 9. Brzeg rzeki = dokładnie linia w odległości `hw` od osi (`terrain.bankL/bankR`: narożnik po wewnętrznej stronie zakrętu, łuk po zewnętrznej). Po niej idą mury nabrzeża, minimapa i kolizje (koryto SOLID poza mostami). Wcześniej mur szedł po ściętym narożniku, a ziemia po łuku, więc wystawała nad wodę. Końcówki ulic przy nabrzeżu są docinane do brzegu. Autostrada przecina rzekę po moście (`highwayBridge` w `layout.js`). Ulice w mieście mają asfalt (środek tekstury z osią), autostrada pełną tablicę 4 pasów, drogi w lesie są ubite.
+10. Uskok przy rzece: spłaszczenie rynku podnosiło ziemię aż do brzegu (do 3 m nad nabrzeżem i mostami). Teraz w `height()` najpierw jest rynek, potem dolina rzeki, więc brzeg leży zawsze na `bankY`. Rynek chroni tylko pas `r…r+50`. Przy ujściu mur nabrzeża schodzi razem z terenem (`cageY` w `buildRiver`).
 
 ## Architektura (src/)
 

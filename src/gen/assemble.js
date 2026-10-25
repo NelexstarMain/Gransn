@@ -425,7 +425,9 @@ export function buildRiver(city) {
         const pm = lerp2(pa, pc, 0.5);
         if (T.inland(pm[0], pm[1]) < 12) continue;
         const rail = !nearBridge(pm) && !nearBridge(pa) && !nearBridge(pc) && city.roads.clearance(pm[0], pm[1]) > 1;
-        place(b, 'quay', Cage.quad(pa, pc, qa, qc, yb, T.bankY), dist(pa, pc), H, 1, { rail });
+        // przy ujściu teren opada do plaży — mur nabrzeża schodzi razem z nim (bez stopnia)
+        const top = (p) => Math.max(T.waterY + 0.4, Math.min(T.bankY, T.height(p[0], p[1])));
+        place(b, 'quay', cageY([pa, pc, qa, qc], [pa, pc, qa, qc].map((p) => top(p) - H), H), dist(pa, pc), H, 1, { rail });
       }
     }
   }

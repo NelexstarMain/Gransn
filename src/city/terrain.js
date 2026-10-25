@@ -121,16 +121,21 @@ export class Terrain {
     const c = this.inland(x, z);
     const land = sstep(-25, 75, c);
     const d = this.river(x, z).d;
-    h = this.bankY + (h - this.bankY) * sstep(this.hw + 6, this.hw + 120, d);
+    // rynek spłaszczony NAJPIERW, potem dolina rzeki: brzeg zawsze leży dokładnie
+    // na wysokości nabrzeża i mostów (wcześniej rynek podnosił ziemię przy rzece
+    // o 1–3 m i powstawał uskok nad murem nabrzeża)
+    const p = this.plaza;
+    let keep = 0;
+    if (p) {
+      const pd = Math.hypot(x - p.x, z - p.z);
+      h = p.y + (h - p.y) * sstep(p.r, p.r + 130, pd);
+      keep = 1 - sstep(p.r, p.r + 50, pd);
+    }
+    h = this.bankY + (h - this.bankY) * Math.max(keep, sstep(this.hw + 6, this.hw + 120, d));
     // plaża i dno morza
     h = this.seaY - 4 + (h - this.seaY + 4) * land;
     // ląd nigdy nie schodzi pod wodę: od ~40 m od brzegu co najmniej 1 m nad morzem
     h = Math.max(h, this.seaY - 6 + 7 * sstep(12, 40, c));
-    const p = this.plaza;
-    if (p) {
-      const pd = Math.hypot(x - p.x, z - p.z);
-      h = p.y + (h - p.y) * sstep(p.r, p.r + 130, pd);
-    }
     return h;
   }
 
