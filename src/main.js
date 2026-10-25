@@ -3,7 +3,7 @@ import { generateCity } from './city/layout.js';
 import { GROUND_TILES } from './gen/assemble.js';
 import { WorkerPool } from './gen/pool.js';
 import { createMaterials } from './render/materials.js';
-import { createAtmosphere } from './render/atmosphere.js';
+import { createAtmosphere, LIGHTS } from './render/atmosphere.js';
 import { CollisionGrid } from './game/collision.js';
 import { Player } from './game/player.js';
 import { Streamer, buildMeshes } from './game/streaming.js';
@@ -29,7 +29,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(devicePixelRatio, LOW ? 1 : 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.92;
+renderer.toneMappingExposure = LIGHTS.exposure;
 renderer.shadowMap.enabled = !LOW;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('app').appendChild(renderer.domElement);

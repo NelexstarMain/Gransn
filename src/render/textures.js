@@ -8,28 +8,39 @@ function tileNoise(seed) {
   const perm = new Uint8Array(256), val = new Float32Array(256);
   for (let i = 0; i < 256; i++) { perm[i] = i; val[i] = r(); }
   for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
-  const h = (i, j, P) => {
-    const a = ((i % P) + P) % P, b = ((j % P) + P) % P;
+  const h = (i, j, Pu, Pv) => {
+    const a = ((i % Pu) + Pu) % Pu, b = ((j % Pv) + Pv) % Pv;
     return val[perm[(perm[a & 255] + b) & 255]];
   };
-  const n = (x, y, P) => {
+  const n = (x, y, Pu, Pv) => {
     const xi = Math.floor(x), yi = Math.floor(y);
     let xf = x - xi, yf = y - yi;
     xf = xf * xf * (3 - 2 * xf); yf = yf * yf * (3 - 2 * yf);
-    const a = h(xi, yi, P), b = h(xi + 1, yi, P), c = h(xi, yi + 1, P), d = h(xi + 1, yi + 1, P);
+    const a = h(xi, yi, Pu, Pv), b = h(xi + 1, yi, Pu, Pv), c = h(xi, yi + 1, Pu, Pv), d = h(xi + 1, yi + 1, Pu, Pv);
     return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf;
   };
-  // u,v ∈ [0,1) — bezszwowe fbm z okresem P na pierwszej oktawie
+  // u,v ∈ [0,1) — bezszwowe fbm; P to okres pierwszej oktawy (liczba albo [Pu, Pv])
   return (u, v, P, oct = 4) => {
-    let s = 0, amp = 0.5, f = P, norm = 0;
+    const Pu = Array.isArray(P) ? P[0] : P, Pv = Array.isArray(P) ? P[1] : P;
+    let s = 0, amp = 0.5, fu = Pu, fv = Pv, norm = 0;
     for (let o = 0; o < oct; o++) {
-      s += amp * n(u * f, v * f, f);
+      s += amp * n(u * fu, v * fv, fu, fv);
       norm += amp;
       amp *= 0.5;
-      f *= 2;
+      fu *= 2; fv *= 2;
     }
     return s / norm;
   };
+}
+
+// szybki, dobrze rozrzucony hasz całkowity → [0,1) (zamiast sin(...)·43758, który daje ukośne pasy)
+function ihash(a, b) {
+  let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
 }
 
 function makeCanvas(w, h) {
@@ -109,50 +120,47 @@ export function createTextures() {
   const T = {};
   const nA = tileNoise(11), nB = tileNoise(23), nC = tileNoise(37);
 
-  // — tynk z odpadającymi łatami (spod spodu cegła) —
+  // — tynk: drobne ziarno, łagodne plamy, zacieki spod parapetów i włosowate pęknięcia
+  //   (bez wyrazistych łat — na ścianie powtarzałyby się co kafel)
   T.plaster = bake(512, 512, (u, v) => {
-    const n = nA(u, v, 6, 5), f = nB(u, v, 48, 2);
-    const streak = nC(u, v * 0.25 + 0.3, 24, 3);
-    const patch = nB(u + 0.37, v + 0.11, 3, 4);
-    let c = 0.86 + (n - 0.5) * 0.18 + (f - 0.5) * 0.06 - Math.max(0, streak - 0.55) * 0.35;
-    let h = 0.5 + (f - 0.5) * 0.5 + (n - 0.5) * 0.4;
-    const pm = smooth(0.71, 0.73, patch) * 0.85;
-    const rim = smooth(0.68, 0.71, patch) - smooth(0.71, 0.73, patch);
-    c -= rim * 0.08;
-    if (pm > 0) {
-      const row = Math.floor(v * 40), bx = (u * 11.5 + (row % 2) * 0.5) % 1, by = (v * 40) % 1;
-      const mortar = bx < 0.06 || by < 0.15;
-      const br = mortar ? [0.62, 0.6, 0.56] : [0.6 + (nB(u, v, 96, 1) - 0.5) * 0.12, 0.45, 0.39];
-      const cc = [c, c * 0.98, c * 0.93];
-      const m = pm;
-      return [cc[0] * (1 - m) + br[0] * m, cc[1] * (1 - m) + br[1] * m, cc[2] * (1 - m) + br[2] * m, h * (1 - m) + (mortar ? 0.0 : 0.25) * m];
-    }
-    return [c, c * 0.98, c * 0.93, h];
+    const n = nA(u, v, 6, 5), f = nB(u, v, 64, 2), g = nC(u, v, 192, 1);
+    const streak = nC(u, v, [20, 2], 3);
+    const damp = smooth(0.55, 0.82, nB(u, v, [3, 2], 4));
+    const cr = Math.abs(nA(u + 0.21, v + 0.63, 5, 3) - 0.5);
+    const crack = cr < 0.005 ? 1 - cr / 0.005 : 0;
+    let c = 0.9 + (n - 0.5) * 0.13 + (f - 0.5) * 0.07 + (g - 0.5) * 0.07 - Math.max(0, streak - 0.56) * 0.32 - damp * 0.07 - crack * 0.14;
+    const h = 0.5 + (f - 0.5) * 0.45 + (n - 0.5) * 0.3 + (g - 0.5) * 0.25 - crack * 0.35;
+    return [c, c * 0.985, c * 0.95, h];
   }, 3);
 
-  // — cegła (4 cegły × 12 warstw na kafel 1.04 × 0.9 m) —
+  // — cegła (4 cegły × 12 warstw na kafel 1.04 × 0.9 m): wypalane nierówno, jasna zaprawa
   T.brick = bake(512, 512, (u, v) => {
     const rows = 12, row = Math.floor(v * rows), off = (row % 2) * 0.5;
     const bxF = u * 4 + off, bi = Math.floor(bxF), bx = bxF - bi, by = v * rows - row;
-    const mortar = bx < 0.04 || by < 0.13;
-    const id = (Math.sin((bi % 4) * 12.9898 + row * 78.233) * 43758.5453) % 1;
-    const rr = Math.abs(id);
-    const n = nA(u, v, 32, 3);
+    const mortar = bx < 0.035 || bx > 0.985 || by < 0.13;
+    const id = ihash(((bi % 4) + 4) % 4, row), id2 = ihash(((bi % 4) + 4) % 4 + 17, row + 5);
+    const n = nA(u, v, 32, 3), grain = nB(u, v, 256, 1);
     if (mortar) {
-      const m = 0.58 + (n - 0.5) * 0.1;
-      return [m, m * 0.97, m * 0.92, 0.1];
+      const m = 0.66 + (n - 0.5) * 0.12 + (grain - 0.5) * 0.08;
+      return [m, m * 0.97, m * 0.9, 0.08];
     }
-    const base = rr < 0.15 ? [0.38, 0.22, 0.18] : rr < 0.3 ? [0.62, 0.38, 0.28] : [0.56 + rr * 0.1, 0.3 + rr * 0.05, 0.23];
-    const k = 0.85 + (n - 0.5) * 0.35;
-    const edge = Math.min(bx - 0.04, 0.96 - bx + 0.04, (by - 0.13) * 0.3, (1 - by) * 0.3);
-    return [base[0] * k, base[1] * k, base[2] * k, 0.6 + Math.min(0.3, edge * 4) + (n - 0.5) * 0.2];
+    // paleta: zwykła czerwień, pomarańcz, brąz, rzadkie ciemne klinkierowe i jasne niedopały
+    let base;
+    if (id < 0.08) base = [0.36, 0.2, 0.17];
+    else if (id < 0.22) base = [0.72, 0.5, 0.36];
+    else if (id < 0.42) base = [0.68, 0.34, 0.24];
+    else base = [0.6 + id2 * 0.12, 0.3 + id2 * 0.06, 0.22 + id2 * 0.03];
+    const k = 0.9 + (n - 0.5) * 0.3 + (grain - 0.5) * 0.12 + (id2 - 0.5) * 0.12;
+    const edge = Math.min(bx - 0.035, 0.985 - bx, (by - 0.13) * 0.35, (1 - by) * 0.35);
+    return [base[0] * k, base[1] * k, base[2] * k, 0.55 + Math.min(0.3, edge * 4) + (n - 0.5) * 0.2];
   }, 4);
 
   // — piaskowiec / beton —
   T.stone = bake(512, 512, (u, v) => {
-    const n = nA(u, v, 8, 5), f = nC(u, v, 64, 2);
-    const c = 0.82 + (n - 0.5) * 0.2 + (f - 0.5) * 0.08;
-    return [c, c * 0.97, c * 0.9, n * 0.6 + f * 0.4];
+    const n = nA(u, v, 8, 5), f = nC(u, v, 64, 2), g = nB(u, v, 256, 1), bed = nA(u, v, [2, 18], 2);
+    const pore = g > 0.9 ? 0.78 : 1;
+    const c = (0.84 + (n - 0.5) * 0.18 + (f - 0.5) * 0.08 + (g - 0.5) * 0.08 + (bed - 0.5) * 0.08) * pore;
+    return [c, c * 0.97, c * 0.91, n * 0.5 + f * 0.3 + g * 0.2];
   }, 2);
 
   // — bruk: kocie łby (Voronoi z kopułkami i ciemną fugą) —
@@ -183,7 +191,7 @@ export function createTextures() {
     const tx = u * 4, ty = v * 4, ix = Math.floor(tx), iy = Math.floor(ty);
     const fx = tx - ix, fy = ty - iy;
     const gap = Math.min(fx, 1 - fx, fy, 1 - fy);
-    const sid = Math.abs(Math.sin(ix * 91.7 + iy * 47.3) * 43758.5453) % 1;
+    const sid = ihash(ix + 40, iy + 70);
     const n = nA(u, v, 16, 4), fine = nB(u, v, 128, 1);
     const cr = Math.abs(crack(u, v, 6, 3) - 0.5);
     const isCrack = sid > 0.7 && cr < 0.004;
@@ -212,12 +220,15 @@ export function createTextures() {
     return [base + r * 0.12, base - r * 0.06, base - r * 0.12, 0.3 + seam * 0.7 + (n - 0.5) * 0.1];
   }, 4);
 
-  // — trawa: źdźbła z szumu, plamy suchej trawy i koniczyny —
+  // — trawa: drobne źdźbła, delikatne zmiany odcienia, rzadkie stokrotki i mniszki
   T.grass = bake(512, 512, (u, v) => {
-    const n = nA(u, v, 8, 4), f = nB(u, v, 256, 1), m = nC(u, v, 4, 3);
-    const dry = smooth(0.55, 0.75, m);
-    const g = 0.75 + (f - 0.5) * 0.5 + (n - 0.5) * 0.25;
-    return [(0.3 + dry * 0.22) * g, (0.45 + dry * 0.05) * g, (0.2 + dry * 0.02) * g, f * 0.7 + n * 0.3];
+    const n = nA(u, v, 8, 4), f = nB(u, v, 256, 1), bl = nC(u, v, 128, 2), m = nC(u, v, 4, 3);
+    const dry = smooth(0.6, 0.85, m) * 0.5;
+    const g = 0.8 + (f - 0.5) * 0.45 + (bl - 0.5) * 0.3 + (n - 0.5) * 0.2;
+    const fl = nB(u + 0.31, v + 0.57, 96, 1);
+    if (fl > 0.955) return [0.95 * g, 0.94 * g, 0.82 * g, f * 0.7 + 0.2];
+    if (fl > 0.94) return [0.9, 0.72 * g, 0.12, f * 0.7 + 0.2];
+    return [(0.3 + dry * 0.14) * g, (0.46 + dry * 0.05) * g, 0.2 * g, f * 0.6 + bl * 0.25 + n * 0.15];
   }, 3);
 
   // — dachówka karpiówka: rzędy łusek z przesunięciem, cieniowane krawędzie —
@@ -227,7 +238,7 @@ export function createTextures() {
     // zaokrąglony dół łuski
     const dx = fx - 0.5, curve = 0.75 + Math.sqrt(Math.max(0, 0.25 - dx * dx)) * 0.5;
     const inTile = fy < curve;
-    const id = Math.abs(Math.sin(ci * 12.9898 + row * 78.233) * 43758.5453) % 1;
+    const id = ihash(ci, row);
     const n = nA(u, v, 16, 3);
     const shade = inTile ? 0.75 + fy * 0.35 : 0.45;
     const c = (0.85 + (id - 0.5) * 0.22 + (n - 0.5) * 0.15) * shade;
@@ -269,6 +280,16 @@ export function createTextures() {
     let c = 0.22 + (n - 0.5) * 0.06 + (f - 0.5) * 0.05;
     return [c, c, c * 1.02, 0.5 + (f - 0.5) * 0.2];
   }, 1, { aniso: 8 });
+
+  // — drewno: neutralne w kolorze (ramy, drzwi i okiennice mają kolor z wierzchołków),
+  //   słoje biegną wzdłuż v, czyli pionowo na ścianach
+  T.wood = bake(256, 256, (u, v) => {
+    const warp = nA(u, v, [4, 2], 3);
+    const ring = 0.5 + 0.5 * Math.sin((u * 14 + warp * 3.2) * Math.PI * 2);
+    const fine = nB(u, v, [64, 4], 2), knot = nC(u, v, [3, 2], 2);
+    const c = 0.9 - ring * ring * 0.13 + (fine - 0.5) * 0.14 - Math.max(0, knot - 0.7) * 0.25;
+    return [c, c, c, 0.55 + (fine - 0.5) * 0.35 - ring * 0.2];
+  }, 3);
 
   // — falki na wodzie (tylko normal map) —
   T.water = bake(256, 256, (u, v) => {

@@ -10,12 +10,14 @@
     "preview": "vite preview",
     "check": "node scripts/check-world.mjs",
     "sim": "node scripts/sim-traffic.mjs",
-    "build-world": "node scripts/build-all.mjs"
+    "build-world": "node scripts/build-all.mjs",
+    "photo": "node scripts/photo.mjs"
   },
   "dependencies": {
     "three": "0.170.0"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "0.1.65",
     "vite": "6.0.7"
   }
 }

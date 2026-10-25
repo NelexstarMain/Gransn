@@ -171,6 +171,7 @@ function hsl(h, s, l) {
   return [f(0), f(8), f(4)];
 }
 const ROOFS = [[0.66, 0.3, 0.2], [0.55, 0.24, 0.18], [0.3, 0.32, 0.36], [0.28, 0.48, 0.4], [0.36, 0.26, 0.2], [0.36, 0.42, 0.52], [0.16, 0.16, 0.18], [0.72, 0.42, 0.24]];
+const BRICKS = [[0.98, 0.92, 0.88], [1, 0.88, 0.78], [0.82, 0.72, 0.68], [1, 0.97, 0.8], [0.9, 0.84, 0.82]];
 const FRAMES = [[0.94, 0.92, 0.86], [0.92, 0.88, 0.76], [0.2, 0.32, 0.24], [0.45, 0.14, 0.12], [0.18, 0.22, 0.36], [0.32, 0.22, 0.14]];
 
 // ── generator budynku: typ bryły (gramatyka kształtu) + kolory + detale ─────
@@ -211,6 +212,8 @@ export function buildingInfo(seed, bid, zone) {
     curtain: hsl(r.float(0, 360), r.float(0.3, 0.6), r.float(0.3, 0.6)),
     awning: r.chance(0.7) ? hsl(r.pick([0, 120, 210, 30, 350]), 0.55, 0.42) : null,
     towerExtra: r.int(2, 4), stepDir: r.chance(0.5) ? 1 : -1, ang: r.float(0, Math.PI * 2), r,
+    // odcień cegły: czerwona, pomarańczowa, brunatna, żółtawa (osobny hasz — nie rusza reszty losowań)
+    brickTint: BRICKS[hash(seed, bid, 41) % BRICKS.length],
   };
 }
 
@@ -318,6 +321,22 @@ export function classifyGrid(city) {
     }
   }
   grid.H = H; grid.TY = TY; grid.ZN = ZN; grid.BID = BID; grid.ARCH = ARCH; grid.CL = CL;
+  // ratusz: najwyższe punkty to wieża — dostaje hełm z zegarami (M.townhall)
+  let hTop = 0;
+  const tower = new Set();
+  for (let v = 0; v < N; v++) if (TY[v] === T_BLD && ZN[v] === Z_MINISTRY) hTop = Math.max(hTop, H[v]);
+  for (let v = 0; v < N; v++) if (TY[v] === T_BLD && ZN[v] === Z_MINISTRY && H[v] === hTop) tower.add(v);
+  if (hTop > 3) {
+    let cx = 0, cz = 0;
+    for (const v of tower) { cx += X[v] / tower.size; cz += Z[v] / tower.size; }
+    let rin = 1e9;
+    for (let q = 0; q < quads.length / 4; q++)
+      for (let i = 0; i < 4; i++) {
+        const a = quads[q * 4 + i], b = quads[q * 4 + ((i + 1) % 4)];
+        if (tower.has(a) !== tower.has(b)) rin = Math.min(rin, Math.hypot((X[a] + X[b]) / 2 - cx, (Z[a] + Z[b]) / 2 - cz));
+      }
+    city.extras.push({ kind: 'townhall', p: [cx, cz], clear: 0, top: hTop, w: Math.max(3.5, Math.min(7, rin * 1.7)) });
+  }
   // sąsiedztwo krawędzi → czworokąty
   const Q = quads.length / 4, edgeQ = new Map();
   const nearBld = new Uint8Array(N);
@@ -348,6 +367,13 @@ export function raised(city, v) {
   if (t === T_BLD) return !!g.ARCH[v];
   if (g.ZN[v] === Z_NATURE) return false;
   return true;
+}
+
+// otwarta przestrzeń przy ulicy bez budynków obok (skwer, pas zieleni) → trawnik,
+// a nie pole płyt chodnikowych; chodniki pod ścianami i bulwary zostają z płyt
+export function lawn(city, v) {
+  const g = city.grid, T = city.terrain;
+  return g.TY[v] === T_STREET && !g.nearBld[v] && g.CL[v] > 1.2 && g.ZN[v] !== Z_NATURE && T.river(g.X[v], g.Z[v]).d > T.hw + 10;
 }
 
 // czy punkt zajmuje poziom L (prześwit bramny: parter pusty)
@@ -476,6 +502,8 @@ export function decorate(city) {
       choice = hv < 0.12 ? 'tree' : hv < 0.2 ? 'bush' : hv < 0.24 ? 'bench' : hv < 0.27 ? 'car' : null;
     } else if (t === T_GARDEN) {
       choice = hv < 0.36 ? 'tree' : hv < 0.58 ? 'bush' : hv < 0.62 ? 'car' : null;
+    } else if (t === T_STREET && town && lawn(city, v)) {
+      choice = hv < 0.12 ? 'tree' : hv < 0.19 ? 'bush' : hv < 0.21 ? 'bench' : hv < 0.23 && cl < 3 ? 'lamp' : null;
     } else if (t === T_STREET && town && cl > 2.5) {
       choice = hv < 0.08 ? 'tree' : hv < 0.12 ? 'bush' : null;
     }
@@ -488,6 +516,8 @@ export function decorate(city) {
       const room = Math.min(roads.clearance(p[0], p[1]) + 1.5, bldDist(p[0], p[1]) + 0.5);
       const crownR = (species === 'poplar' ? 2 : species === 'pine' ? 2.5 : 3.5) * sc;
       if (room < 1.2 || roads.clearance(p[0], p[1]) < 1.0) continue; // pień zawsze poza jezdnią
+      // żadnych drzew w rzece ani pod wodą (punkty przy brzegu mają typ „ulica”, choć leżą w korycie)
+      if (city.terrain.river(p[0], p[1]).d < city.terrain.hw + 2 || city.terrain.height(p[0], p[1]) < city.terrain.seaY + 0.3) continue;
       if (crownR > room) sc *= room / crownR;
       if (!free(p, 1.0)) continue;
       trees.push({ p, s: sc, species, seed: hash(seed, v, 15), y });

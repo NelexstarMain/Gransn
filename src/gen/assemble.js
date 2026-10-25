@@ -9,11 +9,14 @@ import { M } from './modules.js';
 import { SHOP_SIGNS, POSTERS } from './atlas.js';
 import { Rng, hash } from '../core/rng.js';
 import { HALF } from '../city/layout.js';
-import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
+import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+// pole czworokąta [u0w0, u1w0, u0w1, u1w1] (dwa trójkąty)
+const quadArea = (p) => Math.abs((p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1])) / 2 +
+  Math.abs((p[1][0] - p[3][0]) * (p[2][1] - p[3][1]) - (p[2][0] - p[3][0]) * (p[1][1] - p[3][1])) / 2;
 
 function place(b, name, cage, W, H, D, p) {
   b.cell(cage, W, H, D);
@@ -63,7 +66,7 @@ function placeProp(b, T, pr, seed) {
   const r = new Rng(hash(seed, Math.round(pr.p[0] * 10), Math.round(pr.p[1] * 10)));
   if (pr.kind === 'bush') {
     const s = pr.s;
-    place(b, 'bush', cage4(T, null, boxPts(pr.p, [1, 0], [0, 1], 2.2 * s, 2.2 * s), NONE, (pr.y || 0) - 0.1, (pr.y || 0) + 1.6 * s), 2.2 * s, 1.7 * s, 2.2 * s, { leaf: r.pick(LEAF_BY.oak), flowers: r.chance(0.3) ? r.pick([[0.9, 0.2, 0.3], [0.95, 0.85, 0.3], [0.8, 0.5, 0.9]]) : null });
+    place(b, 'bush', cage4(T, null, boxPts(pr.p, [1, 0], [0, 1], 2.2 * s, 2.2 * s), NONE, (pr.y || 0) - 0.1, (pr.y || 0) + 1.6 * s), 2.2 * s, 1.7 * s, 2.2 * s, { leaf: r.pick(LEAF_BY.oak), flowers: r.chance(0.3) ? r.pick([[0.9, 0.2, 0.3], [0.95, 0.85, 0.3], [0.8, 0.5, 0.9]]) : null, seed: r.int(1, 99999) });
     return;
   }
   if (pr.kind === 'column') {
@@ -114,6 +117,10 @@ function buildExtra(b, city, ex) {
     const n = [-ex.e[1], ex.e[0]], end = [ex.p[0] + ex.e[0] * ex.len, ex.p[1] + ex.e[1] * ex.len];
     const pts = [[ex.p[0] - n[0] * 2, ex.p[1] - n[1] * 2], [end[0] - n[0] * 2, end[1] - n[1] * 2], [ex.p[0] + n[0] * 2, ex.p[1] + n[1] * 2], [end[0] + n[0] * 2, end[1] + n[1] * 2]];
     place(b, 'pier', Cage.quad(pts[0], pts[1], pts[2], pts[3], T.seaY - 4, T.seaY + 2.2), ex.len, 6.2, 4, {});
+  } else if (ex.kind === 'townhall') {
+    // wieża ratusza: dolne 3,6 m chowa się w dachu, całość ~17 m
+    const w = ex.w, H = 17, y0 = levelY(ex.top) + 0.5 - 0.2;
+    place(b, 'townhall', cage4(T, null, boxPts(ex.p, [1, 0], [0, 1], w, w), NONE, y0, y0 + H), w, H, w, { hide: 3.6 });
   } else if (ex.kind === 'station') {
     // peron wzdłuż toru + pociąg (lokomotywa i 3 wagony)
     const P = (along, side) => [ex.p[0] + ex.e[0] * along + ex.n[0] * side, ex.p[1] + ex.e[1] * along + ex.n[1] * side];
@@ -224,7 +231,7 @@ function buildQuad(b, city, q) {
 
 function setTints(b, info) {
   b.setTint('plaster', info.tint);
-  b.setTint('brick', info.style === 'brick' ? [0.78, 0.6, 0.52] : [0.68, 0.52, 0.46]);
+  b.setTint('brick', info.style === 'brick' ? info.brickTint || [0.98, 0.92, 0.88] : [0.8, 0.7, 0.64]);
   b.setTint('stone', info.trim || [0.76, 0.73, 0.67]);
 }
 
@@ -316,21 +323,40 @@ export function sidewalkClamp(city, G, i) {
 }
 
 function groundQuarter(b, city, G, i, q) {
-  const g = city.grid, T = city.terrain, a = G.v[i], ty = g.TY[a];
+  const g = city.grid, T = city.terrain, roads = city.roads, a = G.v[i], ty = g.TY[a];
   if (!raised(city, a)) return;
   const clampAll = sidewalkClamp(city, G, i);
   if (!clampAll) return;
   const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
-  const pts = raw.map(clampAll);
-  // ćwiartka zjedzona przez jezdnię
-  const area = Math.abs((pts[1][0] - pts[0][0]) * (pts[2][1] - pts[0][1]) - (pts[2][0] - pts[0][0]) * (pts[1][1] - pts[0][1])) / 2 +
-    Math.abs((pts[1][0] - pts[3][0]) * (pts[2][1] - pts[3][1]) - (pts[2][0] - pts[3][0]) * (pts[1][1] - pts[3][1])) / 2;
-  if (area < 0.15) return;
-  const W = Math.max(0.3, dist(pts[0], pts[1])), D = Math.max(0.3, dist(pts[0], pts[2]));
-  const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES) ? 'grass'
-    : ty === T_COURT ? 'cobble' : 'slab';
-  if (mat === 'slab') place(b, 'sidewalk', cage4(T, null, pts, NONE, 0, 0.15), W, 0.15, D, { mat: 'slab', o: { drape: 0.15 } });
-  else place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat, step: 3, o: { drape: 0.15 } });
+  const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES) || lawn(city, a) ? 'grass'
+    : ty === T_COURT || ty === T_PLAZA ? 'cobble' : 'slab';
+  const lay = (pts, minArea) => {
+    if (quadArea(pts) < minArea) return; // zjedzone przez jezdnię
+    // narożniki rzucone na przeciwne brzegi rzeki → pas nad wodą; pomijamy
+    if (Math.max(dist(pts[0], pts[1]), dist(pts[0], pts[2]), dist(pts[1], pts[3]), dist(pts[2], pts[3])) > 9) return;
+    const W = Math.max(0.3, dist(pts[0], pts[1])), D = Math.max(0.3, dist(pts[0], pts[2]));
+    if (mat === 'slab') place(b, 'sidewalk', cage4(T, null, pts, NONE, 0, 0.15), W, 0.15, D, { mat: 'slab', o: { drape: 0.15 } });
+    else place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat, step: 3, o: { drape: 0.15, tint: ty === T_PLAZA ? [1, 0.96, 0.9] : undefined } });
+  };
+  // Przy jezdni ćwiartka dzielona jest na drobne pola, każde docinane osobno.
+  // Docięcie samych narożników całej ćwiartki zostawiało pola rozpięte NAD
+  // jezdnią (narożniki po obu stronach ulicy) — płyty przykrywały bruk.
+  const bil = (u, w) => lerp2(lerp2(raw[0], raw[1], u), lerp2(raw[2], raw[3], u), w);
+  let nearRoad = false;
+  for (let k = 0; k <= 4 && !nearRoad; k++) for (let j = 0; j <= 4; j++) if (roads.clearance(...clampAll(bil(k / 4, j / 4))) < 0.45) { nearRoad = true; break; }
+  if (!nearRoad) lay(raw.map(clampAll), 0.15);
+  else {
+    const len = Math.max(dist(raw[0], raw[1]), dist(raw[0], raw[2]), dist(raw[1], raw[3]), dist(raw[2], raw[3]));
+    const n = Math.min(4, Math.max(2, Math.ceil(len / 1.1)));
+    for (let j = 0; j < n; j++)
+      for (let k = 0; k < n; k++) {
+        const pts = [bil(k / n, j / n), bil((k + 1) / n, j / n), bil(k / n, (j + 1) / n), bil((k + 1) / n, (j + 1) / n)].map(clampAll);
+        const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4, cz = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
+        // (przy rzece docięcie do brzegu potrafi wepchnąć narożnik z powrotem na jezdnię)
+        if (roads.clearance(cx, cz) < 0.15 || pts.some((p) => roads.clearance(p[0], p[1]) < 0)) continue;
+        lay(pts, 0.01);
+      }
+  }
   // obrzeża od strony niskich sąsiadów (las, plaża, tory) — bez szczelin na krawędzi
   for (const [s0, s1, nb] of [[G.m[i], G.c, G.v[(i + 1) % 4]], [G.c, G.m[(i + 3) % 4], G.v[(i + 3) % 4]]]) {
     if (raised(city, nb) || g.TY[nb] === T_BLD || g.TY[nb] === T_WATER) continue;
@@ -487,7 +513,7 @@ export function buildChunkLOD(city, id) {
     for (let i = 0; i < 4; i++) {
       const a = V[i];
       if (g.TY[a] !== T_BLD) {
-        if (raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN) {
+        if (raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN && !lawn(city, a)) {
           const cl = sidewalkClamp(city, G, i);
           if (!cl) continue;
           const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map(cl);
@@ -506,7 +532,7 @@ export function buildChunkLOD(city, id) {
         const hint = [f0[0] - G.p[i][0] + f1[0] - G.p[i][0], 0, f0[1] - G.p[i][1] + f1[1] - G.p[i][1]];
         const ga = T.height(f0[0], f0[1]), gb = T.height(f1[0], f1[1]);
         b.wpoly('lod', [[f0[0], ga + y0, f0[1]], [f1[0], gb + y0, f1[1]], [f1[0], gb + y1, f1[1]], [f0[0], ga + y1, f0[1]]], hint, {
-          tint: info.wallMat === 'brick' ? [0.62, 0.45, 0.38] : info.tint, uv: [[0, nh], [1, nh], [1, top], [0, top]],
+          tint: info.wallMat === 'brick' ? [0.7, 0.5, 0.42] : info.tint, uv: [[0, nh], [1, nh], [1, top], [0, top]],
         });
       }
       roofQuarterLOD(b, city, info, G, i, top);
@@ -518,6 +544,19 @@ export function buildChunkLOD(city, id) {
     const n = [-(st.b[1] - st.a[1]) / L * st.rw, (st.b[0] - st.a[0]) / L * st.rw];
     const P = (p, sd) => { const x = p[0] + n[0] * sd, z = p[1] + n[1] * sd; return [x, (st.bridge ? T.bankY : T.height(x, z)) + 0.13, z]; };
     b.wpoly(st.mat === 'dirt' ? 'gravel' : st.mat === 'asphalt' ? 'asphalt' : 'cobble', [P(st.a, -1), P(st.b, -1), P(st.b, 1), P(st.a, 1)], [0, 1, 0], { tint: ROAD_TINT[st.mat], flat: 1, uv: st.type === 'H' ? [[0, 0], [L / 12, 0], [L / 12, 1], [0, 1]] : [[0, 0.3], [L / 12, 0.3], [L / 12, 0.7], [0, 0.7]] });
+  }
+  // wieża ratusza w LOD: trzon + miedziany hełm (widać ją z całej wyspy)
+  for (const ex of ch.extras) {
+    if (ex.kind !== 'townhall') continue;
+    const gy = T.height(ex.p[0], ex.p[1]), w = ex.w / 2, y0 = gy + levelY(ex.top) + 0.3, ys = y0 + 8.4, yr = y0 + 14.4;
+    const C = [[-w, -w], [w, -w], [w, w], [-w, w]].map(([a, c]) => [ex.p[0] + a, ex.p[1] + c]);
+    for (let k = 0; k < 4; k++) {
+      const a = C[k], c = C[(k + 1) % 4], hint = [(a[0] + c[0]) / 2 - ex.p[0], 0, (a[1] + c[1]) / 2 - ex.p[1]];
+      b.wpoly('lod', [[a[0], y0, a[1]], [c[0], y0, c[1]], [c[0], ys, c[1]], [a[0], ys, a[1]]], hint, { tint: [0.92, 0.88, 0.78], uv: [[0, 0], [1, 0], [1, 3], [0, 3]] });
+      const h2 = w * 0.62;
+      b.wpoly('lodroof', [[ex.p[0] + (a[0] - ex.p[0]) * 0.62, ys, ex.p[1] + (a[1] - ex.p[1]) * 0.62], [ex.p[0] + (c[0] - ex.p[0]) * 0.62, ys, ex.p[1] + (c[1] - ex.p[1]) * 0.62], [ex.p[0], yr + 2, ex.p[1]]], [hint[0], 0.8, hint[2]], { tint: [0.4, 0.66, 0.56] });
+      void h2;
+    }
   }
   for (const t of ch.trees) {
     const gy = T.height(t.p[0], t.p[1]), r = 2.4 * t.s, h = 8 * t.s;
