@@ -15,14 +15,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
+import { polyDist } from './routes.js';
 
 export const LEVEL0 = 3.8, LEVEL = 3.2;
 export const levelY = (L) => (L <= 0 ? 0 : LEVEL0 + (L - 1) * LEVEL);
 
-export const T_STREET = 0, T_BLD = 1, T_COURT = 2, T_PARK = 3, T_PLAZA = 4, T_GARDEN = 5;
+export const T_STREET = 0, T_BLD = 1, T_COURT = 2, T_PARK = 3, T_PLAZA = 4, T_GARDEN = 5, T_RAIL = 6, T_BEACH = 7, T_WATER = 8;
 export const Z_HOUSES = 0, Z_TENEMENT = 1, Z_MINISTRY = 2;
 
-export function makeQuadGrid(seed, half, s = 13) {
+export function makeQuadGrid(seed, half, s = 10.5) {
   const rng = new Rng(hash(seed, 31337));
   const X = half + 2 * s, h3 = (Math.sqrt(3) / 2) * s;
   const rN = Math.ceil(X / h3);
@@ -33,8 +34,9 @@ export function makeQuadGrid(seed, half, s = 13) {
     const q0 = Math.ceil(-X / s - r / 2), q1 = Math.floor(X / s - r / 2);
     for (let q = q0; q <= q1; q++) {
       idx.set(key(q, r), px.length);
-      px.push((q + r / 2) * s);
-      pz.push(r * h3);
+      // drgania siatki startowej → większa różnorodność kątów po relaksacji
+      px.push((q + r / 2) * s + rng.float(-0.2, 0.2) * s);
+      pz.push(r * h3 + rng.float(-0.2, 0.2) * s);
       fixed.push(0);
     }
   }
@@ -109,7 +111,7 @@ export function makeQuadGrid(seed, half, s = 13) {
   // relaksacja do kwadratów
   const N = px.length, Q = quads.length / 4;
   const ax = new Float64Array(N), az = new Float64Array(N), cnt = new Float64Array(N);
-  for (let it = 0; it < 14; it++) {
+  for (let it = 0; it < 6; it++) {
     ax.fill(0); az.fill(0); cnt.fill(0);
     for (let q = 0; q < Q; q++) {
       const v = [quads[q * 4], quads[q * 4 + 1], quads[q * 4 + 2], quads[q * 4 + 3]];
@@ -129,7 +131,7 @@ export function makeQuadGrid(seed, half, s = 13) {
         cnt[v[i]]++;
       }
     }
-    for (let i = 0; i < N; i++) if (!fixed[i] && cnt[i]) { px[i] += (ax[i] / cnt[i]) * 0.55; pz[i] += (az[i] / cnt[i]) * 0.55; }
+    for (let i = 0; i < N; i++) if (!fixed[i] && cnt[i]) { px[i] += (ax[i] / cnt[i]) * 0.42; pz[i] += (az[i] / cnt[i]) * 0.42; }
   }
   // zostawiamy czworokąty w obrębie mapy
   const keep = [];
@@ -217,16 +219,23 @@ export function classifyGrid(city) {
   const LS = 11;
   for (let v = 0; v < N; v++) {
     const x = X[v], z = Z[v];
-    if (Math.abs(x) > city.half - 4 || Math.abs(z) > city.half - 4) continue;
+    const inl = T.inland(x, z);
+    if (inl < 0 || Math.abs(x) > city.half - 4 || Math.abs(z) > city.half - 4) { TY[v] = T_WATER; continue; }
     if (T.river(x, z).d < T.hw + 6) continue;
+    if (inl < 34) { TY[v] = T_BEACH; continue; }
+    if (polyDist(city.routes.rail, x, z) < 5.5) { TY[v] = T_RAIL; continue; }
+    if (polyDist(city.routes.highway, x, z) < 11) continue;
+    if (city.extras.some((ex) => Math.hypot(ex.p[0] - x, ex.p[1] - z) < ex.clear)) continue;
     let onBridge = false;
     for (const b of city.bridges) {
       const dx = x - b.p[0], dz = z - b.p[1];
       if (Math.abs(dx * b.axis[0] + dz * b.axis[1]) < b.L + 20 && Math.abs(dx * b.perp[0] + dz * b.perp[1]) < b.width / 2 + 1) onBridge = true;
     }
     if (onBridge) continue;
+    // lekkie "zawijanie" przestrzeni → ulice wiją się organicznie
+    const wx = x + 7 * noise3(x / 70, 1.3, z / 70), wz = z + 7 * noise3(x / 70, 8.1, z / 70);
     let clear = 1e9;
-    for (const s of streetAt(x, z)) clear = Math.min(clear, segDist(x, z, s) - s.w);
+    for (const s of streetAt(wx, wz)) clear = Math.min(clear, segDist(wx, wz, s) - s.w);
     if (clear < 0) continue; // ulica
     let ns = null, nd = 1e18;
     for (const s of seedAt(x, z)) { const d = (s.x - x) ** 2 + (s.z - z) ** 2; if (d < nd) { nd = d; ns = s; } }
@@ -343,10 +352,20 @@ export function wallPlan(city, a, b, q, side, L) {
   return { mod: null, balcony: h < 0.08 && L <= 2 };
 }
 
-// ── dekoracje: latarnie, drzewa, ławki, teleekrany (wspólne dla świata i kolizji)
+// ── dekoracje: latarnie, kioski, budki, przystanki, kosze, auta, drzewa, ławki,
+//    fontanny, teleekrany (wspólne dla świata i kolizji)
 export function decorate(city) {
   const g = city.grid, { X, Z, quads, TY } = g, seed = city.seed, T = city.terrain;
-  const lamps = [], trees = [], benches = [], screens = [];
+  const lamps = [], trees = [], benches = [], screens = [], props = [];
+  const streetAt = bucketize(city.streets, 32, (s) => [Math.min(s.a[0], s.b[0]) - 20, Math.min(s.a[1], s.b[1]) - 20, Math.max(s.a[0], s.b[0]) + 20, Math.max(s.a[1], s.b[1]) + 20]);
+  const streetDir = (x, z) => {
+    let best = 1e9, dir = [1, 0];
+    for (const s of streetAt(x, z)) {
+      const d = segDist(x, z, s);
+      if (d < best) { best = d; const l = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) || 1; dir = [(s.b[0] - s.a[0]) / l, (s.b[1] - s.a[1]) / l]; }
+    }
+    return dir;
+  };
   const Q = quads.length / 4;
   for (let q = 0; q < Q; q++) {
     const G = quadGeom(g, q);
@@ -365,30 +384,40 @@ export function decorate(city) {
         }
         continue;
       }
-      if (mixed && TY[a] === T_STREET && hash(seed, q, i, 41) / 4294967296 < 0.09) {
-        const p = [X[a] + (G.c[0] - X[a]) * 0.3, Z[a] + (G.c[1] - Z[a]) * 0.3];
-        const d = [G.c[0] - X[a], G.c[1] - Z[a]], l = Math.hypot(d[0], d[1]) || 1;
-        const n = [d[0] / l, d[1] / l];
-        lamps.push({ p, n, e: [-n[1], n[0]] });
+      if (TY[a] !== T_STREET && TY[a] !== T_PLAZA) continue;
+      const hq = hash(seed, q, i, 41) / 4294967296;
+      const d = [G.c[0] - X[a], G.c[1] - Z[a]], l = Math.hypot(d[0], d[1]) || 1;
+      const n = [d[0] / l, d[1] / l], e = [-n[1], n[0]];
+      if (mixed) {
+        // chodnik: latarnia przy krawężniku, reszta bliżej środka chodnika
+        const p = [X[a] + d[0] * 0.3, Z[a] + d[1] * 0.3], pm = [X[a] + d[0] * 0.5, Z[a] + d[1] * 0.5];
+        if (hq < 0.08) lamps.push({ p, n, e });
+        else if (hq < 0.12) props.push({ kind: 'bin', p: pm, n, e });
+        else if (hq < 0.135) props.push({ kind: 'booth', p: pm, n, e });
+        else if (hq < 0.15) props.push({ kind: 'kiosk', p: pm, n, e });
+        else if (hq < 0.162) props.push({ kind: 'busstop', p: pm, n, e });
+      } else if (TY[a] === T_STREET && hq < 0.035 && !T.inRiver(X[a], Z[a], 4)) {
+        // zaparkowane auto wzdłuż ulicy
+        const dir = streetDir(X[a], Z[a]);
+        const p = [(X[a] + G.c[0]) / 2, (Z[a] + G.c[1]) / 2];
+        props.push({ kind: 'car', p, e: dir, n: [-dir[1], dir[0]] });
       }
     }
   }
   for (let v = 0; v < g.N; v++) {
     const t = TY[v];
-    if (t !== T_PARK && t !== T_GARDEN && t !== T_COURT) continue;
+    if (t !== T_PARK && t !== T_GARDEN && t !== T_COURT && t !== T_BEACH) continue;
     const hv = hash(seed, v, 9) / 4294967296;
     const p = [X[v], Z[v]];
-    if (Math.abs(p[0]) > city.half - 3 || Math.abs(p[1]) > city.half - 3) continue;
-    const mon = city.monuments.some((m) => Math.hypot(m[0] - p[0], m[1] - p[1]) < 8);
-    if (mon) continue;
-    const pTree = t === T_PARK ? 0.3 : t === T_GARDEN ? 0.45 : g.ZN[v] === Z_HOUSES ? 0.14 : 0.07;
-    if (hv < pTree) trees.push({ p, s: 0.75 + (hash(seed, v, 10) / 4294967296) * 0.55 });
-    else if (t === T_PARK && hv < pTree + 0.05) {
-      const a = (hash(seed, v, 12) / 4294967296) * Math.PI * 2;
-      benches.push({ p, e: [Math.cos(a), Math.sin(a)], n: [-Math.sin(a), Math.cos(a)] });
+    if (city.monuments.some((m) => Math.hypot(m.p[0] - p[0], m.p[1] - p[1]) < 9)) continue;
+    const pTree = t === T_PARK ? 0.32 : t === T_GARDEN ? 0.45 : t === T_BEACH ? 0.03 : g.ZN[v] === Z_HOUSES ? 0.14 : 0.07;
+    if (hv < pTree) trees.push({ p, s: 0.75 + (hash(seed, v, 10) / 4294967296) * 0.55, pine: t === T_BEACH });
+    else if ((t === T_PARK || t === T_BEACH) && hv < pTree + 0.05) {
+      const ang = (hash(seed, v, 12) / 4294967296) * Math.PI * 2;
+      benches.push({ p, e: [Math.cos(ang), Math.sin(ang)], n: [-Math.sin(ang), Math.cos(ang)] });
     }
   }
-  Object.assign(city, { lamps, trees, benches, screens });
+  Object.assign(city, { lamps, trees, benches, screens, props });
 }
 
 // podział na fragmenty do strumieniowania
@@ -398,7 +427,7 @@ export function makeChunks(city, size = 80) {
   for (let j = 0; j < n; j++)
     for (let i = 0; i < n; i++) {
       const cx = -city.half + (i + 0.5) * size, cz = -city.half + (j + 0.5) * size;
-      chunks.push({ id: chunks.length, center: [cx, cz], radius: size * 0.72, quads: [], lamps: [], trees: [], benches: [], monuments: [], billboards: [] });
+      chunks.push({ id: chunks.length, center: [cx, cz], radius: size * 0.72, quads: [], lamps: [], trees: [], benches: [], monuments: [], billboards: [], props: [], rail: [], highway: [], extras: [] });
     }
   const at = (x, z) => {
     const i = Math.min(n - 1, Math.max(0, Math.floor((x + city.half) / size))), j = Math.min(n - 1, Math.max(0, Math.floor((z + city.half) / size)));
@@ -409,7 +438,10 @@ export function makeChunks(city, size = 80) {
     for (let k = 0; k < 4; k++) { cx += X[quads[q * 4 + k]] / 4; cz += Z[quads[q * 4 + k]] / 4; }
     at(cx, cz).quads.push(q);
   }
-  for (const k of ['lamps', 'trees', 'benches', 'billboards']) for (const it of city[k]) at(it.p[0], it.p[1])[k].push(it);
-  for (const m of city.monuments) at(m[0], m[1]).monuments.push(m);
+  for (const k of ['lamps', 'trees', 'benches', 'billboards', 'props', 'monuments', 'extras']) for (const it of city[k]) at(it.p[0], it.p[1])[k].push(it);
+  for (const k of ['rail', 'highway']) {
+    const P = city.routes[k].pts;
+    for (let i = 0; i < P.length - 1; i++) at((P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2)[k].push(i);
+  }
   return chunks;
 }

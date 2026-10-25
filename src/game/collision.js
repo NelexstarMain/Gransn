@@ -29,7 +29,7 @@ export class CollisionGrid {
     }
     for (const l of city.lamps) this.disc(l.p[0], l.p[1], 0.2);
     for (const t of city.trees) this.disc(t.p[0], t.p[1], 0.35 * t.s);
-    for (const [x, z] of city.monuments) this.fill([[x - 2.2, z - 2.2], [x + 2.2, z - 2.2], [x + 2.2, z + 2.2], [x - 2.2, z + 2.2]], SOLID);
+    for (const { p: [x, z] } of city.monuments) this.fill([[x - 2.2, z - 2.2], [x + 2.2, z - 2.2], [x + 2.2, z + 2.2], [x - 2.2, z + 2.2]], SOLID);
     for (const br of city.bridges) {
       const hw = br.width / 2 - 0.5, e = 0.5;
       const P = (pt, s) => [pt[0] + br.perp[0] * s, pt[1] + br.perp[1] * s];

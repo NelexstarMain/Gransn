@@ -10,9 +10,10 @@
 //     plac). Same budynki powstają na nieregularnej siatce czworokątów (grid.js).
 import { Rng, hash } from '../core/rng.js';
 import { makeQuadGrid, classifyGrid, decorate, makeChunks, levelY } from './grid.js';
+import { makeRoutes } from './routes.js';
 import { Terrain } from './terrain.js';
 
-export const HALF = 630;
+export const HALF = 700;
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -108,9 +109,17 @@ function inradius(poly, c) {
 // ── mosty ───────────────────────────────────────────────────────────────────
 function makeBridges(terrain, rng) {
   const out = [];
-  const xs = [-400, rng.float(-90, 90), 390];
+  const P = terrain.pts, cand = [];
+  for (let x = -HALF; x <= HALF; x += 10) {
+    for (let i = 0; i < P.length - 1; i++) {
+      if (x < P[i][0] || x > P[i + 1][0]) continue;
+      const p = lerp2(P[i], P[i + 1], (x - P[i][0]) / (P[i + 1][0] - P[i][0]));
+      if (terrain.inland(p[0], p[1]) > 110) cand.push(x);
+    }
+  }
+  const xs = cand.length ? [0.15, 0.5, 0.85].map((f) => cand[Math.floor(f * (cand.length - 1))]) : [];
   for (const x0 of xs) {
-    const x = x0 + rng.float(-40, 40);
+    const x = x0 + rng.float(-15, 15);
     const r = terrain.river(x, terrain.pts[0][1]);
     // punkt na osi rzeki o danym x
     let best = null;
@@ -138,6 +147,7 @@ function makeBridges(terrain, rng) {
 // ── ziarna Voronoi ──────────────────────────────────────────────────────────
 function seedAllowed(x, z, terrain, bridges, center) {
   if (Math.abs(x) > HALF - 8 || Math.abs(z) > HALF - 8) return false;
+  if (terrain.inland(x, z) < 45) return false;
   if (terrain.river(x, z).d < terrain.hw + 24) return false;
   if (Math.hypot(x - center[0], z - center[1]) < 125) return false;
   for (const b of bridges) {
@@ -356,7 +366,9 @@ export function generateCity(seed = 1984) {
   }
   for (const s of seeds) if (!s.kind) s.kind = 'houses';
 
-  const monuments = blocks.filter((b) => b.kind === 'park' && polyArea(b.bline) > 2500).map((b) => b.bc);
+  const monuments = blocks
+    .filter((b) => b.kind === 'park' && polyArea(b.bline) > 2500 && terrain.inland(b.bc[0], b.bc[1]) > 40)
+    .map((b, i) => ({ p: b.bc, kind: i % 2 ? 'fountain' : 'monument' }));
   const plaza = blocks.find((b) => b.kind === 'plaza');
   // billboardy z hasłami Partii wokół Ministerstwa + portret na szczycie
   const billboards = [];
@@ -375,7 +387,9 @@ export function generateCity(seed = 1984) {
   const sgn = toP[0] * b0.axis[0] + toP[1] * b0.axis[1] > 0 ? 1 : -1;
   const spawn = { x: b0.p[0] + b0.perp[0] * 2, z: b0.p[1] + b0.perp[1] * 2, yaw: Math.atan2(-b0.axis[0] * sgn, -b0.axis[1] * sgn) };
 
-  const city = { seed, blocks, terrain, bridges, spawn, streets, seedList: seeds, monuments, billboards, size: 2 * HALF, half: HALF };
+  const routes = makeRoutes(seed, terrain);
+  const extras = makeExtras(terrain, routes, rng);
+  const city = { seed, blocks, terrain, bridges, spawn, streets, seedList: seeds, monuments, billboards, routes, extras, size: 2 * HALF, half: HALF };
   city.grid = makeQuadGrid(seed, HALF);
   classifyGrid(city);
   decorate(city);
@@ -388,4 +402,27 @@ function fillPlaza(blk, terrain) {
   const r = inradius(blk.curb, [terrain.plaza.x, terrain.plaza.z]);
   const hs = Math.max(22, Math.min(46, r * 0.55));
   blk.ministry = { tiers: [1, 0.79, 0.6, 0.42].map((k) => hs * k), tierH: 22, y: terrain.plaza.y };
+}
+
+// ── latarnia morska, molo, dworzec z pociągiem ──────────────────────────────
+function makeExtras(T, routes, rng) {
+  const out = [];
+  const coastPt = (a, inset) => { const r = T.coastR(a) - inset; return [Math.cos(a) * r, Math.sin(a) * r]; };
+  const far = (p, d) => routes.highway.pts.every((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) > d) && routes.rail.pts.every((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) > d) && T.river(p[0], p[1]).d > 60;
+  let la = rng.float(0, Math.PI * 2);
+  for (let i = 0; i < 24 && !far(coastPt(la, 6), 80); i++) la += 0.27;
+  out.push({ kind: 'lighthouse', p: coastPt(la, 6), clear: 12 });
+  for (let k = 0; k < 2; k++) {
+    let a = la + 1.6 + k * 2.2;
+    for (let i = 0; i < 24 && !far(coastPt(a, 30), 60); i++) a += 0.2;
+    const p = coastPt(a, 30), o = coastPt(a, -60);
+    const L = Math.hypot(o[0] - p[0], o[1] - p[1]);
+    const e = [(o[0] - p[0]) / L, (o[1] - p[1]) / L];
+    out.push({ kind: 'pier', p, e, len: L, clear: 6 });
+  }
+  const R = routes.rail, i = R.station;
+  const a = R.pts[i - 5], b = R.pts[i + 5];
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]), e = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [-e[1], e[0]];
+  out.push({ kind: 'station', p: R.pts[i], e, n, y: R.y[i], clear: 34 });
+  return out;
 }

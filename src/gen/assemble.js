@@ -66,7 +66,7 @@ export function buildChunk(city, id) {
   for (const t of ch.trees) placeTree(b, T, t, r);
   for (const l of ch.lamps) placeLamp(b, T, l);
   for (const be of ch.benches) place(b, 'bench', cage4(T, null, boxPts(be.p, be.e, be.n, 1.8, 0.6), NONE, 0.05, 1.05), 1.8, 1, 0.6, {});
-  for (const m of ch.monuments) place(b, 'monument', cage4(T, null, boxPts(m, [1, 0], [0, 1], 4, 4), NONE, 0, 13), 4, 13, 4, { poster: 'bb4' });
+  for (const m of ch.monuments) place(b, 'monument', cage4(T, null, boxPts(m.p, [1, 0], [0, 1], 4, 4), NONE, 0, 13), 4, 13, 4, { poster: 'bb4' });
   for (const bb of ch.billboards) {
     const [w, h] = bb.size, H = bb.noPosts ? h + 0.6 : h + 3.2;
     const pts = boxPts(bb.p, bb.e, bb.n, w, 0.6);

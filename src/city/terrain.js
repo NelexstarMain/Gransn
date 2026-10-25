@@ -39,6 +39,22 @@ export class Terrain {
       this.right.push([P[i][0] + tz * m, P[i][1] - tx * m]);
     }
     this.plaza = null;
+    // wyspa: promień brzegu R(θ) z losowymi półwyspami i zatokami
+    this.seaY = this.waterY;
+    this.isl = { r0: half * 0.84, ph: [r.float(0, 6), r.float(0, 6), r.float(0, 6)], o: r.float(0, 100) };
+  }
+
+  coastR(theta) {
+    const { r0, ph, o } = this.isl;
+    const c = Math.cos(theta), s = Math.sin(theta);
+    let k = 0.86 + 0.09 * Math.sin(2 * theta + ph[0]) + 0.06 * Math.sin(3 * theta + ph[1]) + 0.04 * Math.sin(5 * theta + ph[2]);
+    k += 0.16 * noise3(c * 1.6 + o, s * 1.6, 0.5) + 0.06 * noise3(c * 5 + o, s * 5, 2.5);
+    return r0 * Math.min(1.12, k);
+  }
+
+  // odległość od brzegu (dodatnia na lądzie)
+  inland(x, z) {
+    return this.coastR(Math.atan2(z, x)) - Math.hypot(x, z);
   }
 
   // najbliższy punkt na osi rzeki
@@ -65,14 +81,22 @@ export class Terrain {
 
   height(x, z) {
     let h = this.hills(x, z);
+    const c = this.inland(x, z);
+    const land = sstep(-10, 110, c);
     const d = this.river(x, z).d;
     h = this.bankY + (h - this.bankY) * sstep(this.hw + 6, this.hw + 120, d);
+    // plaża i dno morza
+    h = this.seaY - 4 + (h - this.seaY + 4) * land;
     const p = this.plaza;
     if (p) {
       const pd = Math.hypot(x - p.x, z - p.z);
       h = p.y + (h - p.y) * sstep(p.r, p.r + 130, pd);
     }
     return h;
+  }
+
+  isSand(x, z, y) {
+    return y < this.seaY + 2.4 && this.inland(x, z) < 140;
   }
 
   inRiver(x, z, margin = 0) {
