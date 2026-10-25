@@ -23,8 +23,8 @@ npm run build-world    # buduje CAŁY świat w Node: wyjątki, NaN, ląd pod wod
 - **NIE uruchamiaj testów w przeglądarce** (Playwright/Chromium). Użytkownik wprost tego zabronił i przerywa takie procesy (kod 137). Weryfikuj wyłącznie przez `npm run check`, `npm run sim`, `npm run build-world` i `npx vite build`. W raporcie uczciwie pisz, czego nie dało się sprawdzić wizualnie.
 - **Robi przerwy i wraca z nową listą.** Często powtarza wcześniejszą wiadomość w całości, zanim doda nowe punkty. Najpierw upewnij się, że stare punkty są zrobione.
 - **Po każdej zmianie:**
-  1. Commit na gałęzi `ccr-f37277ad-qchwz7`, z opisem po polsku i trailerami z system-reminder.
-  2. `git push -u origin ccr-f37277ad-qchwz7`.
+  1. Commit na gałęzi wskazanej przez sesję (ostatnio `ccr-ecc3ed84-ivhb3i`), z opisem po polsku i trailerami z system-reminder.
+  2. `git push -u origin <ta gałąź>`.
   3. Ponowna publikacja gry pod tym samym linkiem (procedura niżej). Użytkownik gra **wyłącznie przez link** i nie uruchamia `npm`.
 - **Zdjęcia w `public/posters/brat1.jpg` i `brat2.jpg`** to twarz samego użytkownika. Potwierdził to i chce ich używać (reklamy „TAXI GRANSN”, pomniki w parkach, billboard na rynku). Nie usuwaj ich i nie podmieniaj.
 
@@ -48,6 +48,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 5. Jezdnie mają być ciągłe, przejezdne, szerokie co najmniej 5–6 m, bez kolizji. Każdy obiekt (kosz, budka…) ma swój kafelek ~5×5 m i nic się nie nakłada. Autostrada na ziemi, nie na estakadzie. Miasto mniejsze.
 6. Boty-kierowcy z trasami (A*) i korkami. Dym, ślady opon, odbicia w szybach, ładniejsze światło **bez spadku FPS**.
 7. Ostatnio: miasto było częściowo pod wodą (morze przykrywało ląd). Naprawione w `terrain.js` (dolna granica lądu) i w `grid.js` (plaża sprawdzana przed rzeką). Podkład terenu leży teraz 5 cm niżej i jest płaski.
+8. „Latająca powierzchnia” nad rzeką: punkty siatki w korycie miały typ ulicy, więc dostawały chodnik, którego rogi rzutowano na OBA brzegi (płyta wisiała nad wodą, auto mogło po niej jechać, mogli tam stać pasażerowie). Teraz punkty w korycie to `T_WATER`, a ćwiartka chodnika jest rzutowana tylko na brzeg swojego punktu (`clampToBank(x, z, side)`, `bankSide`).
 
 ## Architektura (src/)
 

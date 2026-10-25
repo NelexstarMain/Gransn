@@ -107,12 +107,20 @@ export class Terrain {
   }
 
   // punkt w korycie → rzut na najbliższy brzeg
-  clampToBank(x, z) {
+  // (want = 1/-1: zawsze na brzeg TEJ strony, nawet gdy punkt leży za osią rzeki)
+  clampToBank(x, z, want = 0) {
     const r = this.river(x, z);
     if (r.d >= this.hw) return null;
     // strona rzeki: znak iloczynu wektorowego (styczna × kierunek do punktu)
     const side = r.tx * (z - r.pz) - r.tz * (x - r.px) >= 0 ? 1 : -1;
+    if (want && want !== side) return [r.px - r.nx * this.hw, r.pz - r.nz * this.hw, want];
     if (r.d < 1e-6) return [r.px, r.pz, side];
     return [r.px + r.nx * this.hw, r.pz + r.nz * this.hw, side];
+  }
+
+  // strona rzeki punktu na lądzie (1/-1)
+  bankSide(x, z) {
+    const r = this.river(x, z);
+    return r.tx * (z - r.pz) - r.tz * (x - r.px) >= 0 ? 1 : -1;
   }
 }

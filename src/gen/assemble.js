@@ -298,9 +298,11 @@ function groundQuarter(b, city, G, i, q) {
   const g = city.grid, T = city.terrain, a = G.v[i], ty = g.TY[a];
   if (!raised(city, a)) return;
   const roads = city.roads;
+  // ćwiartka zostaje na brzegu swojego punktu — nie rozciąga się nad rzeką na drugi brzeg
+  const own = T.bankSide(G.p[i][0], G.p[i][1]);
   const clampAll = (p) => {
     let c = roads.clamp(p, 0.3);
-    const bank = T.clampToBank(c[0], c[1]);
+    const bank = T.clampToBank(c[0], c[1], own);
     if (bank) c = [bank[0], bank[1]];
     return c;
   };
