@@ -43,7 +43,7 @@ export function growRoads(seed, T, bridges, center, base = []) {
     if (inl < 25 || T.river(x, z).d < T.hw + 4) return 0;
     const dc = Math.hypot(x - center[0], z - center[1]);
     const n = 0.5 + 0.5 * noise3(x / 260 + 4.4, 0.7, z / 260);
-    return Math.max(0, Math.min(1, (1.15 - dc / 420) * 0.75 + n * 0.45)) * Math.min(1, inl / 90);
+    return Math.max(0, Math.min(1, (1.15 - dc / 475) * 0.75 + n * 0.45)) * Math.min(1, inl / 90);
   };
 
   const segs = [];
@@ -88,9 +88,9 @@ export function growRoads(seed, T, bridges, center, base = []) {
     const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
     insert({ a: e.a, b: e.b, ang, type: e.type || 'v', rw: e.rw, s0: e.s0 });
     const L = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
-    for (let d = 22 + rng.float(0, 12); d < L - 18; d += rng.float(30, 46)) {
+    for (let d = 26 + rng.float(0, 14); d < L - 22; d += rng.float(40, 58)) {
       const p = [e.a[0] + Math.cos(ang) * d, e.a[1] + Math.sin(ang) * d];
-      for (const sd of [-1, 1]) if (rng.chance(0.55)) push(mk(p, ang + sd * (Math.PI / 2 + rng.float(-0.15, 0.15)), 's', 3 + rng.float(0, 4)));
+      for (const sd of [-1, 1]) if (rng.chance(0.4)) push(mk(p, ang + sd * (Math.PI / 2 + rng.float(-0.15, 0.15)), 's', 3 + rng.float(0, 4)));
     }
   }
   const r0 = rng.float(0, Math.PI * 2);
@@ -169,11 +169,11 @@ export function growRoads(seed, T, bridges, center, base = []) {
       }
       if (bestP > 0.05) out.push(mk(end, bestA, 'h', s.t + 1));
       if (rng.chance(0.06)) out.push(mk(end, s.ang + (rng.chance(0.5) ? 1 : -1) * (Math.PI / 2 + rng.float(-0.15, 0.15)), 'h', s.t + 1));
-      for (const sd of [-1, 1]) if (rng.chance(0.42)) out.push(mk(end, s.ang + sd * (Math.PI / 2 + rng.float(-0.12, 0.12)), 's', s.t + 6));
+      for (const sd of [-1, 1]) if (rng.chance(0.3)) out.push(mk(end, s.ang + sd * (Math.PI / 2 + rng.float(-0.12, 0.12)), 's', s.t + 6));
     } else {
       const p = pop(end[0], end[1]);
-      if (p > 0.18) out.push(mk(end, s.ang + rng.float(-0.18, 0.18), 's', s.t + 1));
-      for (const sd of [-1, 1]) if (p > 0.32 && rng.chance(0.38)) out.push(mk(end, s.ang + sd * (Math.PI / 2 + rng.float(-0.2, 0.2)), 's', s.t + 2 + rng.int(0, 2)));
+      if (p > 0.24) out.push(mk(end, s.ang + rng.float(-0.18, 0.18), 's', s.t + 1));
+      for (const sd of [-1, 1]) if (p > 0.38 && rng.chance(0.26)) out.push(mk(end, s.ang + sd * (Math.PI / 2 + rng.float(-0.2, 0.2)), 's', s.t + 2 + rng.int(0, 2)));
     }
     return out;
   };

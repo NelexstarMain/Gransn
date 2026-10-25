@@ -52,6 +52,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 9. Brzeg rzeki = dokładnie linia w odległości `hw` od osi (`terrain.bankL/bankR`: narożnik po wewnętrznej stronie zakrętu, łuk po zewnętrznej). Po niej idą mury nabrzeża, minimapa i kolizje (koryto SOLID poza mostami). Wcześniej mur szedł po ściętym narożniku, a ziemia po łuku, więc wystawała nad wodę. Końcówki ulic przy nabrzeżu są docinane do brzegu. Autostrada przecina rzekę po moście (`highwayBridge` w `layout.js`). Ulice w mieście mają asfalt (środek tekstury z osią), autostrada pełną tablicę 4 pasów, drogi w lesie są ubite.
 10. Uskok przy rzece: spłaszczenie rynku podnosiło ziemię aż do brzegu (do 3 m nad nabrzeżem i mostami). Teraz w `height()` najpierw jest rynek, potem dolina rzeki, więc brzeg leży zawsze na `bankY`. Rynek chroni tylko pas `r…r+50`. Przy ujściu mur nabrzeża schodzi razem z terenem (`cageY` w `buildRiver`).
 11. Niewidoczne drogi: `roads.clamp` przesuwał róg chodnika do NAJBLIŻSZEGO krawężnika, więc róg za osią ulicy lądował po drugiej stronie i płyta (+0,15) zakrywała ok. 2/3 jezdni. Teraz `sidewalkClamp` (assemble.js) + `roads.clampSide` docinają rogi zawsze na stronę punktu siatki (to samo w LOD). Poza jezdnią taksówka przyspiesza słabiej i jedzie maks. ok. 22 km/h (`vehicle.js`, `offRoad`).
+12. Większe miasto, mniej ulic: `HALF` 460 → 520 (ląd ~0,44 km²), ziarna Voronoi co 66 m (było 58), w `roads.js` rzadsze odgałęzienia (Voronoi: co 40–58 m, szansa 0,4; ulice: kontynuacja przy gęstości > 0,24, boczne > 0,38 i 0,26). Gęstość ulic spadła z ~38 do ~30 km/km².
 
 ## Architektura (src/)
 
@@ -59,7 +60,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 |---|---|
 | `core/rng.js`, `core/noise.js` | deterministyczny RNG (`hash`, `Rng`), szum Perlina 3D. **W generacji nigdy nie używaj `Math.random`**: świat musi wyjść identycznie w wątku głównym i w workerach. |
 | `city/terrain.js` | wyspa (`coastR(θ)`, `inland`), wzgórza, rzeka (oś + brzegi `left/right`), `height(x,z)` ze spłaszczeniem rzeki i rynku oraz dolną granicą lądu |
-| `city/layout.js` | `generateCity(seed)`: mosty → ziarna Poisson + Lloyd → Voronoi (strefy + krawędzie = szkielet ulic) → trasy → drogi P&M → `RoadNet` → siatka → klasyfikacja → dekoracje → fragmenty. `HALF = 460`. |
+| `city/layout.js` | `generateCity(seed)`: mosty → ziarna Poisson + Lloyd → Voronoi (strefy + krawędzie = szkielet ulic) → trasy → drogi P&M → `RoadNet` → siatka → klasyfikacja → dekoracje → fragmenty. `HALF = 520`. |
 | `city/roads.js` | L-system Parish & Müller: cele globalne (gęstość) i ograniczenia lokalne (przecięcie, przyciągnięcie, przedłużenie, woda). Wejście: mosty i krawędzie Voronoi/autostrady jako gotowe odcinki. |
 | `city/roadnet.js` | `RoadNet`: drogi jako **kapsuły** (odcinek + `rw`). `clearance`, `nearest`, `clamp` (docinanie chodników), `capsulePoly` (kolizje) |
 | `city/routes.js` | kolej (z dworcem) i autostrada (krzywe Catmull-Rom) |
@@ -96,15 +97,15 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - **Jezdnia:** `rw` to 3,0 (uliczki P&M), 3,4 lub 4,2 (ulice Voronoi), 4,0 (główne P&M), 5,5 (autostrada), 3,5 (most). Punkt siatki jest pusty, jeśli `clearance < 5,2`, więc ściany zawsze są poza jezdnią.
 - **Rekwizyty:** jeden na punkt siatki. Muszą trzymać odstęp od jezdni (`clearance`), od budynków (`bldDist`) i od siebie (`free`). Drzewo zamiast wchodzić w dom zmniejsza się.
 - **Determinizm:** to samo `generateCity(seed)` liczy się w każdym workerze. Wszystko losowe idzie przez `hash`/`Rng`.
-- **Wydajność:** cała wyspa ma ok. 3 mln trójkątów (detal plus LOD). Auta-boty są instancjonowane. Odbicia pochodzą z PMREM liczonego raz. Nie dodawaj postprocessingu, który kosztuje FPS.
+- **Wydajność:** cała wyspa ma ok. 5 mln trójkątów (detal plus LOD). Auta-boty są instancjonowane. Odbicia pochodzą z PMREM liczonego raz. Nie dodawaj postprocessingu, który kosztuje FPS.
 
 ### Ostatnie wyniki weryfikacji (seed 1984)
 
 | narzędzie | wynik |
 |---|---|
-| `npm run check` | ~3400 obiektów, 0 na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 364 budynki |
-| `npm run sim` | 34 auta, ~18 km/h średnio, ~1/3 w korkach, najdłuższe czekanie ~12 s, 0 NaN |
-| `npm run build-world` | 144 fragmenty, ok. 3,0 mln trójkątów, 0 błędów, 0 punktów lądu pod wodą |
+| `npm run check` | 0 obiektów na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 700 budynków, 489 odcinków ulic |
+| `npm run sim` | 34 auta, ~27 km/h średnio, ~6% stoi, najdłuższe czekanie ~12 s, 0 NaN |
+| `npm run build-world` | 169 fragmentów, ok. 5,1 mln trójkątów (detal + LOD łącznie), 0 błędów, 0 punktów lądu pod wodą |
 
 ## Znane braki i pomysły na dalej
 

@@ -15,7 +15,7 @@ import { growRoads } from './roads.js';
 import { RoadNet } from './roadnet.js';
 import { Terrain } from './terrain.js';
 
-export const HALF = 460; // mniejsza wyspa (~0,6 km²)
+export const HALF = 520; // wyspa ~0,45 km² lądu (było 460)
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -194,7 +194,7 @@ function placeSeeds(terrain, bridges, center, rng) {
           const along = s * (b.L + d);
           seeds.push({ x: b.p[0] + b.axis[0] * along + b.perp[0] * 36 * q, z: b.p[1] + b.axis[1] * along + b.perp[1] * 36 * q, fixed: true });
         }
-  const minD = 58;
+  const minD = 66; // rzadsze ulice główne (Voronoi)
   for (let i = 0; i < 9000; i++) {
     const x = rng.float(-HALF + 10, HALF - 10), z = rng.float(-HALF + 10, HALF - 10);
     if (!seedAllowed(x, z, terrain, bridges, center)) continue;
