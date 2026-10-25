@@ -2,10 +2,10 @@
 
 Gra 3D w przeglądarce (Three.js). Jeździsz taksówką, wozem z ok. 1900 roku (szprychowe koła, ławki, składany dach, mosiężne lampy), po proceduralnie generowanej wyspie i zarabiasz na kursach: podjeżdżasz do pasażera w żółtym kółku, zatrzymujesz się obok i wieziesz go do zielonego celu. Opłata rośnie z odległością, a za szybki kurs jest napiwek.
 
-Na wyspie (~1,3 km, losowy obrys z półwyspami) są:
+Na wyspie (~0,9 km, losowy obrys z półwyspami) są:
 - śródmieście z kamienicami i rynek z ratuszem i fontannami,
 - przedmieścia z domkami i ogródkami, lasy i wydmy przy brzegu,
-- rzeka z mostami, kolej z dworcem i pociągiem, autostrada na estakadzie,
+- rzeka z mostami, kolej z dworcem i pociągiem (płaskie przejazdy), autostrada na poziomie gruntu z mostem łukowym,
 - latarnia morska, molo, parki,
 - kioski, budki telefoniczne, przystanki i zaparkowane auta.
 
@@ -23,6 +23,30 @@ Sterowanie:
 - telefon: lewy kciuk jedzie, prawy obraca kamerę.
 
 Parametry adresu: `?seed=1234` generuje inną wyspę, `?low` lub `?high` wymusza jakość grafiki.
+
+## Jezdnie: ciągłe wstęgi na kafelkach
+
+Każda droga to „kapsuła”, czyli odcinek z promieniem jezdni i zaokrąglonymi końcami (`src/city/roadnet.js`). Suma kapsuł daje całą przejezdną nawierzchnię: skrzyżowania i zakręty wychodzą bez dziur. Z tej samej struktury korzystają wszystkie systemy:
+- **Budynki** nie stoją bliżej niż 5,2 m od osi bocznej jezdni, więc przejazd ma co najmniej 6 m, a ściany są poza krawędzią.
+- **Chodniki i trawniki** w mieście leżą na +0,15 m i są docinane do krawędzi jezdni. Krawężniki biegną wzdłuż jezdni i znikają tam, gdzie wpada inna droga. Od strony lasu i plaży powierzchnia ma obrzeże.
+- **Kolizje:** jezdnia jest zawsze przejezdna, bo nic na niej nie stoi.
+
+## Rekwizyty: jeden obiekt na kafelek
+
+Każdy punkt siatki (kafelek ok. 5×5 m) może mieć najwyżej jeden obiekt: latarnię, kosz, ławkę, budkę, kiosk, przystanek, krzak, drzewo albo auto. Obiekt musi zmieścić się w kafelku: trzyma odstęp od jezdni, ścian i innych obiektów. Drzewa są w razie potrzeby zmniejszane, zamiast wchodzić w dom. Automatyczny test (wszystkie obiekty, kilka seedów) daje zero nakładań i zero obiektów na jezdni.
+
+## Budynki: gramatyka kształtu i losowe kolory
+
+`buildingInfo` w `src/city/grid.js` losuje dla każdej działki typ bryły, który ustawia wysokość słupków:
+- **blok:** równa wysokość;
+- **uskokowy:** piętra cofnięte od ulicy albo od podwórza;
+- **z wieżą:** narożny punkt działki wyżej o 2–4 piętra;
+- **ząbkowany:** naprzemienne szczyty od frontu;
+- **z podcieniami:** parter od ulicy pusty, z kolumnami;
+- **willa:** środek wyżej;
+- **w kształcie L:** jedno skrzydło niższe.
+
+Kolory pochodzą z losowych palet HSL (pastelowe, ziemiste, mocne, białe), z dobranym kolorem detali, ram, drzwi, okiennic i dachówki. Proporcje okien zmieniają się dla każdego budynku. Każdy budynek ma własny dach (płaski, niski albo stromy), a dachy sąsiadów stykają się w koszu bez szczelin.
 
 ## Sieć dróg: Voronoi + Parish & Müller (2001)
 

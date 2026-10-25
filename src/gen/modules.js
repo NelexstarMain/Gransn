@@ -31,8 +31,8 @@ function plinth(b, segs, mat = 'stone') {
 }
 
 function windowCore(b, W, H, p) {
-  const ow = clamp(W * 0.4, 0.8, 1.45);
-  const oh = clamp(H * 0.5, 1.2, 2.0);
+  const ow = clamp(W * (p.winW || 0.4), 0.7, 1.6);
+  const oh = clamp(H * (p.winH || 0.5), 1.1, 2.15);
   const x0 = (W - ow) / 2, x1 = x0 + ow;
   const y0 = p.ground ? Math.max(1.25, H - oh - 0.9) : clamp(H * 0.27, 0.75, 1.0);
   const y1 = Math.min(y0 + oh, H - 0.32);
@@ -823,6 +823,12 @@ Object.assign(M, {
   // 38. Tory: podsypka, podkłady, szyny; p.bridge = kratownica i filar
   rail(b, W, H, D, p) {
     const c = D / 2;
+    if (p.crossing) {
+      // przejazd: deski równo z jezdnią (y = 0,45 w kostce), szyny lekko wystają
+      b.gridY('wood', 0.47, 0, c - 1.6, W, c + 1.6, Math.max(1, Math.round(W / 0.4)), 1, { tint: [0.36, 0.28, 0.2] });
+      for (const z of [c - 0.72, c + 0.72]) b.box('metal', 0, 0.47, z - 0.035, W, 0.5, z + 0.035, 'YzZ', { tint: [0.55, 0.52, 0.5] });
+      return;
+    }
     b.poly('gravel', [[0, 0.35, c - 1.6], [W, 0.35, c - 1.6], [W, 0.35, c + 1.6], [0, 0.35, c + 1.6]], [0, 1, 0]);
     b.poly('gravel', [[0, -0.5, c - 2.5], [W, -0.5, c - 2.5], [W, 0.35, c - 1.6], [0, 0.35, c - 1.6]], [0, 1, -1]);
     b.poly('gravel', [[W, -0.5, c + 2.5], [0, -0.5, c + 2.5], [0, 0.35, c + 1.6], [W, 0.35, c + 1.6]], [0, 1, 1]);

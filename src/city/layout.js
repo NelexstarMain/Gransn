@@ -12,9 +12,10 @@ import { Rng, hash } from '../core/rng.js';
 import { makeQuadGrid, classifyGrid, decorate, makeChunks } from './grid.js';
 import { makeRoutes } from './routes.js';
 import { growRoads } from './roads.js';
+import { RoadNet } from './roadnet.js';
 import { Terrain } from './terrain.js';
 
-export const HALF = 700;
+export const HALF = 460; // mniejsza wyspa (~0,6 km²)
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -115,10 +116,10 @@ function makeBridges(terrain, rng) {
     for (let i = 0; i < P.length - 1; i++) {
       if (x < P[i][0] || x > P[i + 1][0]) continue;
       const p = lerp2(P[i], P[i + 1], (x - P[i][0]) / (P[i + 1][0] - P[i][0]));
-      if (terrain.inland(p[0], p[1]) > 110) cand.push(x);
+      if (terrain.inland(p[0], p[1]) > 70) cand.push(x);
     }
   }
-  const xs = cand.length ? [0.15, 0.5, 0.85].map((f) => cand[Math.floor(f * (cand.length - 1))]) : [];
+  const xs = cand.length ? [0.2, 0.8].map((f) => cand[Math.floor(f * (cand.length - 1))]) : [];
   for (const x0 of xs) {
     const x = x0 + rng.float(-15, 15);
     const r = terrain.river(x, terrain.pts[0][1]);
@@ -150,11 +151,11 @@ function seedAllowed(x, z, terrain, bridges, center) {
   if (Math.abs(x) > HALF - 8 || Math.abs(z) > HALF - 8) return false;
   if (terrain.inland(x, z) < 45) return false;
   if (terrain.river(x, z).d < terrain.hw + 24) return false;
-  if (Math.hypot(x - center[0], z - center[1]) < 125) return false;
+  if (Math.hypot(x - center[0], z - center[1]) < 95) return false;
   for (const b of bridges) {
     const dx = x - b.p[0], dz = z - b.p[1];
     const along = dx * b.axis[0] + dz * b.axis[1], across = dx * b.perp[0] + dz * b.perp[1];
-    if (Math.abs(along) < b.L + 140 && Math.abs(across) < 52) return false;
+    if (Math.abs(along) < b.L + 90 && Math.abs(across) < 46) return false;
   }
   return true;
 }
@@ -163,12 +164,12 @@ function placeSeeds(terrain, bridges, center, rng) {
   const seeds = [{ x: center[0], z: center[1], fixed: true, plaza: true }];
   for (const b of bridges)
     for (const s of [-1, 1])
-      for (const d of [32, 100])
+      for (const d of [30, 85])
         for (const q of [-1, 1]) {
           const along = s * (b.L + d);
           seeds.push({ x: b.p[0] + b.axis[0] * along + b.perp[0] * 36 * q, z: b.p[1] + b.axis[1] * along + b.perp[1] * 36 * q, fixed: true });
         }
-  const minD = 64;
+  const minD = 58;
   for (let i = 0; i < 9000; i++) {
     const x = rng.float(-HALF + 10, HALF - 10), z = rng.float(-HALF + 10, HALF - 10);
     if (!seedAllowed(x, z, terrain, bridges, center)) continue;
@@ -298,7 +299,7 @@ export function generateCity(seed = 1984) {
   const rng = new Rng(seed);
   const terrain = new Terrain(seed, HALF);
   const center = [0, 0];
-  terrain.plaza = { x: center[0], z: center[1], r: 100, y: terrain.hills(center[0], center[1]) };
+  terrain.plaza = { x: center[0], z: center[1], r: 70, y: terrain.hills(center[0], center[1]) };
   const bridges = makeBridges(terrain, rng);
   const seeds = placeSeeds(terrain, bridges, center, rng);
 
@@ -350,7 +351,7 @@ export function generateCity(seed = 1984) {
       vSeen.add(key);
       const a = poly[k], b = poly[(k + 1) % n];
       if (terrain.inland(a[0], a[1]) < 30 || terrain.inland(b[0], b[1]) < 30) return;
-      vEdges.push({ a, b, w: sp[k].road + 2.4 });
+      vEdges.push({ a, b, rw: sp[k].road >= 5 ? 4.2 : 3.4 });
     });
     cell.ids.forEach((id, k) => {
       const nx = cell.ids[(k + 1) % n], key = id < nx ? `${id}_${nx}` : `${nx}_${id}`;
@@ -387,7 +388,7 @@ export function generateCity(seed = 1984) {
   const hs0 = plaza.ministry.tiers[0], pc = [terrain.plaza.x, terrain.plaza.z];
   ['war', 'freedom', 'ignorance', 'bb4'].forEach((name, i) => {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4, d = [Math.cos(a), Math.sin(a)];
-    const r0 = hs0 * 0.9 + 16;
+    const r0 = hs0 * 0.55 + 12;
     billboards.push({ p: [pc[0] + d[0] * r0, pc[1] + d[1] * r0], n: [-d[0], -d[1]], e: [-d[1], d[0]], name, y: 0, size: name.startsWith('bb') ? [5, 10] : [12, 3] });
   });
 
@@ -398,9 +399,30 @@ export function generateCity(seed = 1984) {
   const spawn = { x: b0.p[0] + b0.perp[0] * 2, z: b0.p[1] + b0.perp[1] * 2, yaw: Math.atan2(-b0.axis[0] * sgn, -b0.axis[1] * sgn) };
 
   const routes = makeRoutes(seed, terrain);
-  const streets = growRoads(seed, terrain, bridges, center, vEdges);
+  // autostrada (na ziemi) wchodzi do sieci jako szeroka droga — L-system łączy się z nią
+  const hwEdges = [];
+  let s0 = 0;
+  const HP = routes.highway.pts;
+  for (let i = 0; i < HP.length - 1; i++) {
+    const a = HP[i], b = HP[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (terrain.inland(a[0], a[1]) > 24 && terrain.inland(b[0], b[1]) > 24) hwEdges.push({ a, b, rw: 5.5, type: 'H', s0 });
+    s0 += L;
+  }
+  const streets = growRoads(seed, terrain, bridges, center, [...hwEdges, ...vEdges]);
+  // nawierzchnia: bruk w mieście, ubita droga w lesie, asfalt na autostradzie
+  const kindAt = (x, z) => {
+    let best = null, bd = 1e18;
+    for (const sd of seeds) { const d = (sd.x - x) ** 2 + (sd.z - z) ** 2; if (d < bd) { bd = d; best = sd; } }
+    return best ? best.kind : 'houses';
+  };
+  for (const st of streets) {
+    const mx = (st.a[0] + st.b[0]) / 2, mz = (st.a[1] + st.b[1]) / 2;
+    st.mat = st.type === 'H' ? 'asphalt' : kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'cobble';
+    st.town = st.mat === 'cobble';
+  }
+  const roads = new RoadNet(streets);
   const extras = makeExtras(terrain, routes, rng);
-  const city = { seed, blocks, terrain, bridges, spawn, streets, seedList: seeds, monuments, billboards, routes, extras, size: 2 * HALF, half: HALF };
+  const city = { seed, blocks, terrain, bridges, spawn, streets, roads, seedList: seeds, monuments, billboards, routes, extras, size: 2 * HALF, half: HALF };
   city.grid = makeQuadGrid(seed, HALF);
   classifyGrid(city);
   decorate(city);

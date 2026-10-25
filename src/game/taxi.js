@@ -2,7 +2,7 @@
 // się obok, zawieź do celu. Opłata zależy od odległości; premia za czas.
 import * as THREE from 'three';
 import { Rng } from '../core/rng.js';
-import { quadGeom, quadMixed0, T_STREET } from '../city/grid.js';
+import { T_STREET } from '../city/grid.js';
 import { moduleMesh } from './vehicle.js';
 
 const STREETS = ['Portowa', 'Lipowa', 'Rybacka', 'Mostowa', 'Ogrodowa', 'Latarników', 'Kolejowa', 'Słoneczna', 'Klonowa', 'Bursztynowa', 'Rynek', 'Nadbrzeżna', 'Kwiatowa', 'Wydmowa', 'Parkowa', 'Młyńska', 'Żeglarska', 'Topolowa', 'Kasztanowa', 'Szkolna'];
@@ -19,17 +19,16 @@ export class TaxiJob {
     this.waiting = [];
     this.fare = null;
     this.msg = null;
-    // punkty postoju: środki chodników przy ulicach
-    const g = city.grid, Q = g.quads.length / 4;
+    // punkty postoju: chodniki tuż przy jezdni (miasto), bez innych obiektów
+    const g = city.grid;
+    const busy = city.props.map((p) => p.p).concat(city.lamps.map((l) => l.p), city.trees.map((t) => t.p), city.benches.map((x) => x.p));
+    const occ = new Set(busy.map((p) => `${Math.round(p[0])},${Math.round(p[1])}`));
     this.stands = [];
-    for (let q = 0; q < Q; q++) {
-      if (!quadMixed0(g, q)) continue;
-      const G = quadGeom(g, q);
-      for (let i = 0; i < 4; i++) {
-        if (g.TY[G.v[i]] !== T_STREET) continue;
-        const p = G.p[i];
-        this.stands.push([p[0] + (G.c[0] - p[0]) * 0.55, p[1] + (G.c[1] - p[1]) * 0.55]);
-      }
+    for (let v = 0; v < g.N; v++) {
+      if (g.TY[v] !== T_STREET || !g.nearBld[v] || g.ZN[v] === 3) continue;
+      const c = g.CL[v];
+      if (c < 0.6 || c > 3.5 || occ.has(`${Math.round(g.X[v])},${Math.round(g.Z[v])}`)) continue;
+      this.stands.push([g.X[v], g.Z[v]]);
     }
     const ringGeo = new THREE.RingGeometry(1.6, 2.1, 32).rotateX(-Math.PI / 2);
     this.ringMat = new THREE.MeshBasicMaterial({ color: 0xffd23a, transparent: true, opacity: 0.85, depthWrite: false });

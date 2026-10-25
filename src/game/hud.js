@@ -44,8 +44,8 @@ export class Hud {
     for (let i = 0; i < T.left.length - 1; i++) poly([T.left[i], T.left[i + 1], T.right[i + 1], T.right[i]], '#3d6a80');
     ctx.lineCap = 'round';
     for (const s of this.city.streets) {
-      ctx.strokeStyle = s.type === 'h' ? '#c9c4b6' : '#a9a497';
-      ctx.lineWidth = s.type === 'h' ? 2.2 : 1.4;
+      ctx.strokeStyle = s.mat === 'asphalt' ? '#e8e2d0' : s.mat === 'dirt' ? '#a58a64' : '#c9c4b6';
+      ctx.lineWidth = Math.max(1.2, s.rw * 2 * k);
       ctx.beginPath();
       ctx.moveTo((s.a[0] + o) * k, (s.a[1] + o) * k);
       ctx.lineTo((s.b[0] + o) * k, (s.b[1] + o) * k);
@@ -59,10 +59,10 @@ export class Hud {
         poly([G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]], g.ZN[a] === 2 ? '#e0c9a0' : g.ZN[a] === 1 ? '#8f8778' : '#b88a70');
       }
     }
-    for (const key of ['rail', 'highway']) {
+    for (const key of ['rail']) {
       const R = this.city.routes[key];
-      ctx.strokeStyle = key === 'rail' ? '#4a3f38' : '#e8e2d0';
-      ctx.lineWidth = key === 'rail' ? 1.2 : 2.6;
+      ctx.strokeStyle = '#4a3f38';
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
       R.pts.forEach(([x, z], i) => (i ? ctx.lineTo((x + o) * k, (z + o) * k) : ctx.moveTo((x + o) * k, (z + o) * k)));
       ctx.stroke();

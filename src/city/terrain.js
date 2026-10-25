@@ -15,12 +15,12 @@ export class Terrain {
     this.hw = 17;          // połowa szerokości koryta
     this.bankY = 0;        // poziom bulwarów
     this.waterY = -3.2;    // lustro wody
-    const z0 = r.float(250, 320) * (r.chance(0.5) ? 1 : -1);
+    const z0 = r.float(0.3, 0.42) * half * (r.chance(0.5) ? 1 : -1);
     const n = 9, ph = r.float(0, 6);
     this.pts = [];
     for (let i = 0; i <= n; i++) {
       const x = -half - 90 + ((2 * half + 180) * i) / n;
-      this.pts.push([x, z0 + 60 * Math.sin(i * 0.85 + ph) + r.float(-20, 20)]);
+      this.pts.push([x, z0 + 40 * Math.sin(i * 0.85 + ph) + r.float(-14, 14)]);
     }
     // brzegi — przesunięcie łamanej z cięciem pod kątem
     this.left = [];
@@ -39,6 +39,7 @@ export class Terrain {
       this.right.push([P[i][0] + tz * m, P[i][1] - tx * m]);
     }
     this.plaza = null;
+    this.half = half;
     // wyspa: promień brzegu R(θ) z losowymi półwyspami i zatokami
     this.seaY = this.waterY;
     this.isl = { r0: half * 0.84, ph: [r.float(0, 6), r.float(0, 6), r.float(0, 6)], o: r.float(0, 100) };

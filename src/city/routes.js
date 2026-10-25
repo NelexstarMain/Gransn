@@ -1,5 +1,5 @@
 // Trasy przez wyspę: kolej (przy gruncie, przez miasto, most nad rzeką)
-// i autostrada na estakadzie. Krzywe Catmull-Rom przez losowe punkty na łuku.
+// i autostrada na poziomie gruntu. Krzywe Catmull-Rom przez losowe punkty na łuku.
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
 
@@ -46,10 +46,8 @@ export function makeRoutes(seed, T) {
   const rng = new Rng(hash(seed, 2024));
   const a0 = rng.float(0, Math.PI * 2);
   // autostrada: szeroki łuk po jednej stronie wyspy, na estakadzie
-  const hw = catmull(arc(T, a0, a0 + 2.6, 0.7, 120, rng), 8);
-  let hy = smoothY(hw.map(([x, z]) => Math.max(T.height(x, z), T.seaY) + 10), 12);
-  hy = hy.map((y, i) => Math.max(y, T.height(hw[i][0], hw[i][1]) + 7));
-  const highway = { pts: hw, y: hy, width: 17 };
+  const hw = catmull(arc(T, a0, a0 + 2.4, 0.66, 30, rng), 8);
+  const highway = { pts: hw, width: 11 }; // na ziemi (nie estakada)
   // kolej: łuk po drugiej stronie, przy ziemi; kończy się na plażach
   const rw = catmull(arc(T, a0 + Math.PI - 0.2, a0 + Math.PI + 2.0, 0.48, -25, rng), 6);
   const ry = smoothY(rw.map(([x, z]) => Math.max(T.height(x, z), T.seaY + 1)), 4);

@@ -17,7 +17,8 @@
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
 
-const HIGHWAY = { len: 34, w: 7.9 }, STREET = { len: 21, w: 5.7 };
+// rw = połowa szerokości jezdni (m); przejazd zawsze ≥ 6 m
+const HIGHWAY = { len: 30, rw: 4.0 }, STREET = { len: 19, rw: 3.0 };
 
 function segInter(a, b, c, d) {
   const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]];
@@ -42,7 +43,7 @@ export function growRoads(seed, T, bridges, center, base = []) {
     if (inl < 25 || T.river(x, z).d < T.hw + 4) return 0;
     const dc = Math.hypot(x - center[0], z - center[1]);
     const n = 0.5 + 0.5 * noise3(x / 260 + 4.4, 0.7, z / 260);
-    return Math.max(0, Math.min(1, (1.15 - dc / 650) * 0.75 + n * 0.45)) * Math.min(1, inl / 90);
+    return Math.max(0, Math.min(1, (1.15 - dc / 420) * 0.75 + n * 0.45)) * Math.min(1, inl / 90);
   };
 
   const segs = [];
@@ -76,7 +77,7 @@ export function growRoads(seed, T, bridges, center, base = []) {
   // aksjomaty: mosty (stałe) + autostrady promieniście od placu
   for (const br of bridges) {
     const ang = Math.atan2(br.axis[1], br.axis[0]);
-    insert({ a: br.e0, b: br.e1, ang, type: 'h', bridge: true, w: HIGHWAY.w });
+    insert({ a: br.e0, b: br.e1, ang, type: 'h', bridge: true, rw: 3.5 });
     push(mk(br.e1, ang, 'h', 0));
     push(mk(br.e0, ang + Math.PI, 'h', 0));
   }
@@ -85,7 +86,7 @@ export function growRoads(seed, T, bridges, center, base = []) {
   for (const e of base) {
     if (Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 6) continue;
     const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
-    insert({ a: e.a, b: e.b, ang, type: 'v', w: e.w });
+    insert({ a: e.a, b: e.b, ang, type: e.type || 'v', rw: e.rw, s0: e.s0 });
     const L = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
     for (let d = 22 + rng.float(0, 12); d < L - 18; d += rng.float(30, 46)) {
       const p = [e.a[0] + Math.cos(ang) * d, e.a[1] + Math.sin(ang) * d];
@@ -101,6 +102,7 @@ export function growRoads(seed, T, bridges, center, base = []) {
   // ograniczenia lokalne: zwraca zmodyfikowany odcinek albo null
   const localConstraints = (s) => {
     if (pop(s.b[0], s.b[1]) <= 0.02 && T.inland(s.b[0], s.b[1]) < 20) return null;
+    if (Math.abs(s.b[0]) > T.half - 10 || Math.abs(s.b[1]) > T.half - 10) return null;
     for (let k = 1; k <= 4; k++) {
       const x = s.a[0] + ((s.b[0] - s.a[0]) * k) / 4, z = s.a[1] + ((s.b[1] - s.a[1]) * k) / 4;
       if (T.river(x, z).d < T.hw + 3 || T.inland(x, z) < 18) return null;
@@ -149,7 +151,7 @@ export function growRoads(seed, T, bridges, center, base = []) {
         if (da < 0.5) return null;
       }
     }
-    s.w = s.type === 'h' ? HIGHWAY.w : STREET.w;
+    s.rw = s.type === 'h' ? HIGHWAY.rw : STREET.rw;
     return s;
   };
 
@@ -186,5 +188,5 @@ export function growRoads(seed, T, bridges, center, base = []) {
     insert(ok);
     for (const n of globalGoals(ok)) push(n);
   }
-  return segs.map((s) => ({ a: s.a, b: s.b, w: s.w, type: s.type, bridge: !!s.bridge }));
+  return segs.map((s) => ({ a: s.a, b: s.b, rw: s.rw, type: s.type, bridge: !!s.bridge, s0: s.s0 || 0 }));
 }
