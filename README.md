@@ -67,7 +67,7 @@ src/core/       RNG (deterministyczny), szum Perlina
 src/gen/        cage.js (FFD), builder.js (szum, normalne, UV w metrach),
                 modules.js (21 segmentów), assemble.js (reguły, kwartały, LOD),
                 worker.js + pool.js (generowanie w Web Workerach)
-src/city/       layout.js — ulice, kwartały, działki, bramy, latarnie
+src/city/       layout.js — ulice (Voronoi), strefy, rzeka, mosty; grid.js — siatka i słupki; terrain.js — wzgórza
 src/render/     proceduralne tekstury PBR, atlas plakatów, teleekran, atmosfera
 src/game/       gracz (FPS), siatka kolizji 0,5 m, strumieniowanie, HUD
 ```
