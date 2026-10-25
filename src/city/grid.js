@@ -21,7 +21,7 @@ export const LEVEL0 = 3.8, LEVEL = 3.2;
 export const levelY = (L) => (L <= 0 ? 0 : LEVEL0 + (L - 1) * LEVEL);
 
 export const T_STREET = 0, T_BLD = 1, T_COURT = 2, T_PARK = 3, T_PLAZA = 4, T_GARDEN = 5, T_RAIL = 6, T_BEACH = 7, T_WATER = 8;
-export const Z_HOUSES = 0, Z_TENEMENT = 1, Z_MINISTRY = 2;
+export const Z_HOUSES = 0, Z_TENEMENT = 1, Z_MINISTRY = 2, Z_NATURE = 3; // Z_MINISTRY = ratusz na rynku
 
 export function makeQuadGrid(seed, half, s = 10.5) {
   const rng = new Rng(hash(seed, 31337));
@@ -166,7 +166,7 @@ function bucketize(items, size, bbox) {
 
 export function buildingInfo(seed, bid, zone) {
   const r = new Rng(hash(seed, bid, 717));
-  if (zone === Z_MINISTRY) return { zone, style: 'modern', tint: [0.9, 0.9, 0.87], wallMat: 'stone', roofTint: [0.5, 0.5, 0.5], ce: 0.6, garden: false, r };
+  if (zone === Z_MINISTRY) return { zone, style: 'ornate', tint: [0.86, 0.74, 0.56], wallMat: 'plaster', groundMat: 'stone', roofTint: [0.32, 0.5, 0.42], frameTint: [0.92, 0.9, 0.85], doorTint: [0.36, 0.24, 0.14], ce: 0.7, garden: false, variant: 0, r };
   if (zone === Z_TENEMENT) {
     const style = r.weighted([['classic', 4], ['ornate', 3], ['plain', 3], ['brick', 2], ['modern', 0.6]]);
     const base = r.pick(GRIM);
@@ -242,13 +242,15 @@ export function classifyGrid(city) {
     const kind = ns ? ns.kind : 'houses';
     if (kind === 'plaza') {
       const dc = Math.max(Math.abs(x - T.plaza.x), Math.abs(z - T.plaza.z));
-      if (dc < tiers[0]) {
+      // ratusz z wieżą na środku rynku
+      if (dc < tiers[0] * 0.32) {
         TY[v] = T_BLD; ZN[v] = Z_MINISTRY; BID[v] = -1;
-        H[v] = dc < tiers[3] ? 28 : dc < tiers[2] ? 21 : dc < tiers[1] ? 14 : 7;
+        H[v] = dc < 5.5 ? 11 : 3;
       } else TY[v] = T_PLAZA;
       continue;
     }
     if (kind === 'park') { TY[v] = T_PARK; continue; }
+    if (kind === 'nature') { TY[v] = T_PARK; ZN[v] = Z_NATURE; continue; }
     const zone = kind === 'tenement' ? Z_TENEMENT : Z_HOUSES;
     ZN[v] = zone;
     if (clear > (zone === Z_TENEMENT ? 14 : 10)) { TY[v] = T_COURT; continue; }
@@ -332,19 +334,14 @@ export function wallPlan(city, a, b, q, side, L) {
   const g = city.grid, h = hash(city.seed, a, b, q * 2 + side, L) / 4294967296;
   const zone = g.ZN[a];
   const facesStreet = g.TY[b] === T_STREET || g.TY[b] === T_PLAZA || (g.TY[b] === T_BLD && L === 0);
-  if (zone === Z_MINISTRY) {
-    if (L === 0) return { mod: h < 0.3 ? 'door' : 'wall', screen: h > 0.9 };
-    return { mod: 'modern' };
-  }
+  if (zone === Z_MINISTRY) return L === 0 ? { mod: h < 0.25 ? 'door' : 'window' } : { mod: null };
   if (L === 0) {
     const info = buildingInfo(city.seed, g.BID[a], zone);
     if (zone === Z_TENEMENT) {
-      if (facesStreet && h < 0.025) return { mod: 'rustic', screen: true };
       if (facesStreet && info.shops && h < 0.55) return { mod: 'shop' };
       if (h < 0.7) return { mod: h < 0.66 && facesStreet ? 'door' : 'window' };
-      return { mod: h < 0.85 ? 'window' : 'rustic', poster: h > 0.93 };
+      return { mod: h < 0.85 ? 'window' : 'rustic', poster: h > 0.9 };
     }
-    if (facesStreet && h < 0.006) return { mod: 'wall', screen: true };
     if (h < 0.22) return { mod: 'door' };
     if (info.shops && facesStreet && h < 0.5) return { mod: 'shop' };
     return { mod: h > 0.94 ? 'wall' : 'window', poster: h > 0.94 };
@@ -396,7 +393,7 @@ export function decorate(city) {
         else if (hq < 0.135) props.push({ kind: 'booth', p: pm, n, e });
         else if (hq < 0.15) props.push({ kind: 'kiosk', p: pm, n, e });
         else if (hq < 0.162) props.push({ kind: 'busstop', p: pm, n, e });
-      } else if (TY[a] === T_STREET && hq < 0.035 && !T.inRiver(X[a], Z[a], 4)) {
+      } else if (TY[a] === T_STREET && hq < 0.012 && !T.inRiver(X[a], Z[a], 4)) {
         // zaparkowane auto wzdłuż ulicy
         const dir = streetDir(X[a], Z[a]);
         const p = [(X[a] + G.c[0]) / 2, (Z[a] + G.c[1]) / 2];
@@ -410,9 +407,17 @@ export function decorate(city) {
     const hv = hash(seed, v, 9) / 4294967296;
     const p = [X[v], Z[v]];
     if (city.monuments.some((m) => Math.hypot(m.p[0] - p[0], m.p[1] - p[1]) < 9)) continue;
-    const pTree = t === T_PARK ? 0.32 : t === T_GARDEN ? 0.45 : t === T_BEACH ? 0.03 : g.ZN[v] === Z_HOUSES ? 0.14 : 0.07;
-    if (hv < pTree) trees.push({ p, s: 0.75 + (hash(seed, v, 10) / 4294967296) * 0.55, pine: t === T_BEACH });
-    else if ((t === T_PARK || t === T_BEACH) && hv < pTree + 0.05) {
+    const wild = t === T_PARK && g.ZN[v] === Z_NATURE;
+    const pTree = wild ? 0.42 : t === T_PARK ? 0.32 : t === T_GARDEN ? 0.45 : t === T_BEACH ? 0.04 : g.ZN[v] === Z_HOUSES ? 0.14 : 0.07;
+    if (hv < pTree) {
+      const sp = hash(seed, v, 13) / 4294967296;
+      const species = t === T_BEACH || (wild && sp < 0.45) ? 'pine' : sp < 0.6 ? 'oak' : sp < 0.8 ? 'birch' : 'poplar';
+      trees.push({ p: [p[0] + ((hash(seed, v, 14) & 255) / 255 - 0.5) * 2, p[1] + (((hash(seed, v, 14) >> 8) & 255) / 255 - 0.5) * 2], s: 0.75 + (hash(seed, v, 10) / 4294967296) * 0.55, species, seed: hash(seed, v, 15) });
+      continue;
+    }
+    if ((t !== T_BEACH) && hv < pTree + 0.12) { props.push({ kind: 'bush', p, s: 0.6 + (hash(seed, v, 16) / 4294967296) * 0.8, n: [0, 1], e: [1, 0] }); continue; }
+    if (wild) continue;
+    if ((t === T_PARK || t === T_BEACH) && hv < pTree + 0.17) {
       const ang = (hash(seed, v, 12) / 4294967296) * Math.PI * 2;
       benches.push({ p, e: [Math.cos(ang), Math.sin(ang)], n: [-Math.sin(ang), Math.cos(ang)] });
     }

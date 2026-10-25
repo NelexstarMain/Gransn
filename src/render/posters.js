@@ -1,4 +1,4 @@
-// Atlas plakatów (Wielki Brat, hasła Partii, szyldy) i animowany teleekran.
+// Atlas plakatów, reklam i szyldów.
 import * as THREE from 'three';
 import { ATLAS, ATLAS_SIZE, SLOGANS, PHOTOS } from '../gen/atlas.js';
 import { mulberry32 } from '../core/rng.js';
@@ -31,103 +31,6 @@ function fitText(ctx, text, maxW, size, font = 'Impact, "Arial Black", sans-seri
   } while (ctx.measureText(text).width > maxW && s > 8);
 }
 
-// Twarz Wielkiego Brata — rysowana proceduralnie (fikcyjna postać).
-function drawFace(ctx, cx, cy, o = {}) {
-  const skin = o.skin || '#b08a6a';
-  ctx.fillStyle = skin;
-  ctx.fillRect(cx - 55, cy + 90, 110, 90);
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, 128, 165, 0, 0, Math.PI * 2);
-  ctx.fill();
-  const sh = ctx.createLinearGradient(cx - 130, 0, cx + 130, 0);
-  sh.addColorStop(0, 'rgba(40,25,15,0.45)');
-  sh.addColorStop(0.45, 'rgba(0,0,0,0)');
-  sh.addColorStop(1, 'rgba(40,25,15,0.3)');
-  ctx.fillStyle = sh;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, 128, 165, 0, 0, Math.PI * 2);
-  ctx.fill();
-  const hair = o.grey ? '#3a3632' : '#16120f';
-  if (o.cap) {
-    // czapka oficerska
-    ctx.fillStyle = '#2b3326';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy - 128, 175, 62, 0, Math.PI, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(cx - 175, cy - 130, 350, 26);
-    ctx.fillStyle = '#7d1a14';
-    ctx.fillRect(cx - 140, cy - 108, 280, 22);
-    ctx.fillStyle = '#0d0d0b';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy - 82, 150, 26, 0, 0, Math.PI);
-    ctx.fill();
-    ctx.fillStyle = '#c9a43a';
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = -Math.PI / 2 + (i * Math.PI) / 5, r = i % 2 ? 11 : 26;
-      ctx.lineTo(cx + Math.cos(a) * r, cy - 150 + Math.sin(a) * r);
-    }
-    ctx.fill();
-    ctx.fillStyle = hair;
-    ctx.fillRect(cx - 132, cy - 78, 18, 60);
-    ctx.fillRect(cx + 114, cy - 78, 18, 60);
-  } else {
-    ctx.fillStyle = hair;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy - 105, 138, 80, 0, Math.PI, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(cx - 138, cy - 110, 22, 90);
-    ctx.fillRect(cx + 116, cy - 110, 22, 90);
-  }
-  ctx.lineWidth = 16;
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = o.grey ? '#2a2724' : '#120e0b';
-  for (const s of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(cx + s * 22, cy - 42 + (o.stern ? 6 : 0));
-    ctx.lineTo(cx + s * 88, cy - 50 - (o.stern ? 4 : 0));
-    ctx.stroke();
-  }
-  for (const s of [-1, 1]) {
-    ctx.fillStyle = '#e8e0d0';
-    ctx.beginPath();
-    ctx.ellipse(cx + s * 55, cy - 16, 26, o.stern ? 10 : 13, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#1a1410';
-    ctx.beginPath();
-    ctx.arc(cx + s * 55, cy - 16, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.beginPath();
-    ctx.arc(cx + s * 55 + 4, cy - 19, 3, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  if (o.grey) {
-    ctx.strokeStyle = 'rgba(60,35,20,0.35)';
-    ctx.lineWidth = 3;
-    for (const s of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(cx + s * 40, cy + 30); ctx.quadraticCurveTo(cx + s * 70, cy + 70, cx + s * 62, cy + 110);
-      ctx.stroke();
-    }
-  }
-  ctx.strokeStyle = 'rgba(60,35,20,0.6)';
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.moveTo(cx + 6, cy - 10); ctx.lineTo(cx + 14, cy + 40); ctx.lineTo(cx - 10, cy + 46);
-  ctx.stroke();
-  ctx.fillStyle = o.grey ? '#2e2a26' : '#100c0a';
-  ctx.beginPath();
-  ctx.moveTo(cx, cy + 52);
-  ctx.bezierCurveTo(cx + 40, cy + 40, cx + 95, cy + 55, cx + 100, cy + 92);
-  ctx.bezierCurveTo(cx + 70, cy + 80, cx + 30, cy + 82, cx, cy + 76);
-  ctx.bezierCurveTo(cx - 30, cy + 82, cx - 70, cy + 80, cx - 100, cy + 92);
-  ctx.bezierCurveTo(cx - 95, cy + 55, cx - 40, cy + 40, cx, cy + 52);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(70,30,20,0.7)';
-  ctx.fillRect(cx - 30, cy + 98, 60, 6);
-}
-
 function posterFrame(ctx, w, h, paper, inner) {
   ctx.fillStyle = paper;
   ctx.fillRect(0, 0, w, h);
@@ -148,117 +51,52 @@ function posterText(ctx, w, h, top, bottom, band, fg = '#efe8d4') {
   ctx.fillText(bottom, w / 2, h - 83);
 }
 
-function uniform(ctx, w, h, cx, cy, color) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(40, h - 160); ctx.quadraticCurveTo(cx, cy + 120, w - 40, h - 160); ctx.lineTo(w - 16, h - 160); ctx.lineTo(16, h - 160);
-  ctx.fill();
-  ctx.fillRect(16, h - 200, w - 32, 40);
-}
-
+// Plakaty miasteczka: kino, lemoniada, wakacje nad morzem, port
 const BB_VARIANTS = {
-  // klasyczny: "WIELKI BRAT PATRZY NA CIEBIE"
   bb0(ctx, w, h) {
-    posterFrame(ctx, w, h, '#d8ccb0', '#1c1c1c');
-    const g = ctx.createRadialGradient(w / 2, h * 0.42, 20, w / 2, h * 0.42, w * 0.7);
-    g.addColorStop(0, '#5a4b3c');
-    g.addColorStop(1, '#141210');
-    ctx.fillStyle = g;
-    ctx.fillRect(16, 140, w - 32, h - 300);
-    const cx = w / 2, cy = h * 0.46;
-    uniform(ctx, w, h, cx, cy, '#2d3128');
-    drawFace(ctx, cx, cy);
-    posterText(ctx, w, h, 'WIELKI BRAT', 'PATRZY NA CIEBIE', '#b8261d');
-  },
-  // w czapce oficerskiej, posiwiały — "CZUWA NAD TOBĄ"
-  bb1(ctx, w, h) {
-    posterFrame(ctx, w, h, '#cfc6ad', '#26302a');
-    const g = ctx.createLinearGradient(0, 140, 0, h - 160);
-    g.addColorStop(0, '#4f5f52');
-    g.addColorStop(1, '#1b221d');
-    ctx.fillStyle = g;
-    ctx.fillRect(16, 140, w - 32, h - 300);
-    const cx = w / 2, cy = h * 0.5;
-    uniform(ctx, w, h, cx, cy, '#3a4232');
-    ctx.fillStyle = '#c9a43a';
-    for (const s of [-1, 1]) ctx.fillRect(cx + s * 150 - 30, h - 215, 60, 14);
-    drawFace(ctx, cx, cy, { cap: true, grey: true, stern: true, skin: '#a8846a' });
-    posterText(ctx, w, h, 'WIELKI BRAT', 'CZUWA NAD TOBĄ', '#1a1a1a', '#d9c27a');
-  },
-  // wszechwidzące oko z promieniami — "WIDZI WSZYSTKO"
-  bb2(ctx, w, h) {
-    posterFrame(ctx, w, h, '#d6cdb5', '#111');
-    const cx = w / 2, cy = h * 0.47;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(16, 140, w - 32, h - 300);
-    ctx.clip();
-    for (let i = 0; i < 24; i++) {
-      const a0 = (i / 24) * Math.PI * 2, a1 = ((i + 0.5) / 24) * Math.PI * 2;
-      ctx.fillStyle = i % 2 ? '#8e1d16' : '#b8261d';
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + Math.cos(a0) * 900, cy + Math.sin(a0) * 900);
-      ctx.lineTo(cx + Math.cos(a1) * 900, cy + Math.sin(a1) * 900);
-      ctx.fill();
+    posterFrame(ctx, w, h, '#e8dcc0', '#1e2440');
+    for (let i = 0; i < 14; i++) {
+      ctx.fillStyle = `rgba(255,220,140,${0.05 + (i % 3) * 0.03})`;
+      ctx.beginPath(); ctx.moveTo(w / 2, h * 0.75); ctx.lineTo((i / 13) * w, 140); ctx.lineTo(((i + 0.5) / 13) * w, 140); ctx.fill();
     }
-    ctx.restore();
-    ctx.fillStyle = '#ece4d0';
-    ctx.beginPath();
-    ctx.moveTo(cx - 210, cy);
-    ctx.quadraticCurveTo(cx, cy - 190, cx + 210, cy);
-    ctx.quadraticCurveTo(cx, cy + 190, cx - 210, cy);
-    ctx.fill();
-    ctx.lineWidth = 14;
-    ctx.strokeStyle = '#111';
-    ctx.stroke();
-    ctx.fillStyle = '#3b4a3f';
-    ctx.beginPath();
-    ctx.arc(cx, cy, 78, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#050505';
-    ctx.beginPath();
-    ctx.arc(cx, cy, 38, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath();
-    ctx.arc(cx + 22, cy - 24, 12, 0, Math.PI * 2);
-    ctx.fill();
-    posterText(ctx, w, h, 'WIELKI BRAT', 'WIDZI WSZYSTKO', '#111');
+    ctx.fillStyle = '#e8c35a';
+    ctx.beginPath(); ctx.arc(w / 2, h * 0.45, 120, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1e2440';
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; ctx.beginPath(); ctx.arc(w / 2 + Math.cos(a) * 70, h * 0.45 + Math.sin(a) * 70, 26, 0, Math.PI * 2); ctx.fill(); }
+    posterText(ctx, w, h, 'KINO ODEON', 'DZIŚ PREMIERA', '#b83a2a');
   },
-  // konstruktywistyczny profil — "PROWADZI NAS"
+  bb1(ctx, w, h) {
+    posterFrame(ctx, w, h, '#f1e7c8', '#f7d84a');
+    for (let k = 0; k < 5; k++) {
+      const x = 90 + (k % 3) * 160, y = 260 + Math.floor(k / 3) * 230 + (k % 2) * 40;
+      ctx.fillStyle = '#e8b31a'; ctx.beginPath(); ctx.ellipse(x, y, 85, 62, 0.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff6b0'; ctx.beginPath(); ctx.ellipse(x - 15, y - 12, 40, 26, 0.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#3f8a3a';
+    ctx.beginPath(); ctx.ellipse(w * 0.7, 200, 60, 22, -0.6, 0, Math.PI * 2); ctx.fill();
+    posterText(ctx, w, h, 'LEMONIADA', 'ZIMNA · 2 ZŁ', '#2e6b2a');
+  },
+  bb2(ctx, w, h) {
+    posterFrame(ctx, w, h, '#e9e2cf', '#7cc0d8');
+    ctx.fillStyle = '#f5c542'; ctx.beginPath(); ctx.arc(w * 0.7, 260, 90, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = i % 2 ? '#2d7fa8' : '#3a95c0';
+      ctx.beginPath(); ctx.moveTo(16, 520 + i * 60);
+      for (let x = 16; x <= w - 16; x += 20) ctx.lineTo(x, 520 + i * 60 + Math.sin(x / 30 + i) * 12);
+      ctx.lineTo(w - 16, h - 160); ctx.lineTo(16, h - 160); ctx.fill();
+    }
+    ctx.fillStyle = '#f0f0f0'; ctx.beginPath(); ctx.moveTo(150, 500); ctx.lineTo(200, 330); ctx.lineTo(220, 500); ctx.fill();
+    posterText(ctx, w, h, 'WYSPA GRANSN', 'PLAŻA · MOLO', '#1f5f80');
+  },
   bb3(ctx, w, h) {
-    posterFrame(ctx, w, h, '#ddd2b6', '#b8261d');
-    ctx.fillStyle = '#e9e1cc';
-    ctx.beginPath();
-    ctx.moveTo(16, h * 0.62); ctx.lineTo(w - 16, h * 0.34); ctx.lineTo(w - 16, h * 0.44); ctx.lineTo(16, h * 0.72);
-    ctx.fill();
-    const cx = w * 0.46, cy = h * 0.45;
-    ctx.fillStyle = '#121110';
-    ctx.beginPath();
-    ctx.moveTo(cx - 120, cy + 260);
-    ctx.lineTo(cx - 140, cy - 60);
-    ctx.bezierCurveTo(cx - 150, cy - 200, cx + 40, cy - 230, cx + 95, cy - 120);
-    ctx.lineTo(cx + 110, cy - 40);
-    ctx.lineTo(cx + 150, cy + 10);
-    ctx.lineTo(cx + 118, cy + 22);
-    ctx.lineTo(cx + 128, cy + 48);
-    // wąs
-    ctx.lineTo(cx + 150, cy + 58);
-    ctx.lineTo(cx + 132, cy + 80);
-    ctx.lineTo(cx + 104, cy + 76);
-    ctx.lineTo(cx + 112, cy + 104);
-    ctx.lineTo(cx + 92, cy + 140);
-    ctx.lineTo(cx + 40, cy + 150);
-    ctx.lineTo(cx + 30, cy + 260);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillRect(16, cy + 240, w - 32, h - cy - 256 - 150);
-    ctx.fillStyle = '#b8261d';
-    ctx.beginPath();
-    ctx.arc(cx + 70, cy - 70, 9, 0, Math.PI * 2);
-    ctx.fill();
-    posterText(ctx, w, h, 'WIELKI BRAT', 'PROWADZI NAS', '#121110');
+    posterFrame(ctx, w, h, '#ddd2b6', '#c94f2b');
+    ctx.fillStyle = '#f2e6c8';
+    ctx.fillRect(w / 2 - 50, 300, 100, 420);
+    for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#c94f2b' : '#f2e6c8'; ctx.fillRect(w / 2 - 50 + i * 3, 380 + i * 80, 100 - i * 6, 40); }
+    ctx.fillStyle = '#ffe9a0';
+    ctx.beginPath(); ctx.moveTo(w / 2, 250); ctx.lineTo(w - 30, 170); ctx.lineTo(w - 30, 330); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.fillRect(w / 2 - 60, 260, 120, 40);
+    posterText(ctx, w, h, 'LATARNIA', 'ZWIEDZANIE 10–18', '#222');
   },
 };
 
@@ -294,7 +132,7 @@ function loadImage(src) {
 }
 
 // Plakat ze zdjęciem: kadr "cover", lekka sepia i ziarno, napisy Partii.
-function drawPhotoPoster(ctx, [x, y, w, h], img, bottom, seed) {
+function drawPhotoPoster(ctx, [x, y, w, h], img, top, bottom, seed) {
   ctx.save();
   ctx.translate(x, y);
   posterFrame(ctx, w, h, '#d8ccb0', '#1c1c1c');
@@ -316,8 +154,8 @@ function drawPhotoPoster(ctx, [x, y, w, h], img, bottom, seed) {
     ctx.fillRect(fx, fy, fw, fh);
     ctx.restore();
   }
-  posterText(ctx, w, h, 'WIELKI BRAT', bottom, '#b8261d');
-  weather(ctx, 0, 0, w, h, seed, 1.0);
+  posterText(ctx, w, h, top, bottom, '#e0a800', '#1a1a1a');
+  weather(ctx, 0, 0, w, h, seed, 0.6);
   ctx.restore();
 }
 
@@ -327,10 +165,10 @@ export async function createPosterAtlas() {
   const ctx = c.getContext('2d');
   ['bb0', 'bb1', 'bb2', 'bb3'].forEach((v, i) => drawBigBrother(ctx, ATLAS[v], v, 5 + i * 17));
   const base = import.meta.env?.BASE_URL ?? '/';
-  for (const [k, ph] of Object.entries(PHOTOS)) drawPhotoPoster(ctx, ATLAS[k], await loadImage(base + ph.src), ph.text, k.length * 31);
-  drawSlogan(ctx, ATLAS.war, SLOGANS.war, '#1b1b1b', '#e8e2d2');
-  drawSlogan(ctx, ATLAS.freedom, SLOGANS.freedom, '#a3221a', '#f0e9d6');
-  drawSlogan(ctx, ATLAS.ignorance, SLOGANS.ignorance, '#1b1b1b', '#e8e2d2');
+  for (const [k, ph] of Object.entries(PHOTOS)) drawPhotoPoster(ctx, ATLAS[k], await loadImage(base + ph.src), ph.top, ph.text, k.length * 31);
+  drawSlogan(ctx, ATLAS.war, SLOGANS.war, '#f2c200', '#1a1a1a');
+  drawSlogan(ctx, ATLAS.freedom, SLOGANS.freedom, '#1e2440', '#e8c35a');
+  drawSlogan(ctx, ATLAS.ignorance, SLOGANS.ignorance, '#5a3a24', '#f1e4cc');
   for (const k of ['milk', 'bread', 'gin', 'tobacco']) drawSlogan(ctx, ATLAS[k], SLOGANS[k], '#20231f', '#d9d2bc');
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -339,13 +177,7 @@ export async function createPosterAtlas() {
 }
 
 // ── teleekran ───────────────────────────────────────────────────────────────
-const NEWS = [
-  'MINIOBFITU: PRZYDZIAŁ CZEKOLADY ZWIĘKSZONY DO 20 GRAMÓW TYGODNIOWO',
-  'OCEANIA ZAWSZE BYŁA W STANIE WOJNY Z EURAZJĄ',
-  'PLAN TRZYLETNI WYKONANY W 117%',
-  'O GODZINIE 11:00 — DWIE MINUTY NIENAWIŚCI',
-  'MYŚLOZBRODNIA NIE POCIĄGA ZA SOBĄ ŚMIERCI. MYŚLOZBRODNIA JEST ŚMIERCIĄ',
-];
+const NEWS = ['GRANSN TAXI · 919', 'PROM NA STAŁY LĄD O 17:00', 'KINO ODEON: PREMIERA W SOBOTĘ', 'POGODA: SŁONECZNIE, 21°C'];
 
 export class Telescreen {
   constructor() {

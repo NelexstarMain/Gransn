@@ -1,15 +1,38 @@
-# 1984 — Pas Startowy Jeden
+# Gransn Taxi
 
-Open world 3D w przeglądarce (Three.js). Miasteczko ~1,26 × 1,26 km (≈1,6 km²) na wzgórzach, przecięte rzeką z kamiennymi mostami: śródmieście z kamienicami i podwórzami, przedmieścia z kolorowymi domkami, ogródkami i drzewami, parki z pomnikami, bulwary, latarnie, teleekrany i Ministerstwo Prawdy na placu.
+Gra 3D w przeglądarce (Three.js). Jeździsz taksówką po proceduralnie generowanej wyspie i zarabiasz na kursach: podjeżdżasz do pasażera w żółtym kółku, zatrzymujesz się obok i wieziesz go do zielonego celu. Opłata rośnie z odległością, a za szybki kurs jest napiwek.
 
-**Całość składa się z 29 modułów i nie używa żadnego pliku graficznego ani modelu 3D.** Tekstury są generowane szumem i diagramami Voronoi.
+Na wyspie (~1,3 km, losowy obrys z półwyspami) są:
+- śródmieście z kamienicami i rynek z ratuszem i fontannami,
+- przedmieścia z domkami i ogródkami, lasy i wydmy przy brzegu,
+- rzeka z mostami, kolej z dworcem i pociągiem, autostrada na estakadzie,
+- latarnia morska, molo, parki,
+- kioski, budki telefoniczne, przystanki i zaparkowane auta.
+
+Nie ma żadnych plików z modelami ani teksturami. Wszystko powstaje z ~40 modułów i szumu.
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
 ```
 
-Sterowanie: **WASD** chodzenie, **mysz** rozglądanie, **Shift** bieg, **Spacja** skok, **F** tryb lotu (Spacja/C góra/dół), **H** ukrycie HUD-u. Parametr `?seed=1234` generuje inne miasto.
+Sterowanie:
+- W/S — gaz i hamulec, A/D — skręt, Spacja — ręczny,
+- mysz — kamera, E — wysiądź/wsiądź,
+- pieszo: WASD, Shift bieg, F tryb lotu,
+- telefon: lewy kciuk jedzie, prawy obraca kamerę.
+
+Parametry adresu: `?seed=1234` generuje inną wyspę, `?low` lub `?high` wymusza jakość grafiki.
+
+## Sieć dróg: Parish & Müller (2001)
+
+`src/city/roads.js` implementuje rozszerzony L-system z pracy *Procedural Modeling of Cities* (Y. Parish, P. Müller, SIGGRAPH 2001):
+- Każdy odcinek drogi proponuje „idealnych następców”: przedłużenie i odgałęzienia pod ~90°.
+- **Cele globalne** poprawiają tę propozycję: główne drogi skręcają w stronę większej gęstości zaludnienia (mapa z szumu), a ulice odgałęziają się tylko tam, gdzie gęstość jest wystarczająca.
+- **Ograniczenia lokalne** pilnują sensowności: przecięcie z istniejącą drogą tworzy skrzyżowanie (odcinek zostaje przycięty), koniec blisko skrzyżowania zostaje do niego przyciągnięty, a koniec blisko drogi jest przedłużany do niej. Woda i brzeg odrzucają odcinek, a rzekę da się przekroczyć tylko mostem.
+- Kolejka priorytetowa po czasie daje wzrost miasta od rynku i mostów na zewnątrz.
+
+Strefy (śródmieście, przedmieście, park, las) wyznacza diagram Voronoi z relaksacją Lloyda.
 
 ## Metoda: nieregularna siatka + punkty + marching squares (jak w Townscaperze)
 
@@ -32,7 +55,9 @@ Efekt: organiczna siatka bez prostych linii, a jednak złożona z samych czworok
 
 **4. Każdy moduł jest zaprojektowany w idealnej kostce** i wciśnięty w ćwiartkę (`src/gen/cage.js`) interpolacją trójliniową 8 narożników. Ćwiartki to krzywe czworokąty, a każdy narożnik stoi na terenie na innej wysokości, więc ściany wychodzą pod różnymi kątami i nic nie jest sześcianem.
 
-**5. Szum zależy od pozycji w świecie** (`src/gen/builder.js`), więc sąsiednie moduły przesuwają się identycznie i nie robią się szczeliny. Szum odpowiada za:
+**5. Drzewa generuje rekurencja (L-system)**: pień, gałęzie i kępy liści. Są cztery gatunki (dąb, brzoza, topola, sosna), a każde drzewo ma własny seed.
+
+**6. Szum zależy od pozycji w świecie** (`src/gen/builder.js`), więc sąsiednie moduły przesuwają się identycznie i nie robią się szczeliny. Szum odpowiada za:
 - pochylenie ścian proporcjonalnie do wysokości,
 - nierówny tynk,
 - wybrzuszony bruk,
@@ -58,7 +83,7 @@ Efekt: organiczna siatka bez prostych linii, a jednak złożona z samych czworok
 | 27 | `monument` — obelisk na cokole | 28 | `eave` — okap domu |
 | 29 | `billboard` — billboard Partii | | |
 
-Wielki Brat ma dwa wizerunki ze zdjęć (`public/posters/`, najczęściej losowane, wielki portret na szczycie Ministerstwa i na pomnikach w parkach) oraz cztery proceduralne (`src/render/posters.js`): klasyczny („Patrzy na ciebie”), w czapce oficerskiej („Czuwa nad tobą”), wszechwidzące oko („Widzi wszystko”) i konstruktywistyczny profil („Prowadzi nas”). Plakaty losują wariant.
+Reklamy taksówek używają dwóch zdjęć z `public/posters/`. Są do tego cztery proceduralne plakaty (kino, lemoniada, wyspa, latarnia). (`src/render/posters.js`): klasyczny („Patrzy na ciebie”), w czapce oficerskiej („Czuwa nad tobą”), wszechwidzące oko („Widzi wszystko”) i konstruktywistyczny profil („Prowadzi nas”). Plakaty losują wariant.
 
 ## Architektura
 

@@ -3,7 +3,7 @@
 export const ATLAS_SIZE = 2048;
 
 export const ATLAS = {
-  // wizerunki Wielkiego Brata (512×1024)
+  // plakaty (512×1024)
   bb0: [0, 0, 512, 1024],
   bb1: [512, 0, 512, 1024],
   bb2: [1024, 0, 512, 1024],
@@ -19,18 +19,18 @@ export const ATLAS = {
   tobacco: [1536, 1920, 512, 128],
 };
 
-// zdjęcia mają większą wagę — to on jest Wielkim Bratem
-export const BIG_BROTHER = ['bb4', 'bb5', 'bb4', 'bb5', 'bb0', 'bb1', 'bb2', 'bb3'];
-export const PHOTOS = { bb4: { src: 'posters/brat1.jpg', text: 'PATRZY NA CIEBIE' }, bb5: { src: 'posters/brat2.jpg', text: 'KOCHA CIĘ' } };
+// plakaty i reklamy (zdjęcia = reklama taksówek, losowane najczęściej)
+export const POSTERS = ['bb4', 'bb5', 'bb4', 'bb5', 'bb0', 'bb1', 'bb2', 'bb3'];
+export const PHOTOS = { bb4: { src: 'posters/brat1.jpg', top: 'TAXI GRANSN', text: 'ZADZWOŃ: 919' }, bb5: { src: 'posters/brat2.jpg', top: 'TAXI GRANSN', text: 'JEDZIEMY!' } };
 
 export const SLOGANS = {
-  war: 'WOJNA TO POKÓJ',
-  freedom: 'WOLNOŚĆ TO NIEWOLA',
-  ignorance: 'IGNORANCJA TO SIŁA',
-  milk: 'MLECZARNIA Nr 7',
+  war: 'TAXI GRANSN · 919',
+  freedom: 'KINO ODEON',
+  ignorance: 'KAWIARNIA PORT',
+  milk: 'MLECZARNIA',
   bread: 'PIEKARNIA',
-  gin: 'DŻIN ZWYCIĘSTWO',
-  tobacco: 'PAPIEROSY ZWYCIĘSTWO',
+  gin: 'PRASA',
+  tobacco: 'APTEKA',
 };
 
 export const SHOP_SIGNS = ['milk', 'bread', 'gin', 'tobacco'];

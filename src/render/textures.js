@@ -220,6 +220,46 @@ export function createTextures() {
     return [(0.3 + dry * 0.22) * g, (0.45 + dry * 0.05) * g, (0.2 + dry * 0.02) * g, f * 0.7 + n * 0.3];
   }, 3);
 
+  // — kora: pionowe bruzdy + szum —
+  T.bark = bake(256, 256, (u, v) => {
+    const f = nA(u * 1.0, v * 0.25, 12, 4), g = nB(u, v, 64, 2);
+    const groove = Math.pow(Math.abs(Math.sin((u * 10 + f * 2.5) * Math.PI)), 0.6);
+    const c = 0.45 + groove * 0.35 + (g - 0.5) * 0.15;
+    return [c, c * 0.92, c * 0.85, groove * 0.8 + g * 0.2];
+  }, 4);
+  // — liście: kępki ciemniejszych i jaśniejszych listków (Voronoi) —
+  const lv = voronoi(14, 333);
+  T.leaf = bake(256, 256, (u, v) => {
+    const { d1, d2, id } = lv(u, v);
+    const e = smooth(0.0, 0.08, d2 - d1);
+    const c = 0.55 + id * 0.45 - (1 - e) * 0.35 + (1 - d1) * 0.1;
+    return [c * 0.95, c, c * 0.85, e * (1 - d1 * 0.8)];
+  }, 3);
+  // — piasek —
+  T.sand = bake(256, 256, (u, v) => {
+    const n = nA(u, v, 8, 4), f = nB(u, v, 128, 1), r = Math.sin((u * 6 + n * 2) * Math.PI * 2) * 0.5 + 0.5;
+    const c = 0.84 + (n - 0.5) * 0.12 + (f - 0.5) * 0.08;
+    return [c, c * 0.93, c * 0.78, r * 0.4 + f * 0.6];
+  }, 2);
+  // — żwir torowy —
+  const gv = voronoi(40, 911, 1);
+  T.gravel = bake(256, 256, (u, v) => {
+    const { d1, d2, id } = gv(u, v);
+    const e = smooth(0, 0.12, d2 - d1);
+    const c = (0.35 + id * 0.35) * (0.5 + 0.5 * e);
+    return [c, c * 0.95, c * 0.9, e * (1 - d1)];
+  }, 4);
+  // — asfalt z pasami (u = wzdłuż drogi, okres 12 m; v = w poprzek) —
+  T.asphalt = bake(256, 512, (u, v) => {
+    const n = nA(u, v, 16, 4), f = nB(u, v, 128, 1);
+    let c = 0.22 + (n - 0.5) * 0.06 + (f - 0.5) * 0.05;
+    const line = (x, w) => Math.abs(v - x) < w;
+    if (line(0.04, 0.008) || line(0.96, 0.008)) c = 0.85;
+    else if (line(0.5, 0.012) && !line(0.5, 0.004)) c = 0.8;
+    else if ((line(0.27, 0.007) || line(0.73, 0.007)) && (u % 1) < 0.35) c = 0.82;
+    return [c, c, c * 1.02, 0.5 + (f - 0.5) * 0.2];
+  }, 1, { aniso: 8 });
+
   // — falki na wodzie (tylko normal map) —
   T.water = bake(256, 256, (u, v) => {
     const h = nA(u, v, 8, 4) * 0.6 + nB(u, v, 16, 3) * 0.4;

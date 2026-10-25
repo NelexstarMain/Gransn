@@ -9,8 +9,9 @@
 //  5. Komórki Voronoi wyznaczają ulice i strefy (kamienice / domki / park /
 //     plac). Same budynki powstają na nieregularnej siatce czworokątów (grid.js).
 import { Rng, hash } from '../core/rng.js';
-import { makeQuadGrid, classifyGrid, decorate, makeChunks, levelY } from './grid.js';
+import { makeQuadGrid, classifyGrid, decorate, makeChunks } from './grid.js';
 import { makeRoutes } from './routes.js';
+import { growRoads } from './roads.js';
 import { Terrain } from './terrain.js';
 
 export const HALF = 700;
@@ -336,7 +337,6 @@ export function generateCity(seed = 1984) {
   };
 
   const blocks = [];
-  const streets = [];
   const seen = new Set();
   for (const cell of g.cells) {
     const poly = cell.ids.map((id) => [g.V[id].x, g.V[id].z]);
@@ -346,7 +346,6 @@ export function generateCity(seed = 1984) {
       const nx = cell.ids[(k + 1) % n], key = id < nx ? `${id}_${nx}` : `${nx}_${id}`;
       if (seen.has(key) || sp[k].bank) return;
       seen.add(key);
-      streets.push({ a: poly[k], b: poly[(k + 1) % n], w: sp[k].road + 2.4 });
     });
     const curb = offsetPoly(poly, sp.map((s) => s.road));
     const bline = offsetPoly(poly, sp.map((s) => s.road + s.walk));
@@ -360,6 +359,8 @@ export function generateCity(seed = 1984) {
     else if (!ok || rIn < 13 || polyArea(blk.bline) < 1400 || br.chance(0.1)) blk.kind = 'park';
     else if (br.chance(Math.max(0.12, Math.min(0.92, 1.3 - dC / 430))) && rIn > 22) blk.kind = 'tenement';
     else blk.kind = 'houses';
+    // dzika przyroda przy brzegu wyspy
+    if (blk.kind !== 'plaza' && terrain.inland(c[0], c[1]) < 150 && br.chance(0.75)) blk.kind = 'nature';
     cell.seed.kind = blk.kind;
     if (blk.kind === 'plaza') fillPlaza(blk, terrain);
     blocks.push(blk);
@@ -371,15 +372,14 @@ export function generateCity(seed = 1984) {
     .map((b, i) => ({ p: b.bc, kind: i % 2 ? 'fountain' : 'monument' }));
   const plaza = blocks.find((b) => b.kind === 'plaza');
   // billboardy z hasłami Partii wokół Ministerstwa + portret na szczycie
+  // słupy reklamowe wokół rynku
   const billboards = [];
   const hs0 = plaza.ministry.tiers[0], pc = [terrain.plaza.x, terrain.plaza.z];
-  ['war', 'freedom', 'ignorance', 'bb5'].forEach((name, i) => {
+  ['war', 'freedom', 'ignorance', 'bb4'].forEach((name, i) => {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4, d = [Math.cos(a), Math.sin(a)];
-    const r0 = hs0 * Math.SQRT2 + 12;
+    const r0 = hs0 * 0.9 + 16;
     billboards.push({ p: [pc[0] + d[0] * r0, pc[1] + d[1] * r0], n: [-d[0], -d[1]], e: [-d[1], d[0]], name, y: 0, size: name.startsWith('bb') ? [5, 10] : [12, 3] });
   });
-  const topY = 0.15 + levelY(28) + 0.6;
-  billboards.push({ p: pc, n: [0, 1], e: [1, 0], name: 'bb4', y: topY, size: [12, 24], noPosts: true });
 
   // start: na środku mostu najbliżej centrum, twarzą w stronę placu
   const b0 = bridges.reduce((a, b) => (Math.abs(b.p[0]) < Math.abs(a.p[0]) ? b : a), bridges[0]);
@@ -388,6 +388,7 @@ export function generateCity(seed = 1984) {
   const spawn = { x: b0.p[0] + b0.perp[0] * 2, z: b0.p[1] + b0.perp[1] * 2, yaw: Math.atan2(-b0.axis[0] * sgn, -b0.axis[1] * sgn) };
 
   const routes = makeRoutes(seed, terrain);
+  const streets = growRoads(seed, terrain, bridges, center);
   const extras = makeExtras(terrain, routes, rng);
   const city = { seed, blocks, terrain, bridges, spawn, streets, seedList: seeds, monuments, billboards, routes, extras, size: 2 * HALF, half: HALF };
   city.grid = makeQuadGrid(seed, HALF);

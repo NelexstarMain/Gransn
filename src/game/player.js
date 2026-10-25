@@ -26,7 +26,9 @@ export class Player {
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === dom; });
+    this.lookT = 0;
     const look = (dx, dy, k = 0.0022) => {
+      this.lookT = performance.now();
       this.yaw -= dx * k;
       this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * k));
     };

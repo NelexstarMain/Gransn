@@ -1,17 +1,16 @@
-// Pochmurne, zimne kwietniowe popołudnie: "Był jasny, zimny dzień kwietniowy
-// i zegary biły trzynastą." Mgła ogranicza widoczność — i zasięg LOD-ów.
+// Słoneczne popołudnie nad wyspą; lekka mgiełka ukrywa granicę LOD-ów.
 import * as THREE from 'three';
 
-export const FOG_COLOR = new THREE.Color(0x9da39f);
+export const FOG_COLOR = new THREE.Color(0xbcd0da);
 
 export function createAtmosphere(scene, renderer) {
   scene.background = FOG_COLOR.clone();
-  scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0042);
+  scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0026);
 
-  const hemi = new THREE.HemisphereLight(0xcfd6dc, 0x4b4740, 1.25);
+  const hemi = new THREE.HemisphereLight(0xdde9f2, 0x5a5444, 1.15);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff0dc, 1.7);
+  const sun = new THREE.DirectionalLight(0xfff0d6, 2.4);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
@@ -29,7 +28,7 @@ export function createAtmosphere(scene, renderer) {
       side: THREE.BackSide,
       depthWrite: false,
       fog: false,
-      uniforms: { top: { value: new THREE.Color(0x8d969c) }, horizon: { value: FOG_COLOR.clone() }, sunDir: { value: sunDir } },
+      uniforms: { top: { value: new THREE.Color(0x6f9cc4) }, horizon: { value: FOG_COLOR.clone() }, sunDir: { value: sunDir } },
       vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;
         void main(){ float h = clamp(vDir.y, 0.0, 1.0);

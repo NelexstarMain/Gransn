@@ -3,20 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>1984 — Pas Startowy Jeden</title>
+    <title>Gransn Taxi</title>
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #9da39f; font-family: 'Courier New', monospace; color: #e8e3d4; }
-      #app canvas { display: block; touch-action: none; filter: saturate(0.78) contrast(1.06); }
-      #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(10,12,10,0.45) 100%); }
-      #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(18, 20, 18, 0.82); cursor: pointer; text-align: center; }
-      #overlay h1 { font-size: 64px; letter-spacing: 0.3em; margin: 0 0 6px; color: #d8d1bd; }
-      #overlay h2 { font-weight: normal; letter-spacing: 0.25em; margin: 0 0 28px; color: #b8261d; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #bcd0da; font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; color: #fdf8ea; }
+      #app canvas { display: block; touch-action: none; }
+      #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 65%, rgba(10,12,10,0.25) 100%); }
+      #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(16, 28, 36, 0.8); padding: 0 16px; cursor: pointer; text-align: center; }
+      #overlay h1 { font-size: 64px; letter-spacing: 0.2em; margin: 0 0 6px; color: #fdf8ea; }
+      #overlay h2 { font-weight: normal; letter-spacing: 0.25em; margin: 0 0 28px; color: #f2c200; }
       #overlay .keys { line-height: 1.8; font-size: 14px; color: #bdb7a6; }
       #overlay .go { margin-top: 26px; font-size: 18px; letter-spacing: 0.2em; display: none; animation: pulse 1.6s infinite; }
       body.ready #overlay .go { display: block; }
-      body.ready #loader { display: none; }
-      #loader { width: 360px; margin-top: 10px; }
-      #track { height: 4px; background: #333; } #bar { height: 100%; width: 0; background: #b8261d; transition: width 0.2s; }
+      
+      #loader { width: min(360px, 80vw); margin-top: 10px; }
+      #track { height: 4px; background: #333; } #bar { height: 100%; width: 0; background: #f2c200; transition: width 0.2s; }
       #loadlabel { font-size: 13px; margin-top: 10px; color: #aaa; }
       @keyframes pulse { 50% { opacity: 0.4; } }
       #hud { position: fixed; inset: 0; pointer-events: none; }
@@ -24,7 +24,11 @@
       #minimap { position: absolute; right: 16px; top: 16px; width: 220px; height: 220px; border: 2px solid rgba(0,0,0,0.5); opacity: 0.85; }
       #clock { position: absolute; left: 16px; top: 14px; font-size: 15px; text-shadow: 0 1px 2px #000; letter-spacing: 0.08em; }
       #stats { position: absolute; left: 16px; bottom: 12px; font-size: 12px; opacity: 0.75; text-shadow: 0 1px 2px #000; }
-      #msg { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); background: rgba(20,30,25,0.8); border-left: 4px solid #b8261d; padding: 10px 18px; font-size: 18px; opacity: 0; transition: opacity 0.5s; }
+      #msg { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); max-width: 80vw; background: rgba(16,28,36,0.82); border-left: 4px solid #f2c200; padding: 10px 18px; font-size: 18px; opacity: 0; transition: opacity 0.5s; }
+      #taxi { position: absolute; left: 16px; top: 42px; background: rgba(16,28,36,0.72); border-left: 4px solid #f2c200; padding: 8px 12px; font-size: 15px; line-height: 1.5; text-shadow: 0 1px 2px #000; }
+      #taxi b { color: #f2c200; font-size: 20px; }
+      #speed { position: absolute; right: 16px; bottom: 14px; font-size: 26px; font-weight: bold; text-shadow: 0 2px 3px #000; }
+      #arrow { position: absolute; left: 50%; top: 14px; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 34px solid #f2c200; transform-origin: 50% 60%; filter: drop-shadow(0 2px 2px #000); display: none; }
       #cross { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: rgba(255,255,255,0.7); border-radius: 50%; }
     </style>
   </head>
@@ -37,16 +41,20 @@
       <div id="stats"></div>
       <div id="msg"></div>
       <div id="cross"></div>
+      <div id="taxi"></div>
+      <div id="arrow"></div>
+      <div id="speed"></div>
     </div>
     <div id="overlay">
-      <h1>1984</h1>
-      <h2>PAS STARTOWY JEDEN</h2>
+      <h1>GRANSN</h1>
+      <h2>TAXI · WYSPA</h2>
       <div class="keys">
-        WASD — chodzenie &nbsp;·&nbsp; Mysz — rozglądanie &nbsp;·&nbsp; Shift — bieg &nbsp;·&nbsp; Spacja — skok<br />
-        F — tryb lotu (Spacja/C góra/dół) &nbsp;·&nbsp; H — ukryj HUD &nbsp;·&nbsp; Esc / P — pauza<br />Bez przechwycenia myszy: przeciągaj, żeby się rozglądać · Telefon: lewy kciuk chodzi, prawy się rozgląda
+        Jeździsz taksówką po wyspie: podjedź do pasażera w żółtym kółku, zatrzymaj się, zawieź go do zielonego celu.<br />
+        W/S — gaz/hamulec &nbsp;·&nbsp; A/D — skręt &nbsp;·&nbsp; Spacja — ręczny &nbsp;·&nbsp; Mysz — kamera &nbsp;·&nbsp; E — wysiądź/wsiądź<br />
+        Pieszo: WASD, Shift bieg, F lot &nbsp;·&nbsp; H — ukryj HUD &nbsp;·&nbsp; Esc / P — pauza &nbsp;·&nbsp; Telefon: lewy kciuk jedzie, prawy obraca kamerę
       </div>
       <div id="loader"><div id="track"><div id="bar"></div></div><div id="loadlabel">Ładowanie…</div></div>
-      <div class="go">[ KLIKNIJ / DOTKNIJ / ENTER, ABY WEJŚĆ ]</div>
+      <div class="go">[ KLIKNIJ / DOTKNIJ / ENTER, ABY JECHAĆ ]</div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

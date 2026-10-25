@@ -8,6 +8,8 @@ import { CollisionGrid } from './game/collision.js';
 import { Player } from './game/player.js';
 import { Streamer, buildMeshes } from './game/streaming.js';
 import { Hud } from './game/hud.js';
+import { Vehicle } from './game/vehicle.js';
+import { TaxiJob } from './game/taxi.js';
 
 const params = new URLSearchParams(location.search);
 const SEED = Number(params.get('seed')) || 1984;
@@ -39,7 +41,7 @@ addEventListener('resize', () => {
 });
 
 async function start() {
-  setProgress(0.02, 'Ministerstwo Prawdy planuje miasto…');
+  setProgress(0.02, 'Wyspa wyłania się z morza…');
   await new Promise((r) => setTimeout(r, 30));
   const city = generateCity(SEED);
   const grid = new CollisionGrid(city);
@@ -93,7 +95,7 @@ async function start() {
   const total = pool.busy;
   const progressTimer = setInterval(() => {
     const left = pool.busy;
-    setProgress(1 - left / Math.max(1, total), left ? `Budowanie miasta… (${left} zadań, możesz już wejść)` : 'Gotowe. Wielki Brat patrzy.');
+    setProgress(1 - left / Math.max(1, total), left ? `Budowanie miasta… (${left} zadań, możesz już wejść)` : 'Gotowe. Klienci czekają!');
     if (!left) clearInterval(progressTimer);
   }, 250);
 
@@ -123,26 +125,64 @@ async function start() {
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
   });
 
+  // taksówka — główna mechanika: jeździsz po wyspie i wozisz pasażerów
+  const car = new Vehicle(scene, grid, M);
+  car.active = true;
+  car.place(city.spawn.x, city.spawn.z, Math.atan2(-Math.cos(city.spawn.yaw), -Math.sin(city.spawn.yaw)));
+  const job = new TaxiJob(scene, city, M);
+  const carYaw = () => Math.atan2(-Math.cos(car.heading), -Math.sin(car.heading));
+  player.yaw = carYaw();
+  player.pitch = -0.12;
+  addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyE' || !playing) return;
+    if (car.active && Math.abs(car.v) < 3) {
+      car.active = false;
+      const [fx, fz] = car.fwd;
+      player.spawn(car.pos.x + fz * 2.4, car.pos.z - fx * 2.4, carYaw());
+      job.say('Wysiadłeś. Podejdź do taksówki i wciśnij E, żeby wsiąść.');
+    } else if (!car.active && Math.hypot(player.pos.x - car.pos.x, player.pos.z - car.pos.z) < 5) {
+      car.active = true;
+      player.fly = false;
+    }
+  });
+  job.say('W/S gaz i hamulec, A/D skręt. Zatrzymaj się przy pasażerze w żółtym kółku.', 7);
+
   const clock = new THREE.Clock();
   let fpsAcc = 0, fpsN = 0, fps = 0, streamAcc = 0;
+  const tmp = new THREE.Vector3();
   function frame() {
     const dt = Math.min(0.05, clock.getDelta());
-    player.update(dt);
+    if (car.active) {
+      if (playing) car.update(dt, player.keys, player.touchMove);
+      // kamera zza auta; mysz obraca, po chwili wraca za taksówkę
+      if (performance.now() - player.lookT > 1500) {
+        let d = carYaw() - player.yaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        player.yaw += d * Math.min(1, dt * 2.5);
+        player.pitch += (-0.12 - player.pitch) * Math.min(1, dt * 2);
+      }
+      const cp = Math.cos(player.pitch), dist = 7.5;
+      tmp.set(car.pos.x + Math.sin(player.yaw) * cp * dist, car.pos.y + 1.6 - Math.sin(player.pitch) * dist, car.pos.z + Math.cos(player.yaw) * cp * dist);
+      tmp.y = Math.max(tmp.y, grid.height(tmp.x, tmp.z) + 0.8);
+      camera.position.lerp(tmp, Math.min(1, dt * 8));
+      camera.lookAt(car.pos.x, car.pos.y + 1.3, car.pos.z);
+    } else player.update(dt);
+    const active = car.active ? car.pos : player.pos;
+    job.update(dt, car, grid);
     streamAcc += dt;
-    if (streamAcc > 0.25) { streamAcc = 0; streamer.update(player.pos); }
+    if (streamAcc > 0.25) { streamAcc = 0; streamer.update(active); }
     atmo.update(camera.position);
     telescreen.update(dt);
     M.water.normalMap.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
-    M.screen.emissiveIntensity = 1.05 + Math.sin(clock.elapsedTime * 37) * 0.04 + (Math.random() < 0.01 ? -0.4 : 0);
     renderer.render(scene, camera);
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
     const info = `${fps.toFixed(0)} FPS · fragmenty: ${streamer.loaded}/${city.chunks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${renderer.info.render.calls}${player.fly ? ' · LOT' : ''}`;
-    hud.update(dt, player, info);
+    hud.update(dt, { pos: active, yaw: car.active ? carYaw() : player.yaw }, info, job, car, camera);
     if (!TEST) requestAnimationFrame(frame);
   }
   frame();
-  window.__game = { city, player, streamer, renderer, scene, camera, frame };
+  window.__game = { city, player, streamer, renderer, scene, camera, frame, car, job };
 }
 
 const showError = (msg) => {

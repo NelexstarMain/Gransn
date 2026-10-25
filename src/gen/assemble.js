@@ -6,10 +6,10 @@
 import { Builder } from './builder.js';
 import { Cage } from './cage.js';
 import { M } from './modules.js';
-import { SHOP_SIGNS, BIG_BROTHER } from './atlas.js';
+import { SHOP_SIGNS, POSTERS } from './atlas.js';
 import { Rng, hash } from '../core/rng.js';
 import { HALF } from '../city/layout.js';
-import { levelY, filled, quadGeom, quadMixed0, wallPlan, buildingInfo, ridgeH, T_BLD, T_COURT, T_PARK, T_PLAZA, T_GARDEN, Z_HOUSES } from '../city/grid.js';
+import { levelY, filled, quadGeom, quadMixed0, wallPlan, buildingInfo, ridgeH, T_BLD, T_COURT, T_PLAZA, T_STREET, T_WATER, T_BEACH, T_RAIL, Z_HOUSES } from '../city/grid.js';
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -43,12 +43,98 @@ function placeLamp(b, T, l) {
   place(b, 'lamp', cage4(T, null, boxPts(l.p, l.e, l.n, 1, 1), NONE, 0.15, 6.15), 1, 6, 1, { metalTint: [0.17, 0.22, 0.19] });
 }
 
+const LEAF_BY = { oak: [[0.34, 0.48, 0.22], [0.3, 0.42, 0.2], [0.42, 0.5, 0.24]], birch: [[0.5, 0.62, 0.3], [0.56, 0.6, 0.28]], poplar: [[0.3, 0.44, 0.24], [0.36, 0.46, 0.22]], pine: [[0.16, 0.3, 0.18], [0.2, 0.34, 0.2]] };
+
 function placeTree(b, T, t, r) {
-  const s = t.s, W = 5.2 * s, H = 8.5 * s;
-  const a = r.float(0, Math.PI * 2), e = [Math.cos(a), Math.sin(a)], n = [-e[1], e[0]];
-  const blobs = [[r.float(-0.05, 0.05), r.float(0.62, 0.72), 0, r.float(0.42, 0.52)]];
-  for (let i = 0; i < r.int(1, 3); i++) blobs.push([r.float(-0.25, 0.25), r.float(0.5, 0.66), r.float(-0.25, 0.25), r.float(0.28, 0.38)]);
-  place(b, 'tree', cage4(T, null, boxPts(t.p, e, n, W, W), NONE, 0, H), W, H, W, { leaf: r.pick(LEAVES), blobs });
+  const sp = t.species || 'oak';
+  const s = t.s, W = (sp === 'poplar' ? 4 : sp === 'pine' ? 5 : 7) * s, H = (sp === 'poplar' ? 14 : sp === 'pine' ? 12 : 9) * s;
+  const rr = new Rng(t.seed || 1);
+  const a = rr.float(0, Math.PI * 2), e = [Math.cos(a), Math.sin(a)], n = [-e[1], e[0]];
+  place(b, 'tree', cage4(T, null, boxPts(t.p, e, n, W, W), NONE, 0, H), W, H, W, { species: sp, seed: t.seed, leaf: rr.pick(LEAF_BY[sp]) });
+}
+
+const CAR_COLORS = [[0.12, 0.13, 0.15], [0.55, 0.12, 0.1], [0.2, 0.32, 0.24], [0.82, 0.8, 0.72], [0.25, 0.35, 0.55], [0.6, 0.6, 0.62], [0.45, 0.32, 0.2]];
+const PROP_SIZE = { car: [4.3, 1.6, 1.8], kiosk: [2.4, 3.2, 2.0], booth: [1.0, 2.5, 1.0], busstop: [3.2, 3.1, 1.4], bin: [0.7, 1, 0.7] };
+
+function placeProp(b, T, pr, seed) {
+  const r = new Rng(hash(seed, Math.round(pr.p[0] * 10), Math.round(pr.p[1] * 10)));
+  if (pr.kind === 'bush') {
+    const s = pr.s;
+    place(b, 'bush', cage4(T, null, boxPts(pr.p, [1, 0], [0, 1], 2.2 * s, 2.2 * s), NONE, -0.1, 1.6 * s), 2.2 * s, 1.7 * s, 2.2 * s, { leaf: r.pick(LEAF_BY.oak), flowers: r.chance(0.3) ? r.pick([[0.9, 0.2, 0.3], [0.95, 0.85, 0.3], [0.8, 0.5, 0.9]]) : null });
+    return;
+  }
+  const [W, H, D] = PROP_SIZE[pr.kind];
+  const y0 = pr.kind === 'car' ? 0 : 0.15;
+  const p = pr.kind === 'car' ? { color: r.pick(CAR_COLORS) } : pr.kind === 'kiosk' ? { sign: r.pick(['gin', 'milk', 'bread', 'tobacco']), color: r.pick([[0.3, 0.45, 0.35], [0.55, 0.2, 0.15], [0.25, 0.35, 0.5]]) } : {};
+  place(b, pr.kind, cage4(T, null, boxPts(pr.p, pr.e, pr.n, W, D), NONE, y0, y0 + H), W, H, D, p);
+}
+
+// cage z wysokościami w 4 narożnikach (trasy: tory, estakada)
+function cageY(pts, ys, h) {
+  const c = (i, dy) => [pts[i][0], ys[i] + dy, pts[i][1]];
+  return new Cage([c(0, 0), c(1, 0), c(0, h), c(1, h), c(2, 0), c(3, 0), c(2, h), c(3, h)]);
+}
+
+function routeNormal(P, i) {
+  const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+  const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
+  return [-dz / l, dx / l];
+}
+
+function buildRoute(b, city, kind, i) {
+  const T = city.terrain, R = city.routes[kind], P = R.pts;
+  const a = P[i], c = P[i + 1], na = routeNormal(P, i), nc = routeNormal(P, i + 1), hw = kind === 'rail' ? 2.5 : R.width / 2;
+  const pts = [[a[0] - na[0] * hw, a[1] - na[1] * hw], [c[0] - nc[0] * hw, c[1] - nc[1] * hw], [a[0] + na[0] * hw, a[1] + na[1] * hw], [c[0] + nc[0] * hw, c[1] + nc[1] * hw]];
+  const W = Math.hypot(c[0] - a[0], c[1] - a[1]);
+  if (kind === 'rail') {
+    const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+    const bridge = T.river(mid[0], mid[1]).d < T.hw + 3;
+    if (T.inland(mid[0], mid[1]) < 2) return;
+    place(b, 'rail', cageY(pts, [R.y[i], R.y[i + 1], R.y[i], R.y[i + 1]], 1), W, 1, 2 * hw, { bridge, pier: bridge && i % 3 === 0 });
+  } else {
+    let s0 = 0;
+    for (let k = 0; k < i; k++) s0 += Math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]);
+    const ya = R.y[i] - 1.4, yc = R.y[i + 1] - 1.4;
+    const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+    const ground = Math.max(T.height(mid[0], mid[1]), T.seaY - 5);
+    place(b, 'viaduct', cageY(pts, [ya, yc, ya, yc], 1.4), W, 1.4, 2 * hw, { s0, pillar: i % 4 === 0, drop: (ya + yc) / 2 - ground });
+  }
+}
+
+function buildExtra(b, city, ex) {
+  const T = city.terrain;
+  if (ex.kind === 'lighthouse') {
+    place(b, 'lighthouse', cage4(T, null, boxPts(ex.p, [1, 0], [0, 1], 8, 8), NONE, -1, 30), 8, 31, 8, {});
+  } else if (ex.kind === 'pier') {
+    const n = [-ex.e[1], ex.e[0]], end = [ex.p[0] + ex.e[0] * ex.len, ex.p[1] + ex.e[1] * ex.len];
+    const pts = [[ex.p[0] - n[0] * 2, ex.p[1] - n[1] * 2], [end[0] - n[0] * 2, end[1] - n[1] * 2], [ex.p[0] + n[0] * 2, ex.p[1] + n[1] * 2], [end[0] + n[0] * 2, end[1] + n[1] * 2]];
+    place(b, 'pier', Cage.quad(pts[0], pts[1], pts[2], pts[3], T.seaY - 4, T.seaY + 2.2), ex.len, 6.2, 4, {});
+  } else if (ex.kind === 'station') {
+    // peron wzdłuż toru + pociąg (lokomotywa i 3 wagony)
+    const P = (along, side) => [ex.p[0] + ex.e[0] * along + ex.n[0] * side, ex.p[1] + ex.e[1] * along + ex.n[1] * side];
+    const y = ex.y;
+    b.cell(Cage.quad(P(-35, 3.2), P(35, 3.2), P(-35, 7.2), P(35, 7.2), y, y + 1), 70, 1, 4);
+    b.box('stone', 0, 0, 0, 70, 0.95, 4, 'xXyYzZ', { tint: [0.7, 0.69, 0.66] });
+    for (let x = 10; x <= 60; x += 10) b.box('metal', x - 0.1, 0.95, 2.9, x + 0.1, 4, 3.1, 'xXzZ', { tint: [0.25, 0.3, 0.28] });
+    b.box('roof', 5, 4, 0.5, 65, 4.25, 4.2, 'xXyYzZ', { tint: [0.4, 0.42, 0.44] });
+    const colors = [[0.25, 0.32, 0.5], [0.55, 0.15, 0.12], [0.55, 0.15, 0.12], [0.55, 0.15, 0.12]];
+    for (let k = 0; k < 4; k++) {
+      const x0 = -32 + k * 15.5, L = 14.5;
+      b.cell(Cage.quad(P(x0, -1.5), P(x0 + L, -1.5), P(x0, 1.5), P(x0 + L, 1.5), y + 0.66, y + 4.6), L, 3.94, 3);
+      const po = { tint: colors[k] };
+      b.box('paint', 0.3, 0.6, 0.05, L - 0.3, 3.2, 2.95, 'xXyYzZ', po);
+      b.poly('paint', [[0.3, 3.2, 0.05], [L - 0.3, 3.2, 0.05], [L - 0.3, 3.7, 1.5], [0.3, 3.7, 1.5]], [0, 1, -1], { tint: [0.3, 0.3, 0.32] });
+      b.poly('paint', [[L - 0.3, 3.2, 2.95], [0.3, 3.2, 2.95], [0.3, 3.7, 1.5], [L - 0.3, 3.7, 1.5]], [0, 1, 1], { tint: [0.3, 0.3, 0.32] });
+      const wins = k === 0 ? 2 : 7;
+      for (let w = 0; w < wins; w++) {
+        const xa = 1 + w * ((L - 2) / wins), xb = xa + (L - 2) / wins - 0.4;
+        b.rect('glass', xa, 1.8, xb, 2.8, 0.04, { tint: [0.3, 0.35, 0.38] });
+        b.rectBack('glass', xa, 1.8, xb, 2.8, 2.96, { tint: [0.3, 0.35, 0.38] });
+      }
+      for (const x of [2, L - 2]) for (const z of [0.1, 2.9]) b.tube('dark', [x, 0.45, z - 0.1], [x, 0.45, z + 0.1], 0.45, 0.45, 10, { tint: [0.1, 0.1, 0.1], caps: 1 });
+      if (k === 0) b.box('light', L - 0.31, 1.0, 1.1, L - 0.28, 1.5, 1.9, 'X');
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +152,14 @@ export function buildChunk(city, id) {
   for (const t of ch.trees) placeTree(b, T, t, r);
   for (const l of ch.lamps) placeLamp(b, T, l);
   for (const be of ch.benches) place(b, 'bench', cage4(T, null, boxPts(be.p, be.e, be.n, 1.8, 0.6), NONE, 0.05, 1.05), 1.8, 1, 0.6, {});
-  for (const m of ch.monuments) place(b, 'monument', cage4(T, null, boxPts(m.p, [1, 0], [0, 1], 4, 4), NONE, 0, 13), 4, 13, 4, { poster: 'bb4' });
+  for (const m of ch.monuments) {
+    if (m.kind === 'fountain') place(b, 'fountain', cage4(T, null, boxPts(m.p, [1, 0], [0, 1], 9, 9), NONE, 0.05, 4.05), 9, 4, 9, {});
+    else place(b, 'monument', cage4(T, null, boxPts(m.p, [1, 0], [0, 1], 4, 4), NONE, 0, 13), 4, 13, 4, { poster: 'bb4' });
+  }
+  for (const pr of ch.props) placeProp(b, T, pr, city.seed);
+  for (const i of ch.rail) buildRoute(b, city, 'rail', i);
+  for (const i of ch.highway) buildRoute(b, city, 'highway', i);
+  for (const ex of ch.extras) buildExtra(b, city, ex);
   for (const bb of ch.billboards) {
     const [w, h] = bb.size, H = bb.noPosts ? h + 0.6 : h + 3.2;
     const pts = boxPts(bb.p, bb.e, bb.n, w, 0.6);
@@ -142,14 +235,14 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
   let mod;
   if (W < 1.25) mod = 'wall';
   else if (L === 0) { mod = plan.mod; p.ground = true; }
-  else if (info.zone === 2) mod = 'modern';
+  else if (info.zone === 2) mod = 'ornate';
   else if (plan.balcony && !house) mod = 'balcony';
   else mod = info.style === 'ornate' ? 'ornate' : info.style === 'modern' ? 'modern' : 'window';
   if (mod === 'shop' && W < 2.4) mod = 'window';
   if (mod === 'door' && W < 1.8) mod = 'wall';
   place(b, mod, cage, W, H, D, p);
   if (L === 0 && plan.screen) place(b, 'telescreen', cage, W, H, D, p);
-  if (L === 0 && plan.poster) place(b, 'poster', cage, W, H, D, { name: BIG_BROTHER[hh % BIG_BROTHER.length], y: 0.9, w: Math.min(W * 0.6, 1.2) });
+  if (L === 0 && plan.poster) place(b, 'poster', cage, W, H, D, { name: POSTERS[hh % POSTERS.length], y: 0.9, w: Math.min(W * 0.6, 1.2) });
   // gzyms nad parterem kamienicy
   if (L === 1 && info.zone === 1 && !filled(g, nb, 0)) place(b, 'string', cage4(T, null, pts, NONE, y0, y0 + 0.32), W, 0.32, D, p);
   // okap / gzyms wieńczący
@@ -157,7 +250,7 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
     const ce = info.ce;
     const cg = cage4(T, null, pts, NONE, y1, y1 + ce);
     if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint });
-    else place(b, 'cornice', cg, W, ce, D, { style: info.zone === 2 ? 'modern' : info.style, consoles: info.style === 'ornate', mat: info.zone === 2 ? 'stone' : undefined });
+    else place(b, 'cornice', cg, W, ce, D, { style: info.style, consoles: info.style === 'ornate' });
   }
 }
 
@@ -166,7 +259,7 @@ function roofQuarter(b, city, info, G, i, top) {
   const g = city.grid, T = city.terrain, V = G.v;
   const a = V[i];
   const base = levelY(top) + info.ce;
-  const flat = info.zone === 2;
+  const flat = false;
   const lower = (v) => g.TY[v] !== T_BLD || g.H[v] < top;
   const Hr = (p, eave) => (flat || eave ? 0 : ridgeH(p[0], p[1]));
   const pv = G.p[i], pA = G.m[i], pB = G.m[(i + 3) % 4], pc = G.c;
@@ -187,7 +280,7 @@ function roofQuarter(b, city, info, G, i, top) {
 // nawierzchnia ćwiartki pustego punktu: chodnik (z krawężnikiem), trawa, posadzka
 function groundQuarter(b, city, G, i, q) {
   const g = city.grid, T = city.terrain, a = G.v[i], ty = g.TY[a];
-  if (T.river(G.p[i][0], G.p[i][1]).d < T.hw + 1) return;
+  if (T.river(G.p[i][0], G.p[i][1]).d < T.hw + 1 || ty === T_WATER || ty === T_BEACH || ty === T_RAIL) return;
   const pts = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
   const W = dist(pts[0], pts[1]), D = dist(pts[0], pts[2]);
   const mixed = quadMixed0(g, q);
@@ -208,8 +301,13 @@ function groundQuarter(b, city, G, i, q) {
     }
     return;
   }
-  if (ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES)) place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat: 'grass', step: 3, o: { drape: 0.05 } });
-  else if (ty === T_COURT) place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat: 'cobble', step: 3, o: { drape: 0.04 } });
+  if (ty === T_COURT && g.ZN[a] !== Z_HOUSES) place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat: 'cobble', step: 3, o: { drape: 0.04 } });
+  else if (ty === T_STREET) {
+    // jezdnia: bruk tylko na ćwiartkach ulic, przycięty do brzegu rzeki
+    const cl = pts.map((p) => { const c = T.clampToBank(p[0], p[1]); return c ? [c[0], c[1]] : p; });
+    if (dist(cl[0], cl[1]) < 0.05 && dist(cl[0], cl[2]) < 0.05) return;
+    place(b, 'cobble', cage4(T, null, cl, NONE, 0, 1), W, 1, D, { mat: 'cobble', step: 3, o: { drape: 0.03 } });
+  }
 }
 
 // ── rzeka: nabrzeża i mosty (jeden stały fragment świata) ───────────────────
@@ -263,7 +361,11 @@ export function buildChunkLOD(city, id) {
       const a = V[i];
       if (g.TY[a] !== T_BLD) {
         const ty = g.TY[a];
-        if (ty === T_PARK || ty === T_GARDEN) b.wpoly('grass', [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map((p) => [p[0], T.height(p[0], p[1]) + 0.05, p[1]]), [0, 1, 0], { flat: 1 });
+        if (ty === T_STREET || ty === T_PLAZA) {
+          const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]];
+          if (q4.some((p) => T.river(p[0], p[1]).d < T.hw + 0.5)) continue;
+          b.wpoly(ty === T_PLAZA ? 'slab' : 'cobble', q4.map((p) => [p[0], T.height(p[0], p[1]) + 0.04, p[1]]), [0, 1, 0], { flat: 1 });
+        }
         continue;
       }
       const info = buildingInfo(city.seed, g.BID[a], g.ZN[a]);
@@ -295,7 +397,7 @@ export function buildChunkLOD(city, id) {
 
 function roofQuarterLOD(b, city, info, G, i, top) {
   const g = city.grid, T = city.terrain, V = G.v;
-  const base = levelY(top) + info.ce, flat = info.zone === 2;
+  const base = levelY(top) + info.ce, flat = false;
   const lower = (v) => g.TY[v] !== T_BLD || g.H[v] < top;
   const Hr = (p, eave) => (flat || eave ? 0 : ridgeH(p[0], p[1]));
   const pts = [[G.p[i], false], [G.m[i], lower(V[(i + 1) % 4])], [G.c, V.some(lower)], [G.m[(i + 3) % 4], lower(V[(i + 3) % 4])]];
@@ -326,7 +428,11 @@ export function buildGroundTile(city, tx, tz) {
       // kafel z wierzchołkami rzuconymi na OBA brzegi zakryłby rzekę — pomijamy
       if (ids.some((k) => side[k] > 0) && ids.some((k) => side[k] < 0)) continue;
       if (ids.every((k) => side[k] !== 0)) continue;
-      b.wpoly('cobble', ids.map((k) => V[k]), [0, 1, 0]);
+      const q = ids.map((k) => V[k]);
+      const y = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+      if (y < T.seaY - 3.5) continue; // dno morza pod wodą
+      const mx = (q[0][0] + q[2][0]) / 2, mz = (q[0][2] + q[2][2]) / 2;
+      b.wpoly(T.isSand(mx, mz, y) ? 'sand' : 'grass', q, [0, 1, 0]);
     }
   return b.finish();
 }

@@ -12,30 +12,36 @@ import { noise3 } from '../core/noise.js';
 //  ao    — przyciemnienie przy ziemi
 //  dirt  — plamy brudu w skali kilku metrów
 //  ground — nawierzchnia: bez "pochylenia" budynków
+// Wszystkie materiały budynków dostają TEN SAM szum (W) — plakat, rama okna
+// i tynk przesuwają się identycznie, więc nic nie "wchodzi" w ścianę.
+const W = 0.032;
 export const MATDEF = {
-  // jedna amplituda dla wszystkich murów → wspólne krawędzie modułów
-  // z różnych materiałów przesuwają się identycznie (brak szczelin)
-  plaster: { wob: 0.02, ao: 1, dirt: 1 },
-  brick: { wob: 0.02, ao: 1, dirt: 1 },
-  stone: { wob: 0.02, ao: 1, dirt: 1 },
-  roof: { wob: 0.035, dirt: 1 },
-  wood: { ao: 1 },
-  metal: { ao: 1 },
-  glass: {},
-  dark: {},
-  light: {},
-  screen: {},
-  poster: { ao: 1, dirt: 1 },
+  plaster: { wob: W, ao: 1, dirt: 1 },
+  brick: { wob: W, ao: 1, dirt: 1 },
+  stone: { wob: W, ao: 1, dirt: 1 },
+  roof: { wob: W, dirt: 1 },
+  wood: { wob: W, ao: 1 },
+  metal: { wob: W, ao: 1 },
+  glass: { wob: W },
+  dark: { wob: W },
+  light: { wob: W },
+  screen: { wob: W },
+  poster: { wob: W, ao: 1, dirt: 0.5 },
+  paint: { ao: 1 },
+  bark: { ao: 1, dirt: 1 },
   cobble: { bump: 0.04, dirt: 1.8, ground: 1 },
   grass: { bump: 0.05, dirt: 2.2, ground: 1 },
-  leaf: { wob: 0.55, dirt: 2.5 },
+  sand: { bump: 0.06, dirt: 1.2, ground: 1 },
+  gravel: { dirt: 1.5 },
+  asphalt: { dirt: 1 },
+  leaf: { wob: 0.5, dirt: 2.5 },
   slab: { bump: 0.008, dirt: 1.2, ground: 1 },
   curb: { dirt: 1, ground: 1 },
-  lod: { ao: 1, dirt: 1 },
-  lodroof: { dirt: 1 },
+  lod: { wob: W, ao: 1, dirt: 1 },
+  lodroof: { wob: W, dirt: 1 },
 };
 
-const LEAN = 0.012; // m bocznego "pływania" na metr wysokości (stare kamienice)
+const LEAN = 0.018; // m bocznego "pływania" na metr wysokości (stare kamienice)
 const EMPTY = {};
 const WHITE = [1, 1, 1];
 export const NX = [-1, 0, 0], PX = [1, 0, 0], NY = [0, -1, 0], PY = [0, 1, 0], NZ = [0, 0, -1], PZ = [0, 0, 1];
@@ -272,6 +278,25 @@ export class Builder {
       ], null, { ...o, nrm: [n0, n1, n1, n0] });
       if (caps.includes('Y') && r1 > 0) this.poly(mat, [[cx, y1, cz], [cx + c0 * r1, y1, cz + s0 * r1], [cx + c1 * r1, y1, cz + s1 * r1]], PY, o);
       if (caps.includes('y') && r0 > 0) this.poly(mat, [[cx, y0, cz], [cx + c0 * r0, y0, cz + s0 * r0], [cx + c1 * r0, y0, cz + s1 * r0]], NY, o);
+    }
+  }
+  // rura/gałąź między dowolnymi punktami (lokalne metry), gładkie normalne
+  tube(mat, p0, p1, r0, r1, seg = 6, o = EMPTY) {
+    const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2], L = Math.hypot(ax, ay, az) || 1;
+    const d = [ax / L, ay / L, az / L];
+    const t = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    let u = [d[1] * t[2] - d[2] * t[1], d[2] * t[0] - d[0] * t[2], d[0] * t[1] - d[1] * t[0]];
+    const ul = Math.hypot(...u); u = u.map((x) => x / ul);
+    const v = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]];
+    const ring = (c, r, a) => [c[0] + (u[0] * Math.cos(a) + v[0] * Math.sin(a)) * r, c[1] + (u[1] * Math.cos(a) + v[1] * Math.sin(a)) * r, c[2] + (u[2] * Math.cos(a) + v[2] * Math.sin(a)) * r];
+    const nr = (a) => [u[0] * Math.cos(a) + v[0] * Math.sin(a), u[1] * Math.cos(a) + v[1] * Math.sin(a), u[2] * Math.cos(a) + v[2] * Math.sin(a)];
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2;
+      this.poly(mat, [ring(p0, r0, a0), ring(p0, r0, a1), ring(p1, r1, a1), ring(p1, r1, a0)], null, { ...o, nrm: [nr(a0), nr(a1), nr(a1), nr(a0)] });
+      if (o.caps) {
+        this.poly(mat, [p0, ring(p0, r0, a1), ring(p0, r0, a0)], [-d[0], -d[1], -d[2]], o);
+        this.poly(mat, [p1, ring(p1, r1, a0), ring(p1, r1, a1)], d, o);
+      }
     }
   }
   // ściana z prostokątnym otworem + ościeża (głębokość "rev")
