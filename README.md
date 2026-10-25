@@ -24,6 +24,24 @@ Sterowanie:
 
 Parametry adresu: `?seed=1234` generuje inną wyspę, `?low` lub `?high` wymusza jakość grafiki.
 
+## Ruch uliczny: kierowcy-boty i korki
+
+`src/game/traffic.js`:
+- **Graf dróg:** powstaje z sieci jezdni. Odcinki dzielone są w skrzyżowaniach, węzły zgrzewane, a boty jeżdżą tylko po największej spójnej części sieci.
+- **Trasy:** każdy kierowca liczy trasę algorytmem **A*** do losowego celu, a po dotarciu wybiera nowy.
+- **Jazda:** prawym pasem, łagodnymi łukami (krzywa Béziera) przez skrzyżowania i wolniej przed ostrymi zakrętami.
+- **Korki powstają same.** Kierowca trzyma odstęp od auta przed sobą (także od gracza), a na skrzyżowaniu pierwszeństwo ma ten, kto pierwszy wjechał. Po kilkunastu sekundach czekania auto rusza powoli, co zapobiega zakleszczeniom.
+- **Rysowanie:** InstancedMesh na wariant koloru, więc kilkadziesiąt aut to stała, mała liczba wywołań rysowania.
+
+Symulacja (34 auta, 3 minuty) daje średnio ~18 km/h, ok. 1/3 aut stoi w kolejkach, a najdłuższe czekanie to ok. 12 s.
+
+## Efekty i światło
+
+- **Wóz:** dym z rury wydechowej (gęstszy przy gazie), kurz na drogach gruntowych, ślady opon przy ręcznym, ostrym skręcie i mocnym hamowaniu. To jeden obiekt `Points` i jedna geometria w buforze pierścieniowym.
+- **Odbicia:** mapa otoczenia z niebem, tarczą słońca i sylwetką miasta na horyzoncie, liczona raz przy starcie. Szyby i lakier odbijają ją lustrzanie bez kosztu w klatce.
+- **Słońce:** niższe i cieplejsze, z dłuższymi, miękkimi cieniami.
+- **Pod autami:** miękki cień z jednej instancjonowanej płaszczyzny.
+
 ## Jezdnie: ciągłe wstęgi na kafelkach
 
 Każda droga to „kapsuła”, czyli odcinek z promieniem jezdni i zaokrąglonymi końcami (`src/city/roadnet.js`). Suma kapsuł daje całą przejezdną nawierzchnię: skrzyżowania i zakręty wychodzą bez dziur. Z tej samej struktury korzystają wszystkie systemy:
@@ -46,7 +64,7 @@ Każdy punkt siatki (kafelek ok. 5×5 m) może mieć najwyżej jeden obiekt: lat
 - **willa:** środek wyżej;
 - **w kształcie L:** jedno skrzydło niższe.
 
-Kolory pochodzą z losowych palet HSL (pastelowe, ziemiste, mocne, białe), z dobranym kolorem detali, ram, drzwi, okiennic i dachówki. Proporcje okien zmieniają się dla każdego budynku. Każdy budynek ma własny dach (płaski, niski albo stromy), a dachy sąsiadów stykają się w koszu bez szczelin.
+Okna mają ramy z głębią, szprosy zależne od stylu i firanki albo zasłony. Domy mają rynny, rury spustowe, dachówkę karpiówkę i latarenki przy drzwiach, sklepy pasiaste markizy. Kolory pochodzą z losowych palet HSL (pastelowe, ziemiste, mocne, białe), z dobranym kolorem detali, ram, drzwi, okiennic i dachówki. Proporcje okien zmieniają się dla każdego budynku. Każdy budynek ma własny dach (płaski, niski albo stromy), a dachy sąsiadów stykają się w koszu bez szczelin.
 
 ## Sieć dróg: Voronoi + Parish & Müller (2001)
 

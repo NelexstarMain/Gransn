@@ -220,6 +220,20 @@ export function createTextures() {
     return [(0.3 + dry * 0.22) * g, (0.45 + dry * 0.05) * g, (0.2 + dry * 0.02) * g, f * 0.7 + n * 0.3];
   }, 3);
 
+  // — dachówka karpiówka: rzędy łusek z przesunięciem, cieniowane krawędzie —
+  T.tile = bake(512, 512, (u, v) => {
+    const rows = 6, row = Math.floor(v * rows), off = (row % 2) * 0.5;
+    const cols = 8, xx = u * cols + off, ci = Math.floor(xx), fx = xx - ci, fy = v * rows - row;
+    // zaokrąglony dół łuski
+    const dx = fx - 0.5, curve = 0.75 + Math.sqrt(Math.max(0, 0.25 - dx * dx)) * 0.5;
+    const inTile = fy < curve;
+    const id = Math.abs(Math.sin(ci * 12.9898 + row * 78.233) * 43758.5453) % 1;
+    const n = nA(u, v, 16, 3);
+    const shade = inTile ? 0.75 + fy * 0.35 : 0.45;
+    const c = (0.85 + (id - 0.5) * 0.22 + (n - 0.5) * 0.15) * shade;
+    return [c, c * 0.92, c * 0.86, inTile ? 0.3 + fy * 0.6 : 0.05];
+  }, 5);
+
   // — kora: pionowe bruzdy + szum —
   T.bark = bake(256, 256, (u, v) => {
     const f = nA(u * 1.0, v * 0.25, 12, 4), g = nB(u, v, 64, 2);

@@ -20,6 +20,7 @@ export const MATDEF = {
   brick: { wob: W, ao: 1, dirt: 1 },
   stone: { wob: W, ao: 1, dirt: 1 },
   roof: { wob: W, dirt: 1 },
+  tile: { wob: W, dirt: 1 },
   wood: { wob: W, ao: 1 },
   metal: { wob: W, ao: 1 },
   glass: { wob: W },

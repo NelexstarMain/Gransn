@@ -12,18 +12,37 @@ import { Rng } from '../core/rng.js';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 // ── wspólne helpery ─────────────────────────────────────────────────────────
+// Okno: rama z głębią, podział szyb zależny od stylu, firanki/zasłony.
+// Szkło ma lustrzane odbicia (mapa otoczenia), więc dostaje jasny odcień.
 function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
-  const ft = 0.065, h = ft / 2;
+  const ft = 0.07, h = 0.022;
   const fo = { tint: p.frameTint };
-  b.rect('glass', x0, y0, x1, y1, z + 0.03, { tint: p.glassTint, noLean: false });
-  b.rect(frameMat, x0, y0, x0 + ft, y1, z, fo);
-  b.rect(frameMat, x1 - ft, y0, x1, y1, z, fo);
-  b.rect(frameMat, x0 + ft, y0, x1 - ft, y0 + ft, z, fo);
-  b.rect(frameMat, x0 + ft, y1 - ft, x1 - ft, y1, z, fo);
-  const ty = y0 + (y1 - y0) * 0.72, cx = (x0 + x1) / 2;
-  b.rect(frameMat, cx - h, y0 + ft, cx + h, ty - h, z, fo);
-  b.rect(frameMat, x0 + ft, ty - h, x1 - ft, ty + h, z, fo);
-  if (x1 - x0 > 1.0) b.rect(frameMat, cx - h * 0.7, ty + h, cx + h * 0.7, y1 - ft, z, fo);
+  b.rect('glass', x0, y0, x1, y1, z + 0.035, { tint: p.glassTint });
+  // firanki (jasne, u góry) albo zasłony (kolorowe, po bokach) — za ramą, przed szybą
+  const seedish = Math.abs(Math.sin((x0 + z) * 91.7 + y0 * 13.1));
+  if (seedish < 0.35) b.rect('wood', x0 + ft, y1 - (y1 - y0) * 0.35, x1 - ft, y1 - ft, z + 0.03, { tint: [0.93, 0.91, 0.86], shade: 0.95 });
+  else if (seedish < 0.55) {
+    const cw = (x1 - x0) * 0.22, ct = p.curtain || [0.55, 0.18, 0.15];
+    b.rect('wood', x0 + ft, y0 + ft, x0 + ft + cw, y1 - ft, z + 0.03, { tint: ct });
+    b.rect('wood', x1 - ft - cw, y0 + ft, x1 - ft, y1 - ft, z + 0.03, { tint: ct });
+  }
+  // ościeżnica z głębią
+  b.box(frameMat, x0, y0, z - 0.03, x0 + ft, y1, z + 0.03, 'xXz', fo);
+  b.box(frameMat, x1 - ft, y0, z - 0.03, x1, y1, z + 0.03, 'xXz', fo);
+  b.box(frameMat, x0 + ft, y0, z - 0.03, x1 - ft, y0 + ft, z + 0.03, 'Yz', fo);
+  b.box(frameMat, x0 + ft, y1 - ft, z - 0.03, x1 - ft, y1, z + 0.03, 'yz', fo);
+  // szprosy: kamienice 6 pól, domy 4, modernizm 2
+  const cx = (x0 + x1) / 2, ty = y0 + (y1 - y0) * 0.68;
+  const panes = p.style === 'modern' ? 1 : p.style === 'house' || p.ground ? 2 : 3;
+  b.box(frameMat, cx - h * 1.4, y0 + ft, z - 0.02, cx + h * 1.4, y1 - ft, z + 0.02, 'xXz', fo);
+  b.box(frameMat, x0 + ft, ty - h, z - 0.02, x1 - ft, ty + h, z + 0.02, 'yYz', fo);
+  if (panes >= 2) {
+    for (const xx of [(x0 + cx) / 2, (cx + x1) / 2]) b.box(frameMat, xx - h * 0.6, ty + h, z - 0.01, xx + h * 0.6, y1 - ft, z + 0.015, 'z', fo);
+  }
+  if (panes >= 3) {
+    const my = (y0 + ty) / 2;
+    b.box(frameMat, x0 + ft, my - h * 0.6, z - 0.01, x1 - ft, my + h * 0.6, z + 0.015, 'z', fo);
+  }
 }
 
 function plinth(b, segs, mat = 'stone') {
@@ -158,6 +177,12 @@ export const M = {
   door(b, W, H, D, p) {
     const ow = Math.min(1.55, W * 0.5), x0 = (W - ow) / 2, x1 = x0 + ow, y0 = 0.3;
     const y1 = Math.min(3.1, H - 0.7), gm = p.groundMat;
+    // latarenka obok drzwi
+    if (x1 + 0.7 < W) {
+      b.box('metal', x1 + 0.45, y1 - 0.35, -0.3, x1 + 0.5, y1 - 0.3, 0, 'yYzZ', { tint: [0.12, 0.12, 0.12] });
+      b.box('light', x1 + 0.38, y1 - 0.8, -0.38, x1 + 0.58, y1 - 0.4, -0.18, 'xXyYzZ', { tint: [1, 0.85, 0.55] });
+      b.box('metal', x1 + 0.35, y1 - 0.4, -0.41, x1 + 0.61, y1 - 0.34, -0.15, 'xXyYzZ', { tint: [0.12, 0.12, 0.12] });
+    }
     b.wallHole(gm, W, H, x0, y0, x1, y1, 0.42);
     b.rect(gm, x0, 0, x1, y0, -0.0);
     const dy = y0 + (y1 - y0) * 0.74, wo = { tint: p.doorTint };
@@ -241,6 +266,17 @@ export const M = {
       b.rect('metal', Math.max(x0, x - 0.04), y0, Math.min(x1, x + 0.04), y1, 0.18, { tint: p.metalTint });
     }
     b.rect('metal', x0, y0, x1, y0 + 0.1, 0.18, { tint: p.metalTint });
+    // markiza w pasy nad witryną
+    if (p.awning) {
+      const ay = y1 + 0.12, n = Math.max(2, Math.round((x1 - x0) / 0.45));
+      for (let i = 0; i < n; i++) {
+        const xa = x0 - 0.1 + ((x1 - x0 + 0.2) * i) / n, xb = x0 - 0.1 + ((x1 - x0 + 0.2) * (i + 1)) / n;
+        const ao = { tint: i % 2 ? [0.95, 0.93, 0.88] : p.awning };
+        b.poly('paint', [[xa, ay, 0], [xb, ay, 0], [xb, ay - 0.55, -1.25], [xa, ay - 0.55, -1.25]], [0, 1, -0.5], ao);
+        b.poly('paint', [[xb, ay, 0], [xa, ay, 0], [xa, ay - 0.55, -1.25], [xb, ay - 0.55, -1.25]], [0, -1, 0.5], { ...ao, shade: 0.6 });
+        b.rect('paint', xa, ay - 0.8, xb, ay - 0.55, -1.25, ao);
+      }
+    }
     const sy0 = y1 + 0.18, sy1 = Math.min(H - 0.15, y1 + 0.78);
     b.box('metal', x0 - 0.1, sy0, -0.12, x1 + 0.1, sy1, 0, 'xXyYz', { tint: p.signTint });
     if (p.sign) {
@@ -268,6 +304,7 @@ export const M = {
     b.box(m, 0, 0, -0.1, W, 0.2, 0, 'yz');
     b.box(m, 0, 0.2, -0.26, W, 0.36, 0, 'yz');
     b.box(m, 0, 0.36, -0.56, W, H, 0, 'yYz');
+    b.tube('metal', [0, H - 0.05, -0.62], [W, H - 0.05, -0.62], 0.07, 0.07, 6, { tint: [0.45, 0.47, 0.48] });
     if (p.consoles) {
       const n = Math.max(2, Math.round(W / 0.7));
       for (let i = 0; i < n; i++) {
@@ -553,6 +590,8 @@ Object.assign(M, {
     b.box('wood', 0, 0, -0.05, W, H, 0, 'yz', { tint: [0.85, 0.82, 0.76] });
     b.poly('roof', [[0, H, 0.3], [W, H, 0.3], [W, H - 0.32, -0.55], [0, H - 0.32, -0.55]], [0, 1, -0.4], ro);
     b.poly('wood', [[0, H - 0.34, -0.55], [W, H - 0.34, -0.55], [W, H - 0.02, 0.3], [0, H - 0.02, 0.3]], [0, -1, 0.4], { tint: [0.5, 0.4, 0.3], shade: 0.6 });
+    // rynna wzdłuż okapu
+    b.tube('metal', [0, H - 0.4, -0.62], [W, H - 0.4, -0.62], 0.075, 0.075, 6, { tint: [0.45, 0.47, 0.48] });
   },
 
   // 29. Billboard Partii — rama, plakat z dwóch stron, słupy
@@ -731,6 +770,25 @@ Object.assign(M, {
       const a0 = (i / 10) * Math.PI * 2, a1 = ((i + 1) / 10) * Math.PI * 2;
       b.tube('wood', [sc[0] + Math.cos(a0) * 0.06, sc[1] + Math.cos(a0) * 0.2 * 0.1, sc[2] + Math.sin(a0) * 0.2], [sc[0] + Math.cos(a1) * 0.06, sc[1] + Math.cos(a1) * 0.02, sc[2] + Math.sin(a1) * 0.2], 0.018, 0.018, 4, { tint: [0.35, 0.22, 0.12] });
     }
+    // szyba przednia w mosiężnej ramie
+    const wx = W * 0.62 + 0.62;
+    for (const z of [0.36, D - 0.36]) b.tube('metal', [wx, 0.95, z], [wx, 1.95, z], 0.025, 0.025, 6, brass);
+    b.tube('metal', [wx, 1.95, 0.36], [wx, 1.95, D - 0.36], 0.025, 0.025, 6, brass);
+    b.rectX('glass', wx, 0.38, 1.18, D - 0.38, 1.93, 1, { tint: [0.6, 0.65, 0.68] });
+    b.rectX('glass', wx - 0.01, 0.38, 1.18, D - 0.38, 1.93, -1, { tint: [0.6, 0.65, 0.68] });
+    // przetłoczenia na masce i korek chłodnicy
+    for (let k = 1; k < 5; k++) for (const z of [0.375, D - 0.375]) b.rect('dark', W - 0.7 + k * 0.11, 0.7, W - 0.66 + k * 0.11, 0.95, z < D / 2 ? z - 0.001 : z + 0.001, { tint: [0.05, 0.05, 0.05] });
+    b.cyl('metal', W - 0.08, D / 2, 1.12, 1.2, 0.05, 0.04, 8, brass, 'Y');
+    // linie drzwi na budzie
+    for (const z of [0.249, D - 0.249]) {
+      const f = z < D / 2 ? (o2) => b.rect('dark', 1.08, 0.62, 1.11, 1.1, z, o2) : (o2) => b.rectBack('dark', 1.08, 0.62, 1.11, 1.1, z, o2);
+      f({ tint: [0.05, 0.05, 0.05] });
+    }
+    // koło zapasowe, lampa tylna, tablica, trąbka
+    b.tube('dark', [-0.16, 0.98, D / 2], [-0.02, 0.98, D / 2], 0.4, 0.4, 14, { tint: [0.08, 0.08, 0.08], caps: 1 });
+    b.box('paint', -0.06, 0.62, 0.3, 0.02, 0.76, 0.42, 'xXyYzZ', { tint: [0.85, 0.1, 0.08] });
+    b.box('paint', W - 0.04, 0.47, D / 2 - 0.26, W + 0.02, 0.6, D / 2 + 0.26, 'xXyYzZ', { tint: [0.92, 0.9, 0.82] });
+    b.tube('metal', [W * 0.62 + 0.3, 1.25, D - 0.22], [W - 0.4, 1.12, D - 0.12], 0.02, 0.06, 8, brass);
     // mosiężne lampy karbidowe
     for (const z of [0.3, D - 0.3]) {
       b.cyl('metal', W - 0.2, z, 1.0, 1.28, 0.09, 0.07, 8, brass, 'Y');

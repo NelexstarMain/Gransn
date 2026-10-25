@@ -207,6 +207,15 @@ function buildQuad(b, city, q) {
       }
       roofQuarter(b, city, info, G, i, top);
       if (g.ARCH[a]) groundQuarter(b, city, G, i, q); // posadzka prześwitu / podcieni
+      // rura spustowa na wypukłym narożniku (obie sąsiednie ćwiartki puste na całej wysokości)
+      const nA = V[(i + 1) % 4], nB = V[(i + 3) % 4];
+      if (top >= 2 && !filled(g, nA, 0) && !filled(g, nB, 0) && !filled(g, nA, top - 1) && !filled(g, nB, top - 1) && hash(seed, a, q, 5) % 3 === 0) {
+        const dx = G.c[0] - G.p[i][0], dz = G.c[1] - G.p[i][1], l = Math.hypot(dx, dz) || 1;
+        const px = G.c[0] + (dx / l) * 0.14, pz = G.c[1] + (dz / l) * 0.14;
+        b.cell(cage4(city.terrain, null, boxPts([px, pz], [1, 0], [0, 1], 1, 1), NONE, 0, 1), 1, 1, 1);
+        b.cyl('metal', 0.5, 0.5, 0.1, levelY(top) + 0.35, 0.06, 0.06, 6, { tint: [0.42, 0.44, 0.45] });
+        b.cyl('metal', 0.5, 0.5, 0, 0.12, 0.1, 0.06, 6, { tint: [0.42, 0.44, 0.45] });
+      }
       continue;
     }
     groundQuarter(b, city, G, i, q);
@@ -219,7 +228,7 @@ function setTints(b, info) {
   b.setTint('stone', info.trim || [0.76, 0.73, 0.67]);
 }
 
-const GLASS = [[0.32, 0.36, 0.4], [0.32, 0.36, 0.4], [0.32, 0.36, 0.4], [0.78, 0.74, 0.64], [0.55, 0.44, 0.3], [0.16, 0.17, 0.18]];
+const GLASS = [[0.52, 0.58, 0.64], [0.48, 0.55, 0.62], [0.56, 0.6, 0.62], [0.62, 0.6, 0.55], [0.44, 0.42, 0.38], [0.36, 0.4, 0.45]];
 
 function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
   const T = city.terrain, g = city.grid;
@@ -235,7 +244,7 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
     frameTint: info.frameTint, doorTint: info.doorTint, metalTint: [0.2, 0.22, 0.21], signTint: info.doorTint,
     shopGlass: [0.3, 0.32, 0.33], variant: info.variant, bars: info.bars, glassTint: GLASS[hh % GLASS.length],
     shutters: info.shutters, shutterTint: info.shutterTint, flowers: L > 0 ? info.flowers : null,
-    simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4], winW: info.winW, winH: info.winH,
+    simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4], winW: info.winW, winH: info.winH, curtain: info.curtain, awning: info.awning,
   };
   let mod;
   if (W < 1.25) mod = 'wall';
@@ -273,7 +282,7 @@ function roofQuarter(b, city, info, G, i, top) {
   const T = city.terrain, a = G.v[i];
   const base = levelY(top) + info.ce;
   const pts = roofSpec(city, G, i, top, info);
-  b.wpoly('roof', pts.map(([p, h]) => [p[0], T.height(p[0], p[1]) + base + h, p[1]]), [0, 1, 0], { tint: info.roofTint });
+  b.wpoly(info.roofMat || 'roof', pts.map(([p, h]) => [p[0], T.height(p[0], p[1]) + base + h, p[1]]), [0, 1, 0], { tint: info.roofTint });
   const hv = pts[0][1];
   if (hv > 2.2 && hash(city.seed, a, 77) / 4294967296 < 0.12) {
     const pv = G.p[i];

@@ -176,7 +176,7 @@ const FRAMES = [[0.94, 0.92, 0.86], [0.92, 0.88, 0.76], [0.2, 0.32, 0.24], [0.45
 // ── generator budynku: typ bryły (gramatyka kształtu) + kolory + detale ─────
 export function buildingInfo(seed, bid, zone) {
   const r = new Rng(hash(seed, bid, 717));
-  if (zone === Z_MINISTRY) return { zone, style: 'ornate', shape: 'block', tint: [0.86, 0.74, 0.56], trim: [0.95, 0.92, 0.84], wallMat: 'plaster', groundMat: 'stone', roofTint: [0.32, 0.5, 0.42], frameTint: [0.92, 0.9, 0.85], doorTint: [0.36, 0.24, 0.14], ce: 0.5, ridge: 3.2, garden: false, variant: 0, winW: 0.42, winH: 0.55, r };
+  if (zone === Z_MINISTRY) return { zone, style: 'ornate', shape: 'block', tint: [0.86, 0.74, 0.56], trim: [0.95, 0.92, 0.84], wallMat: 'plaster', groundMat: 'stone', roofTint: [0.32, 0.5, 0.42], frameTint: [0.92, 0.9, 0.85], doorTint: [0.36, 0.24, 0.14], ce: 0.5, ridge: 3.2, garden: false, variant: 0, winW: 0.42, winH: 0.55, roofMat: 'roof', curtain: [0.6, 0.15, 0.12], r };
   const tenement = zone === Z_TENEMENT;
   // kolor ściany: pastelowy / ziemisty / mocny
   const fam = r.weighted([['pastel', tenement ? 3 : 5], ['earth', 3], ['bold', tenement ? 1 : 2], ['white', 1.5]]);
@@ -207,6 +207,9 @@ export function buildingInfo(seed, bid, zone) {
     winW: r.float(0.32, 0.5), winH: r.float(0.44, 0.6),
     bars: tenement && r.chance(0.3), shops: tenement ? r.chance(0.6) : r.chance(0.08),
     garden: !tenement && r.chance(0.24), variant: r.int(0, 1),
+    roofMat: !tenement || r.chance(0.45) ? 'tile' : 'roof',
+    curtain: hsl(r.float(0, 360), r.float(0.3, 0.6), r.float(0.3, 0.6)),
+    awning: r.chance(0.7) ? hsl(r.pick([0, 120, 210, 30, 350]), 0.55, 0.42) : null,
     towerExtra: r.int(2, 4), stepDir: r.chance(0.5) ? 1 : -1, ang: r.float(0, Math.PI * 2), r,
   };
 }

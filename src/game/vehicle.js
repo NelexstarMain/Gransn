@@ -46,6 +46,15 @@ export class Vehicle {
 
   blocked(x, z, h) {
     const c = Math.cos(h), s = Math.sin(h);
+    // auta-boty: dwa koła kolizji na auto (przód/tył)
+    if (this.obstacles) {
+      for (const o of this.obstacles(x, z)) {
+        const oc = Math.cos(o.h), os = Math.sin(o.h);
+        for (const a of [-0.9, 0.9])
+          for (const b2 of [-0.9, 0.9])
+            if (Math.hypot(x + c * a - (o.x + oc * b2), z + s * a - (o.z + os * b2)) < 1.75) return true;
+      }
+    }
     for (const [u, w] of [[L / 2, -Wd / 2], [L / 2, Wd / 2], [-L / 2, -Wd / 2], [-L / 2, Wd / 2], [L / 2, 0], [0, -Wd / 2], [0, Wd / 2]]) {
       const px = x + c * u - s * w, pz = z + s * u + c * w;
       if (this.grid.solid(px, pz)) return true;

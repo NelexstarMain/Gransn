@@ -10,6 +10,8 @@ import { Streamer, buildMeshes } from './game/streaming.js';
 import { Hud } from './game/hud.js';
 import { Vehicle } from './game/vehicle.js';
 import { TaxiJob } from './game/taxi.js';
+import { Traffic } from './game/traffic.js';
+import { CarFX } from './game/fx.js';
 
 const params = new URLSearchParams(location.search);
 const SEED = Number(params.get('seed')) || 1984;
@@ -130,6 +132,10 @@ async function start() {
   car.active = true;
   car.place(city.spawn.x, city.spawn.z, Math.atan2(-Math.cos(city.spawn.yaw), -Math.sin(city.spawn.yaw)));
   const job = new TaxiJob(scene, city, M);
+  // boty-kierowcy (korki) i efekty auta
+  const traffic = new Traffic(scene, city, grid, M, LOW ? 16 : 34);
+  car.obstacles = (x, z) => traffic.near(x, z, 6);
+  const fx = new CarFX(scene, city);
   const carYaw = () => Math.atan2(-Math.cos(car.heading), -Math.sin(car.heading));
   player.yaw = carYaw();
   player.pitch = -0.12;
@@ -169,6 +175,10 @@ async function start() {
     } else player.update(dt);
     const active = car.active ? car.pos : player.pos;
     job.update(dt, car, grid);
+    if (playing) {
+      traffic.update(dt, active, car.active ? car : null);
+      fx.update(dt, car, player.keys, grid);
+    }
     streamAcc += dt;
     if (streamAcc > 0.25) { streamAcc = 0; streamer.update(active); }
     atmo.update(camera.position);
@@ -182,7 +192,7 @@ async function start() {
     if (!TEST) requestAnimationFrame(frame);
   }
   frame();
-  window.__game = { city, player, streamer, renderer, scene, camera, frame, car, job };
+  window.__game = { city, player, streamer, renderer, scene, camera, frame, car, job, traffic };
 }
 
 const showError = (msg) => {
