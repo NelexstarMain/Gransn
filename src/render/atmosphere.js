@@ -1,17 +1,17 @@
 // Słoneczne popołudnie nad wyspą; lekka mgiełka ukrywa granicę LOD-ów.
 import * as THREE from 'three';
 
-export const FOG_COLOR = new THREE.Color(0xc4d2d8);
+export const FOG_COLOR = new THREE.Color(0xa4b2b8);
 
 export function createAtmosphere(scene, renderer) {
   scene.background = FOG_COLOR.clone();
   scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0026);
 
-  const hemi = new THREE.HemisphereLight(0xd6e6f4, 0x6a5a44, 1.05);
+  const hemi = new THREE.HemisphereLight(0xc4d6e8, 0x4a4034, 0.62);
   scene.add(hemi);
 
   // niższe, cieplejsze słońce popołudniowe — dłuższe cienie, złote światło na fasadach
-  const sun = new THREE.DirectionalLight(0xffe0b8, 2.9);
+  const sun = new THREE.DirectionalLight(0xffd8a8, 3.0);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
@@ -30,7 +30,7 @@ export function createAtmosphere(scene, renderer) {
       side: THREE.BackSide,
       depthWrite: false,
       fog: false,
-      uniforms: { top: { value: new THREE.Color(0x5f93c4) }, horizon: { value: FOG_COLOR.clone() }, sunDir: { value: sunDir } },
+      uniforms: { top: { value: new THREE.Color(0x4a78a6) }, horizon: { value: FOG_COLOR.clone() }, sunDir: { value: sunDir } },
       vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;
         void main(){ float h = clamp(vDir.y, 0.0, 1.0);
@@ -69,7 +69,7 @@ export function createAtmosphere(scene, renderer) {
   sunDisc.position.copy(sunDir).multiplyScalar(1200);
   envScene.add(sunDisc);
   scene.environment = pmrem.fromScene(envScene, 0.015).texture;
-  scene.environmentIntensity = 0.6;
+  scene.environmentIntensity = 0.4;
 
   return {
     sun,

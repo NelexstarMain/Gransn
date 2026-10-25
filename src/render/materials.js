@@ -13,6 +13,24 @@ function tex(set, sx, sy = sx) {
   return { map, normalMap };
 }
 
+// Color grading w shaderze materiału (bez postprocessingu, bez dodatkowego przejścia):
+// ciemniejsze cienie i półcienie, stonowane kolory, chłodne cienie / ciepłe światła.
+const GRADE = `
+  {
+    vec3 gc = gl_FragColor.rgb;
+    float gl = dot(gc, vec3(0.2126, 0.7152, 0.0722));
+    gc = mix(vec3(gl), gc, 0.80);                         // mniej nasycone
+    gc = pow(max(gc, vec3(0.0)), vec3(1.28));             // ciemniejsze cienie i półtony
+    gc *= mix(vec3(0.86, 0.93, 1.07), vec3(1.06, 1.02, 0.93), smoothstep(0.05, 0.55, gl)); // zimne cienie, ciepłe światła
+    gc = mix(gc, gc * gc * (3.0 - 2.0 * gc), 0.35);       // lekki kontrast S
+    gl_FragColor.rgb = gc * 0.94;
+  }
+`;
+function grade(m) {
+  m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>', GRADE + '#include <dithering_fragment>'); };
+  m.customProgramCacheKey = () => 'grade1';
+}
+
 export async function createMaterials() {
   const T = createTextures();
   const telescreen = new Telescreen();
@@ -57,5 +75,6 @@ export async function createMaterials() {
   waterNormal.repeat.set(1 / 9, 1 / 9);
   waterNormal.needsUpdate = true;
   M.water = new THREE.MeshStandardMaterial({ color: 0x1d2c27, roughness: 0.22, metalness: 0.0, normalMap: waterNormal, normalScale: new THREE.Vector2(0.6, 0.6), envMapIntensity: 0.7 });
+  for (const m of Object.values(M)) grade(m);
   return { M, telescreen };
 }

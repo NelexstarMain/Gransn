@@ -442,9 +442,9 @@ export function generateCity(seed = 1984) {
   };
   for (const st of streets) {
     const mx = (st.a[0] + st.b[0]) / 2, mz = (st.a[1] + st.b[1]) / 2;
-    st.mat = kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'asphalt';
-    if (st.type === 'H' || st.bridge) st.mat = 'asphalt';
-    st.town = st.mat === 'asphalt' && st.type !== 'H';
+    st.mat = kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'cobble';
+    if (st.type === 'H' || st.bridge) st.mat = 'cobble';
+    st.town = st.mat === 'cobble' && st.type !== 'H';
   }
   // autostrada nad rzeką: most zamiast jezdni położonej na wodzie
   const hwBridge = highwayBridge(terrain, streets);
