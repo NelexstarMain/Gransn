@@ -29,7 +29,7 @@ export class CollisionGrid {
     }
     for (const l of city.lamps) this.disc(l.p[0], l.p[1], 0.2);
     for (const t of city.trees) this.disc(t.p[0], t.p[1], 0.35 * t.s);
-    const SZ = { car: [2.15, 0.9], kiosk: [1.2, 1.0], booth: [0.5, 0.5], busstop: [1.6, 0.7], bin: [0.3, 0.3] };
+    const SZ = { car: [1.8, 0.85], kiosk: [1.2, 1.0], booth: [0.5, 0.5], busstop: [1.6, 0.7], bin: [0.3, 0.3] };
     for (const pr of city.props) {
       const sz = SZ[pr.kind];
       if (!sz) continue;

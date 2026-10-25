@@ -349,6 +349,12 @@ export function wallPlan(city, a, b, q, side, L) {
   return { mod: null, balcony: h < 0.08 && L <= 2 };
 }
 
+function segDistMin(at, p) {
+  let d = 1e9;
+  for (const s of at(p[0], p[1])) d = Math.min(d, segDist(p[0], p[1], s));
+  return d;
+}
+
 // ── dekoracje: latarnie, kioski, budki, przystanki, kosze, auta, drzewa, ławki,
 //    fontanny, teleekrany (wspólne dla świata i kolizji)
 export function decorate(city) {
@@ -356,12 +362,12 @@ export function decorate(city) {
   const lamps = [], trees = [], benches = [], screens = [], props = [];
   const streetAt = bucketize(city.streets, 32, (s) => [Math.min(s.a[0], s.b[0]) - 20, Math.min(s.a[1], s.b[1]) - 20, Math.max(s.a[0], s.b[0]) + 20, Math.max(s.a[1], s.b[1]) + 20]);
   const streetDir = (x, z) => {
-    let best = 1e9, dir = [1, 0];
+    let best = 1e9, dir = [1, 0], w = 0;
     for (const s of streetAt(x, z)) {
       const d = segDist(x, z, s);
-      if (d < best) { best = d; const l = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) || 1; dir = [(s.b[0] - s.a[0]) / l, (s.b[1] - s.a[1]) / l]; }
+      if (d < best) { best = d; w = s.w; const l = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) || 1; dir = [(s.b[0] - s.a[0]) / l, (s.b[1] - s.a[1]) / l]; }
     }
-    return dir;
+    return { dir, w, d: best };
   };
   const Q = quads.length / 4;
   for (let q = 0; q < Q; q++) {
@@ -393,11 +399,12 @@ export function decorate(city) {
         else if (hq < 0.135) props.push({ kind: 'booth', p: pm, n, e });
         else if (hq < 0.15) props.push({ kind: 'kiosk', p: pm, n, e });
         else if (hq < 0.162) props.push({ kind: 'busstop', p: pm, n, e });
-      } else if (TY[a] === T_STREET && hq < 0.012 && !T.inRiver(X[a], Z[a], 4)) {
+      } else if (TY[a] === T_STREET && hq < 0.06 && !T.inRiver(X[a], Z[a], 4)) {
         // zaparkowane auto wzdłuż ulicy
-        const dir = streetDir(X[a], Z[a]);
+        // tylko przy szerokich ulicach i z dala od osi jezdni
+        const sd = streetDir(X[a], Z[a]);
         const p = [(X[a] + G.c[0]) / 2, (Z[a] + G.c[1]) / 2];
-        props.push({ kind: 'car', p, e: dir, n: [-dir[1], dir[0]] });
+        if (sd.w >= 7.5 && segDistMin(streetAt, p) > 3.2) props.push({ kind: 'car', p, e: sd.dir, n: [-sd.dir[1], sd.dir[0]] });
       }
     }
   }

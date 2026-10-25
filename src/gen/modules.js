@@ -660,6 +660,94 @@ Object.assign(M, {
     }
   },
 
+  // 31b. Wóz z ok. 1900 roku: szprychowe koła, otwarta buda z ławkami,
+  //      składany dach, mosiężna chłodnica i lampy (x = długość, przód przy x = W)
+  oldcar(b, W, H, D, p) {
+    const po = { tint: p.color }, dark = { tint: [0.08, 0.08, 0.08] }, brass = { tint: [0.85, 0.65, 0.25] };
+    const leather = { tint: p.seat || [0.4, 0.12, 0.1] };
+    const wheel = (x, z, r, side) => {
+      const w = 0.07, z0 = z - w / 2, z1 = z + w / 2, n = 16;
+      for (let i = 0; i < n; i++) {
+        const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+        const P = (a, rr, zz) => [x + Math.cos(a) * rr, r + Math.sin(a) * rr, zz];
+        b.poly('dark', [P(a0, r, z0), P(a1, r, z0), P(a1, r, z1), P(a0, r, z1)], [Math.cos(a0), Math.sin(a0), 0], dark);
+        b.poly('wood', [P(a0, r - 0.06, z1), P(a1, r - 0.06, z1), P(a1, r - 0.06, z0), P(a0, r - 0.06, z0)], [-Math.cos(a0), -Math.sin(a0), 0], { tint: [0.35, 0.22, 0.12] });
+        for (const [zz, f] of [[z0, -1], [z1, 1]]) b.poly('dark', [P(a0, r - 0.06, zz), P(a1, r - 0.06, zz), P(a1, r, zz), P(a0, r, zz)], [0, 0, f], dark);
+      }
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        b.tube('wood', [x, r, z], [x + Math.cos(a) * (r - 0.06), r + Math.sin(a) * (r - 0.06), z], 0.018, 0.014, 4, { tint: [0.55, 0.38, 0.2] });
+      }
+      b.tube('metal', [x, r, z - side * 0.06], [x, r, z + side * 0.06], 0.07, 0.07, 8, { ...brass, caps: 1 });
+    };
+    const rf = 0.42, rr = 0.5;
+    wheel(W - 0.55, 0.12, rf, -1); wheel(W - 0.55, D - 0.12, rf, 1);
+    wheel(0.6, 0.12, rr, -1); wheel(0.6, D - 0.12, rr, 1);
+    // rama i osie
+    b.box('dark', 0.2, 0.42, 0.3, W - 0.15, 0.55, D - 0.3, 'xXyYzZ', dark);
+    b.tube('dark', [W - 0.55, rf, 0.12], [W - 0.55, rf, D - 0.12], 0.035, 0.035, 6, dark);
+    b.tube('dark', [0.6, rr, 0.12], [0.6, rr, D - 0.12], 0.035, 0.035, 6, dark);
+    // buda pasażerska i przednia ławka
+    b.box('paint', 0.15, 0.55, 0.25, W * 0.62, 1.15, D - 0.25, 'xXyYzZ', po);
+    b.box('paint', 0.1, 1.1, 0.22, W * 0.62, 1.18, D - 0.22, 'xXyYzZ', { tint: [0.1, 0.1, 0.1] });
+    b.box('paint', W * 0.62, 0.55, 0.3, W - 0.35, 0.95, D - 0.3, 'xXyYzZ', po);
+    // maska silnika i mosiężna chłodnica
+    b.box('paint', W - 0.75, 0.6, 0.38, W - 0.12, 1.05, D - 0.38, 'xYzZ', { tint: [0.12, 0.12, 0.13] });
+    b.box('metal', W - 0.12, 0.55, 0.36, W - 0.04, 1.12, D - 0.36, 'xXyYzZ', brass);
+    // ławki z oparciami
+    for (const [x0, x1] of [[0.25, 1.1], [W * 0.62 - 0.05, W * 0.62 + 0.55]]) {
+      b.box('paint', x0, 1.18, 0.35, x1, 1.3, D - 0.35, 'xXYzZ', leather);
+      b.box('paint', x0, 1.3, 0.35, x0 + 0.12, 1.75, D - 0.35, 'xXyYzZ', leather);
+    }
+    // błotniki — łuki nad kołami
+    for (const [x, r] of [[W - 0.55, rf], [0.6, rr]])
+      for (const z of [0.04, D - 0.2]) {
+        const n = 8;
+        for (let i = 0; i < n; i++) {
+          const a0 = Math.PI * (0.05 + (0.9 * i) / n), a1 = Math.PI * (0.05 + (0.9 * (i + 1)) / n);
+          const P = (a, zz) => [x + Math.cos(a) * (r + 0.1), r + Math.sin(a) * (r + 0.1), zz];
+          b.poly('paint', [P(a0, z), P(a1, z), P(a1, z + 0.16), P(a0, z + 0.16)], [Math.cos(a0), Math.sin(a0), 0], dark);
+          b.poly('paint', [P(a0, z + 0.16), P(a1, z + 0.16), P(a1, z), P(a0, z)], [-Math.cos(a0), -Math.sin(a0), 0], dark);
+        }
+      }
+    // stopnie po bokach
+    for (const z of [0.02, D - 0.22]) b.box('dark', W * 0.25, 0.48, z, W * 0.7, 0.52, z + 0.2, 'xXyYzZ', dark);
+    // składany dach nad tylną ławką (łuk z płócien)
+    const n = 6, tx0 = 0.12, tx1 = 1.25, ty = 2.05;
+    for (let i = 0; i < n; i++) {
+      const a0 = Math.PI * (i / n), a1 = Math.PI * ((i + 1) / n);
+      const P = (a, x) => [x, 1.2 + Math.sin(a) * (ty - 1.2), D / 2 - Math.cos(a) * (D / 2 - 0.15)];
+      b.poly('paint', [P(a0, tx0), P(a0, tx1), P(a1, tx1), P(a1, tx0)], [0, Math.sin((a0 + a1) / 2), -Math.cos((a0 + a1) / 2)], { tint: [0.12, 0.12, 0.12] });
+      b.poly('paint', [P(a0, tx1), P(a0, tx0), P(a1, tx0), P(a1, tx1)], [0, -Math.sin((a0 + a1) / 2), Math.cos((a0 + a1) / 2)], { tint: [0.2, 0.18, 0.16] });
+    }
+    for (let i = 0; i < n; i++) {
+      const P = (a) => [tx0, 1.2 + Math.sin(a) * (ty - 1.2), D / 2 - Math.cos(a) * (D / 2 - 0.15)];
+      b.poly('paint', [[tx0, 1.2, D / 2], P(Math.PI * (i / n)), P(Math.PI * ((i + 1) / n))], [-1, 0, 0], { tint: [0.12, 0.12, 0.12] });
+    }
+    // kierownica na kolumnie
+    b.tube('metal', [W * 0.62 + 0.55, 0.95, D * 0.3], [W * 0.62 + 0.35, 1.55, D * 0.3], 0.025, 0.025, 6, dark);
+    const sc = [W * 0.62 + 0.35, 1.58, D * 0.3];
+    for (let i = 0; i < 10; i++) {
+      const a0 = (i / 10) * Math.PI * 2, a1 = ((i + 1) / 10) * Math.PI * 2;
+      b.tube('wood', [sc[0] + Math.cos(a0) * 0.06, sc[1] + Math.cos(a0) * 0.2 * 0.1, sc[2] + Math.sin(a0) * 0.2], [sc[0] + Math.cos(a1) * 0.06, sc[1] + Math.cos(a1) * 0.02, sc[2] + Math.sin(a1) * 0.2], 0.018, 0.018, 4, { tint: [0.35, 0.22, 0.12] });
+    }
+    // mosiężne lampy karbidowe
+    for (const z of [0.3, D - 0.3]) {
+      b.cyl('metal', W - 0.2, z, 1.0, 1.28, 0.09, 0.07, 8, brass, 'Y');
+      b.tube('light', [W - 0.2, 1.14, z], [W - 0.09, 1.14, z], 0.075, 0.075, 8, { caps: 1 });
+    }
+    if (p.taxi) {
+      b.box('paint', W * 0.62 - 0.05, 1.75, D / 2 - 0.35, W * 0.62 + 0.05, 2.0, D / 2 + 0.35, 'xXyYzZ', { tint: [0.95, 0.78, 0.15] });
+      b.box('paint', W * 0.62 - 0.02, 1.3, D / 2 - 0.02, W * 0.62 + 0.02, 1.75, D / 2 + 0.02, 'xXzZ', dark);
+      for (let i = 0; i < 6; i++) {
+        if (i % 2) continue;
+        const x0 = 0.25 + i * ((W * 0.62 - 0.4) / 6), x1 = x0 + (W * 0.62 - 0.4) / 6;
+        b.rect('dark', x0, 0.95, x1, 1.08, 0.249, { tint: [0.05, 0.05, 0.05] });
+        b.rectBack('dark', x0, 0.95, x1, 1.08, D - 0.249, { tint: [0.05, 0.05, 0.05] });
+      }
+    }
+  },
+
   // 32. Człowiek (pasażer / przechodzień) — kilka zdeformowanych kostek
   person(b, W, H, D, p) {
     const cx = W / 2, cz = D / 2;

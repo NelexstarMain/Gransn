@@ -54,7 +54,7 @@ function placeTree(b, T, t, r) {
 }
 
 const CAR_COLORS = [[0.12, 0.13, 0.15], [0.55, 0.12, 0.1], [0.2, 0.32, 0.24], [0.82, 0.8, 0.72], [0.25, 0.35, 0.55], [0.6, 0.6, 0.62], [0.45, 0.32, 0.2]];
-const PROP_SIZE = { car: [4.3, 1.6, 1.8], kiosk: [2.4, 3.2, 2.0], booth: [1.0, 2.5, 1.0], busstop: [3.2, 3.1, 1.4], bin: [0.7, 1, 0.7] };
+const PROP_SIZE = { car: [3.6, 2.2, 1.7], kiosk: [2.4, 3.2, 2.0], booth: [1.0, 2.5, 1.0], busstop: [3.2, 3.1, 1.4], bin: [0.7, 1, 0.7] };
 
 function placeProp(b, T, pr, seed) {
   const r = new Rng(hash(seed, Math.round(pr.p[0] * 10), Math.round(pr.p[1] * 10)));
@@ -65,8 +65,8 @@ function placeProp(b, T, pr, seed) {
   }
   const [W, H, D] = PROP_SIZE[pr.kind];
   const y0 = pr.kind === 'car' ? 0 : 0.15;
-  const p = pr.kind === 'car' ? { color: r.pick(CAR_COLORS) } : pr.kind === 'kiosk' ? { sign: r.pick(['gin', 'milk', 'bread', 'tobacco']), color: r.pick([[0.3, 0.45, 0.35], [0.55, 0.2, 0.15], [0.25, 0.35, 0.5]]) } : {};
-  place(b, pr.kind, cage4(T, null, boxPts(pr.p, pr.e, pr.n, W, D), NONE, y0, y0 + H), W, H, D, p);
+  const p = pr.kind === 'car' ? { color: r.pick(CAR_COLORS), seat: r.pick([[0.4, 0.12, 0.1], [0.2, 0.15, 0.1], [0.15, 0.2, 0.3]]) } : pr.kind === 'kiosk' ? { sign: r.pick(['gin', 'milk', 'bread', 'tobacco']), color: r.pick([[0.3, 0.45, 0.35], [0.55, 0.2, 0.15], [0.25, 0.35, 0.5]]) } : {};
+  place(b, pr.kind === 'car' ? 'oldcar' : pr.kind, cage4(T, null, boxPts(pr.p, pr.e, pr.n, W, D), NONE, y0, y0 + H), W, H, D, p);
 }
 
 // cage z wysokościami w 4 narożnikach (trasy: tory, estakada)

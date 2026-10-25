@@ -99,6 +99,11 @@ export class TaxiJob {
       if (i < 0) return;
       const w = this.waiting.splice(i, 1)[0];
       this.scene.remove(w.mesh, w.ring);
+      // pasażer siada na tylnej ławce
+      w.mesh.position.set(-1.05, 0.38, 0);
+      w.mesh.rotation.set(0, Math.PI / 2, 0);
+      car.mesh.add(w.mesh);
+      this.rider = w.mesh;
       const dest = this.pickStand(cp, 250, 900);
       const d = Math.hypot(dest[0] - cp[0], dest[1] - cp[1]);
       this.fare = { dest, from: cp.slice(), dist: d, time: Math.round(d / 8 + 25), left: Math.round(d / 8 + 25), name: this.streetName(dest) };
@@ -118,6 +123,7 @@ export class TaxiJob {
       this.say(tip ? `Zapłacono ${base} zł + ${tip} zł napiwku. Dziękuję!` : `Zapłacono ${base} zł. Trochę za długo…`);
       this.fare = null;
       this.target.visible = false;
+      if (this.rider) { car.mesh.remove(this.rider); this.rider = null; }
     }
   }
 }

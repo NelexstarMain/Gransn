@@ -1,6 +1,6 @@
 # Gransn Taxi
 
-Gra 3D w przeglądarce (Three.js). Jeździsz taksówką po proceduralnie generowanej wyspie i zarabiasz na kursach: podjeżdżasz do pasażera w żółtym kółku, zatrzymujesz się obok i wieziesz go do zielonego celu. Opłata rośnie z odległością, a za szybki kurs jest napiwek.
+Gra 3D w przeglądarce (Three.js). Jeździsz taksówką, wozem z ok. 1900 roku (szprychowe koła, ławki, składany dach, mosiężne lampy), po proceduralnie generowanej wyspie i zarabiasz na kursach: podjeżdżasz do pasażera w żółtym kółku, zatrzymujesz się obok i wieziesz go do zielonego celu. Opłata rośnie z odległością, a za szybki kurs jest napiwek.
 
 Na wyspie (~1,3 km, losowy obrys z półwyspami) są:
 - śródmieście z kamienicami i rynek z ratuszem i fontannami,
@@ -24,7 +24,7 @@ Sterowanie:
 
 Parametry adresu: `?seed=1234` generuje inną wyspę, `?low` lub `?high` wymusza jakość grafiki.
 
-## Sieć dróg: Parish & Müller (2001)
+## Sieć dróg: Voronoi + Parish & Müller (2001)
 
 `src/city/roads.js` implementuje rozszerzony L-system z pracy *Procedural Modeling of Cities* (Y. Parish, P. Müller, SIGGRAPH 2001):
 - Każdy odcinek drogi proponuje „idealnych następców”: przedłużenie i odgałęzienia pod ~90°.
@@ -32,7 +32,10 @@ Parametry adresu: `?seed=1234` generuje inną wyspę, `?low` lub `?high` wymusza
 - **Ograniczenia lokalne** pilnują sensowności: przecięcie z istniejącą drogą tworzy skrzyżowanie (odcinek zostaje przycięty), koniec blisko skrzyżowania zostaje do niego przyciągnięty, a koniec blisko drogi jest przedłużany do niej. Woda i brzeg odrzucają odcinek, a rzekę da się przekroczyć tylko mostem.
 - Kolejka priorytetowa po czasie daje wzrost miasta od rynku i mostów na zewnątrz.
 
-Strefy (śródmieście, przedmieście, park, las) wyznacza diagram Voronoi z relaksacją Lloyda.
+Oba algorytmy działają razem:
+- **Voronoi** (z relaksacją Lloyda) daje szkielet: krawędzie komórek to główne ulice, a komórki to strefy (śródmieście, przedmieście, park, las).
+- **Parish & Müller** zagęszcza ten szkielet: z ulic Voronoi, z rynku i z mostów wypuszcza boczne uliczki, które łączą się z istniejącymi drogami przez skrzyżowania.
+- Główne drogi przecinają inne i jadą dalej.
 
 ## Metoda: nieregularna siatka + punkty + marching squares (jak w Townscaperze)
 

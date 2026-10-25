@@ -338,10 +338,20 @@ export function generateCity(seed = 1984) {
 
   const blocks = [];
   const seen = new Set();
+  const vEdges = [], vSeen = new Set();
   for (const cell of g.cells) {
     const poly = cell.ids.map((id) => [g.V[id].x, g.V[id].z]);
     const n = poly.length;
     const sp = cell.ids.map((id, k) => edgeSpec(id, cell.ids[(k + 1) % n]));
+    // krawędzie Voronoi = główne ulice (szkielet dla L-systemu Parish & Müller)
+    cell.ids.forEach((id, k) => {
+      const nx = cell.ids[(k + 1) % n], key = id < nx ? `${id}_${nx}` : `${nx}_${id}`;
+      if (vSeen.has(key) || sp[k].bank || sp[k].border) return;
+      vSeen.add(key);
+      const a = poly[k], b = poly[(k + 1) % n];
+      if (terrain.inland(a[0], a[1]) < 30 || terrain.inland(b[0], b[1]) < 30) return;
+      vEdges.push({ a, b, w: sp[k].road + 2.4 });
+    });
     cell.ids.forEach((id, k) => {
       const nx = cell.ids[(k + 1) % n], key = id < nx ? `${id}_${nx}` : `${nx}_${id}`;
       if (seen.has(key) || sp[k].bank) return;
@@ -388,7 +398,7 @@ export function generateCity(seed = 1984) {
   const spawn = { x: b0.p[0] + b0.perp[0] * 2, z: b0.p[1] + b0.perp[1] * 2, yaw: Math.atan2(-b0.axis[0] * sgn, -b0.axis[1] * sgn) };
 
   const routes = makeRoutes(seed, terrain);
-  const streets = growRoads(seed, terrain, bridges, center);
+  const streets = growRoads(seed, terrain, bridges, center, vEdges);
   const extras = makeExtras(terrain, routes, rng);
   const city = { seed, blocks, terrain, bridges, spawn, streets, seedList: seeds, monuments, billboards, routes, extras, size: 2 * HALF, half: HALF };
   city.grid = makeQuadGrid(seed, HALF);

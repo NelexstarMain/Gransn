@@ -1,4 +1,4 @@
-// Taksówka: zręcznościowa fizyka (gaz/hamulec, skręt zależny od prędkości,
+// Taksówka (wóz z ok. 1900 r.): zręcznościowa fizyka (gaz/hamulec, skręt zależny od prędkości,
 // ręczny), kolizje z siatką świata, przechył i pochylenie z wysokości kół.
 import * as THREE from 'three';
 import { Builder } from '../gen/builder.js';
@@ -6,7 +6,7 @@ import { Cage } from '../gen/cage.js';
 import { M as MODULES } from '../gen/modules.js';
 import { buildMeshes } from './streaming.js';
 
-const L = 4.3, Wd = 1.8;
+const L = 3.6, Wd = 1.7;
 
 // siatka dowolnego modułu wycentrowana w (0,0) — do obiektów ruchomych
 export function moduleMesh(name, W, H, D, p, M) {
@@ -23,7 +23,7 @@ export class Vehicle {
   constructor(scene, grid, M) {
     this.grid = grid;
     this.T = grid.T;
-    this.mesh = moduleMesh('car', L, 1.6, Wd, { color: [0.95, 0.76, 0.12], taxi: true }, M);
+    this.mesh = moduleMesh('oldcar', L, 2.2, Wd, { color: [0.95, 0.76, 0.12], seat: [0.3, 0.12, 0.08], taxi: true }, M);
     scene.add(this.mesh);
     this.pos = new THREE.Vector3();
     this.heading = 0; // kierunek jazdy w płaszczyźnie (x,z): (cos, sin)
@@ -64,10 +64,10 @@ export class Vehicle {
     else this.v -= Math.sign(this.v) * Math.min(Math.abs(this.v), 2.2 * dt);
     if (hand) this.v -= Math.sign(this.v) * Math.min(Math.abs(this.v), 20 * dt);
     this.v -= this.v * 0.18 * dt;
-    this.v = Math.max(-7, Math.min(26, this.v));
+    this.v = Math.max(-5, Math.min(17, this.v)); // wóz z 1900 r.: ~60 km/h
     this.steer += (st - this.steer) * Math.min(1, dt * 6);
     const maxA = 0.6 * (1 - Math.min(0.55, Math.abs(this.v) / 45));
-    const yawRate = (this.v / 2.6) * Math.tan(this.steer * maxA) * (hand ? 1.6 : 1);
+    const yawRate = (this.v / 2.3) * Math.tan(this.steer * maxA) * (hand ? 1.6 : 1);
     const nh = this.heading + yawRate * dt;
     const nx = this.pos.x + Math.cos(nh) * this.v * dt, nz = this.pos.z + Math.sin(nh) * this.v * dt;
     if (!this.blocked(nx, nz, nh)) {
@@ -82,11 +82,11 @@ export class Vehicle {
     // wysokość, pochylenie i przechył z czterech kół
     const c = Math.cos(this.heading), s = Math.sin(this.heading);
     const hAt = (u, w) => this.grid.height(this.pos.x + c * u - s * w, this.pos.z + s * u + c * w);
-    const fl = hAt(1.4, -0.8), fr = hAt(1.4, 0.8), bl = hAt(-1.4, -0.8), br = hAt(-1.4, 0.8);
+    const fl = hAt(1.25, -0.73), fr = hAt(1.25, 0.73), bl = hAt(-1.2, -0.73), br = hAt(-1.2, 0.73);
     const y = (fl + fr + bl + br) / 4;
     this.pos.y += (y - this.pos.y) * Math.min(1, dt * 12);
-    this.pitch += (Math.atan2((fl + fr) / 2 - (bl + br) / 2, 2.8) - this.pitch) * Math.min(1, dt * 10);
-    this.roll += (Math.atan2((fr + br) / 2 - (fl + bl) / 2, 1.6) - this.roll) * Math.min(1, dt * 10);
+    this.pitch += (Math.atan2((fl + fr) / 2 - (bl + br) / 2, 2.45) - this.pitch) * Math.min(1, dt * 10);
+    this.roll += (Math.atan2((fr + br) / 2 - (fl + bl) / 2, 1.46) - this.roll) * Math.min(1, dt * 10);
     this.sync();
   }
 

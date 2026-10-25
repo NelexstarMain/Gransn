@@ -11,6 +11,8 @@
 //     koniec blisko drogi = przedłużenie do niej; woda i brzeg wyspy
 //     odrzucają odcinek (rzekę można przejść tylko mostem).
 //  Kolejka priorytetowa po "czasie" daje naturalny wzrost miasta od centrum.
+//  Połączenie z Voronoi: krawędzie komórek Voronoi są gotowym szkieletem
+//  ulic głównych, a L-system zagęszcza kwartały bocznymi uliczkami.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
@@ -33,7 +35,7 @@ function projT(p, a, b) {
   return { t, d: Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dz * t), q: [a[0] + dx * t, a[1] + dz * t] };
 }
 
-export function growRoads(seed, T, bridges, center) {
+export function growRoads(seed, T, bridges, center, base = []) {
   const rng = new Rng(hash(seed, 1999));
   const pop = (x, z) => {
     const inl = T.inland(x, z);
@@ -78,6 +80,18 @@ export function growRoads(seed, T, bridges, center) {
     push(mk(br.e1, ang, 'h', 0));
     push(mk(br.e0, ang + Math.PI, 'h', 0));
   }
+  // szkielet z diagramu Voronoi: gotowe ulice główne; z nich L-system
+  // wypuszcza prostopadłe uliczki do wnętrza kwartałów
+  for (const e of base) {
+    if (Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 6) continue;
+    const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+    insert({ a: e.a, b: e.b, ang, type: 'v', w: e.w });
+    const L = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
+    for (let d = 22 + rng.float(0, 12); d < L - 18; d += rng.float(30, 46)) {
+      const p = [e.a[0] + Math.cos(ang) * d, e.a[1] + Math.sin(ang) * d];
+      for (const sd of [-1, 1]) if (rng.chance(0.55)) push(mk(p, ang + sd * (Math.PI / 2 + rng.float(-0.15, 0.15)), 's', 3 + rng.float(0, 4)));
+    }
+  }
   const r0 = rng.float(0, Math.PI * 2);
   for (let k = 0; k < 4; k++) {
     const ang = r0 + (k * Math.PI) / 2;
@@ -98,7 +112,9 @@ export function growRoads(seed, T, bridges, center) {
       const hit = segInter(s.a, s.b, o.a, o.b);
       if (hit && (!best || hit.t < best.t)) best = hit;
     }
-    if (best) {
+    if (best && s.type === 'h') {
+      // autostrada przecina drogę i jedzie dalej (skrzyżowanie bez zakończenia)
+    } else if (best) {
       s.b = best.p;
       s.severed = true;
     } else {
