@@ -339,17 +339,27 @@ function buildRoad(b, city, s) {
   const o = { tint: ROAD_TINT[s.mat], flat: 1 };
   const yOff = s.mat === 'asphalt' ? 0.07 : s.mat === 'cobble' ? 0.06 : 0.05;
   const Y = (x, z) => (s.bridge ? T.bankY : T.height(x, z)) + yOff;
+  // ulica kończąca się przy nabrzeżu: wierzchołki z koryta wracają na brzeg (bez "balkonu" nad wodą)
+  const own = s.bridge ? 0 : T.bankSide((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2);
+  const onLand = (x, z) => {
+    if (s.bridge) return [x, z];
+    const c = T.clampToBank(x, z, own);
+    return c ? [c[0], c[1]] : [x, z];
+  };
   const P = (along, side) => {
-    const x = s.a[0] + u[0] * along + n[0] * side, z = s.a[1] + u[1] * along + n[1] * side;
+    const [x, z] = onLand(s.a[0] + u[0] * along + n[0] * side, s.a[1] + u[1] * along + n[1] * side);
     return [x, Y(x, z), z];
   };
+  // asfalt: autostrada ma 4 pasy (cała szerokość tekstury), ulice tylko środek z osią
+  const v0 = s.type === 'H' ? 0 : 0.3, v1 = s.type === 'H' ? 1 : 0.7, s0 = s.s0 || 0;
   const steps = Math.max(1, Math.ceil(L / 3)), across = 2;
   for (let i = 0; i < steps; i++) {
     const t0 = (i / steps) * L, t1 = ((i + 1) / steps) * L;
     for (let j = 0; j < across; j++) {
       const w0 = -rw + (2 * rw * j) / across, w1 = -rw + (2 * rw * (j + 1)) / across;
       const q = [P(t0, w0), P(t1, w0), P(t1, w1), P(t0, w1)];
-      const oo = s.mat === 'asphalt' ? { ...o, uv: [[(s.s0 + t0) / 12, j / across], [(s.s0 + t1) / 12, j / across], [(s.s0 + t1) / 12, (j + 1) / across], [(s.s0 + t0) / 12, (j + 1) / across]] } : o;
+      const va = v0 + ((v1 - v0) * j) / across, vb = v0 + ((v1 - v0) * (j + 1)) / across;
+      const oo = s.mat === 'asphalt' ? { ...o, uv: [[(s0 + t0) / 12, va], [(s0 + t1) / 12, va], [(s0 + t1) / 12, vb], [(s0 + t0) / 12, vb]] } : o;
       b.wpoly(mat, q, [0, 1, 0], oo);
     }
   }
@@ -358,7 +368,7 @@ function buildRoad(b, city, s) {
     const base = Math.atan2(dir[1], dir[0]), seg = 8;
     for (let k = 0; k < seg; k++) {
       const a0 = base - Math.PI / 2 + (k / seg) * Math.PI, a1 = base - Math.PI / 2 + ((k + 1) / seg) * Math.PI;
-      const p0 = [c[0] + Math.cos(a0) * rw, c[1] + Math.sin(a0) * rw], p1 = [c[0] + Math.cos(a1) * rw, c[1] + Math.sin(a1) * rw];
+      const p0 = onLand(c[0] + Math.cos(a0) * rw, c[1] + Math.sin(a0) * rw), p1 = onLand(c[0] + Math.cos(a1) * rw, c[1] + Math.sin(a1) * rw);
       b.wpoly(mat, [[c[0], Y(c[0], c[1]), c[1]], [p1[0], Y(p1[0], p1[1]), p1[1]], [p0[0], Y(p0[0], p0[1]), p0[1]]], [0, 1, 0], s.mat === 'asphalt' ? { ...o, uv: [[0.02, 0.5], [0.02, 0.5], [0.02, 0.5]] } : o);
     }
   };
@@ -404,7 +414,7 @@ export function buildRiver(city) {
     const dx = p[0] - br.p[0], dz = p[1] - br.p[1];
     return Math.abs(dx * br.perp[0] + dz * br.perp[1]) < br.width / 2 + 0.6 && Math.abs(dx * br.axis[0] + dz * br.axis[1]) < br.L + 3;
   });
-  for (const bank of [T.left, T.right]) {
+  for (const bank of [T.bankL, T.bankR]) {
     for (let i = 0; i < bank.length - 1; i++) {
       const a = bank[i], c = bank[i + 1], L = dist(a, c), m = Math.max(1, Math.round(L / 6));
       const mid = lerp2(a, c, 0.5), rv = T.river(mid[0], mid[1]);
@@ -476,7 +486,7 @@ export function buildChunkLOD(city, id) {
     if (L < 0.5) continue;
     const n = [-(st.b[1] - st.a[1]) / L * st.rw, (st.b[0] - st.a[0]) / L * st.rw];
     const P = (p, sd) => { const x = p[0] + n[0] * sd, z = p[1] + n[1] * sd; return [x, (st.bridge ? T.bankY : T.height(x, z)) + 0.13, z]; };
-    b.wpoly(st.mat === 'dirt' ? 'gravel' : st.mat === 'asphalt' ? 'asphalt' : 'cobble', [P(st.a, -1), P(st.b, -1), P(st.b, 1), P(st.a, 1)], [0, 1, 0], { tint: ROAD_TINT[st.mat], flat: 1, uv: [[0, 0], [L / 12, 0], [L / 12, 1], [0, 1]] });
+    b.wpoly(st.mat === 'dirt' ? 'gravel' : st.mat === 'asphalt' ? 'asphalt' : 'cobble', [P(st.a, -1), P(st.b, -1), P(st.b, 1), P(st.a, 1)], [0, 1, 0], { tint: ROAD_TINT[st.mat], flat: 1, uv: st.type === 'H' ? [[0, 0], [L / 12, 0], [L / 12, 1], [0, 1]] : [[0, 0.3], [L / 12, 0.3], [L / 12, 0.7], [0, 0.7]] });
   }
   for (const t of ch.trees) {
     const gy = T.height(t.p[0], t.p[1]), r = 2.4 * t.s, h = 8 * t.s;

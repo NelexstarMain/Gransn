@@ -17,7 +17,6 @@ export class CollisionGrid {
     this.n = Math.ceil((city.size + 80) / cell);
     this.data = new Uint8Array(this.n * this.n);
     const T = this.T, g = city.grid;
-    for (let i = 0; i < T.left.length - 1; i++) this.fill([T.left[i], T.left[i + 1], T.right[i + 1], T.right[i]], SOLID);
     for (let q = 0; q < g.quads.length / 4; q++) {
       const G = quadGeom(g, q);
       for (let i = 0; i < 4; i++) {
@@ -50,6 +49,18 @@ export class CollisionGrid {
     }
     // jezdnia na końcu: zawsze przejezdna (nic na niej nie stoi)
     for (const st of city.streets) this.fill(capsulePoly(st, 0, 4), st.bridge ? BRIDGE : ROAD);
+    // koryto rzeki (dokładnie do nabrzeża) — nie da się wjechać na wodę, tylko na most
+    const P = T.pts, hw = T.hw, c = this.cell;
+    for (let i = 0; i < P.length - 1; i++) {
+      const x0 = Math.min(P[i][0], P[i + 1][0]) - hw, x1 = Math.max(P[i][0], P[i + 1][0]) + hw;
+      const z0 = Math.min(P[i][1], P[i + 1][1]) - hw, z1 = Math.max(P[i][1], P[i + 1][1]) + hw;
+      for (let z = Math.floor(z0 / c) * c + c / 2; z <= z1; z += c)
+        for (let x = Math.floor(x0 / c) * c + c / 2; x <= x1; x += c) {
+          const k = this.idx(x, z);
+          if (k < 0 || this.data[k] === BRIDGE || this.data[k] === SOLID) continue;
+          if (T.river(x, z).d < hw) this.data[k] = SOLID;
+        }
+    }
   }
 
   idx(x, z) {

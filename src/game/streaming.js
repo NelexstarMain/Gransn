@@ -17,7 +17,7 @@ export function buildMeshes(mats, M, { shadows = true } = {}) {
     g.setIndex(new THREE.BufferAttribute(buf.i, 1));
     g.computeBoundingSphere();
     const mesh = new THREE.Mesh(g, M[name]);
-    const ground = name === 'cobble' || name === 'slab' || name === 'curb';
+    const ground = name === 'cobble' || name === 'slab' || name === 'curb' || name === 'asphalt' || name === 'gravel';
     mesh.castShadow = shadows && !ground && name !== 'light';
     mesh.receiveShadow = shadows;
     mesh.matrixAutoUpdate = false;

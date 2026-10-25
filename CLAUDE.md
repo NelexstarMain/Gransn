@@ -49,6 +49,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 6. Boty-kierowcy z trasami (A*) i korkami. Dym, ślady opon, odbicia w szybach, ładniejsze światło **bez spadku FPS**.
 7. Ostatnio: miasto było częściowo pod wodą (morze przykrywało ląd). Naprawione w `terrain.js` (dolna granica lądu) i w `grid.js` (plaża sprawdzana przed rzeką). Podkład terenu leży teraz 5 cm niżej i jest płaski.
 8. „Latająca powierzchnia” nad rzeką: punkty siatki w korycie miały typ ulicy, więc dostawały chodnik, którego rogi rzutowano na OBA brzegi (płyta wisiała nad wodą, auto mogło po niej jechać, mogli tam stać pasażerowie). Teraz punkty w korycie to `T_WATER`, a ćwiartka chodnika jest rzutowana tylko na brzeg swojego punktu (`clampToBank(x, z, side)`, `bankSide`).
+9. Brzeg rzeki = dokładnie linia w odległości `hw` od osi (`terrain.bankL/bankR`: narożnik po wewnętrznej stronie zakrętu, łuk po zewnętrznej). Po niej idą mury nabrzeża, minimapa i kolizje (koryto SOLID poza mostami). Wcześniej mur szedł po ściętym narożniku, a ziemia po łuku, więc wystawała nad wodę. Końcówki ulic przy nabrzeżu są docinane do brzegu. Autostrada przecina rzekę po moście (`highwayBridge` w `layout.js`). Ulice w mieście mają asfalt (środek tekstury z osią), autostrada pełną tablicę 4 pasów, drogi w lesie są ubite.
 
 ## Architektura (src/)
 
@@ -86,8 +87,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
   |---|---|
   | podkład terenu | −0,05 (płaski) |
   | droga gruntowa | +0,05 |
-  | bruk | +0,06 |
-  | asfalt | +0,07 |
+    | asfalt | +0,07 |
   | chodniki i trawniki w mieście | +0,15 (`raised()`) |
   | krawężnik | +0,16 |
 

@@ -38,11 +38,47 @@ export class Terrain {
       this.left.push([P[i][0] - tz * m, P[i][1] + tx * m]);
       this.right.push([P[i][0] + tz * m, P[i][1] - tx * m]);
     }
+    // nabrzeża = DOKŁADNIE linia w odległości hw od osi: na wewnętrznej stronie zakrętu
+    // narożnik, na zewnętrznej łuk. Dzięki temu mur nabrzeża, ziemia (clampToBank)
+    // i kolizje mają tę samą krawędź — nic nie wisi nad wodą i nie ma szczelin.
+    this.bankL = this.offsetBank(1);
+    this.bankR = this.offsetBank(-1);
     this.plaza = null;
     this.half = half;
     // wyspa: promień brzegu R(θ) z losowymi półwyspami i zatokami
     this.seaY = this.waterY;
     this.isl = { r0: half * 0.84, ph: [r.float(0, 6), r.float(0, 6), r.float(0, 6)], o: r.float(0, 100) };
+  }
+
+  offsetBank(sd) {
+    const P = this.pts, hw = this.hw, out = [];
+    const nrm = (i) => {
+      const a = P[i], b = P[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      return [(-(b[1] - a[1]) / l) * sd, ((b[0] - a[0]) / l) * sd];
+    };
+    out.push([P[0][0] + nrm(0)[0] * hw, P[0][1] + nrm(0)[1] * hw]);
+    for (let i = 1; i < P.length - 1; i++) {
+      const na = nrm(i - 1), nb = nrm(i), p = P[i];
+      const tb = [P[i + 1][0] - p[0], P[i + 1][1] - p[1]];
+      if (na[0] * tb[0] + na[1] * tb[1] >= 0) {
+        // wewnętrzna strona zakrętu: przecięcie przesuniętych odcinków
+        const m = [(na[0] + nb[0]) / 2, (na[1] + nb[1]) / 2], m2 = m[0] * m[0] + m[1] * m[1];
+        out.push([p[0] + (m[0] * hw) / m2, p[1] + (m[1] * hw) / m2]);
+      } else {
+        // zewnętrzna: łuk wokół wierzchołka osi
+        let a0 = Math.atan2(na[1], na[0]), a1 = Math.atan2(nb[1], nb[0]);
+        while (a1 - a0 > Math.PI) a1 -= 2 * Math.PI;
+        while (a0 - a1 > Math.PI) a1 += 2 * Math.PI;
+        const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / 0.12));
+        for (let k = 0; k <= n; k++) {
+          const a = a0 + ((a1 - a0) * k) / n;
+          out.push([p[0] + Math.cos(a) * hw, p[1] + Math.sin(a) * hw]);
+        }
+      }
+    }
+    const e = P.length - 1, ne = nrm(e - 1);
+    out.push([P[e][0] + ne[0] * hw, P[e][1] + ne[1] * hw]);
+    return out;
   }
 
   coastR(theta) {
