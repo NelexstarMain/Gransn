@@ -1,0 +1,18 @@
+{
+  "name": "gransn-1984",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "1984 — open world z ~20 deformowalnych modułów (cage deformation + szum)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "vite": "6.0.7"
+  }
+}

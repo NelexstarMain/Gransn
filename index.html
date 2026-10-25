@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>1984 — Pas Startowy Jeden</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #9da39f; font-family: 'Courier New', monospace; color: #e8e3d4; }
+      #app canvas { display: block; filter: saturate(0.78) contrast(1.06); }
+      #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(10,12,10,0.45) 100%); }
+      #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(18, 20, 18, 0.82); cursor: pointer; text-align: center; }
+      #overlay h1 { font-size: 64px; letter-spacing: 0.3em; margin: 0 0 6px; color: #d8d1bd; }
+      #overlay h2 { font-weight: normal; letter-spacing: 0.25em; margin: 0 0 28px; color: #b8261d; }
+      #overlay .keys { line-height: 1.8; font-size: 14px; color: #bdb7a6; }
+      #overlay .go { margin-top: 26px; font-size: 18px; letter-spacing: 0.2em; display: none; animation: pulse 1.6s infinite; }
+      body.ready #overlay .go { display: block; }
+      body.ready #loader { display: none; }
+      #loader { width: 360px; margin-top: 10px; }
+      #track { height: 4px; background: #333; } #bar { height: 100%; width: 0; background: #b8261d; transition: width 0.2s; }
+      #loadlabel { font-size: 13px; margin-top: 10px; color: #aaa; }
+      @keyframes pulse { 50% { opacity: 0.4; } }
+      #hud { position: fixed; inset: 0; pointer-events: none; }
+      body.nohud #hud { display: none; }
+      #minimap { position: absolute; right: 16px; top: 16px; width: 220px; height: 220px; border: 2px solid rgba(0,0,0,0.5); opacity: 0.85; }
+      #clock { position: absolute; left: 16px; top: 14px; font-size: 15px; text-shadow: 0 1px 2px #000; letter-spacing: 0.08em; }
+      #stats { position: absolute; left: 16px; bottom: 12px; font-size: 12px; opacity: 0.75; text-shadow: 0 1px 2px #000; }
+      #msg { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); background: rgba(20,30,25,0.8); border-left: 4px solid #b8261d; padding: 10px 18px; font-size: 18px; opacity: 0; transition: opacity 0.5s; }
+      #cross { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: rgba(255,255,255,0.7); border-radius: 50%; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="vignette"></div>
+    <div id="hud">
+      <canvas id="minimap" width="220" height="220"></canvas>
+      <div id="clock">13:00</div>
+      <div id="stats"></div>
+      <div id="msg"></div>
+      <div id="cross"></div>
+    </div>
+    <div id="overlay">
+      <h1>1984</h1>
+      <h2>PAS STARTOWY JEDEN</h2>
+      <div class="keys">
+        WASD — chodzenie &nbsp;·&nbsp; Mysz — rozglądanie &nbsp;·&nbsp; Shift — bieg &nbsp;·&nbsp; Spacja — skok<br />
+        F — tryb lotu (Spacja/C góra/dół) &nbsp;·&nbsp; H — ukryj HUD &nbsp;·&nbsp; Esc — pauza
+      </div>
+      <div id="loader"><div id="track"><div id="bar"></div></div><div id="loadlabel">Ładowanie…</div></div>
+      <div class="go">[ KLIKNIJ, ABY WEJŚĆ ]</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
