@@ -76,6 +76,37 @@ export class RoadNet {
     }
     return [x, z];
   }
+
+  // jak clamp, ale zawsze na stronę jezdni, po której leży punkt odniesienia ref
+  // (róg chodnika za osią ulicy nie przeskakuje na drugi krawężnik — płyta nie
+  // rozciąga się w poprzek jezdni)
+  clampSide(p, ref, margin = 0.3) {
+    let x = p[0], z = p[1];
+    for (let it = 0; it < 4; it++) {
+      let worst = null, depth = 0;
+      for (const s of this.near(x, z)) {
+        const pr = RoadNet.proj(s, x, z);
+        const pen = s.rw + margin - pr.d;
+        if (pen > depth) { depth = pen; worst = { s, pr }; }
+      }
+      if (!worst) break;
+      const { s, pr } = worst;
+      let nx = x - pr.qx, nz = z - pr.qz;
+      const rx = ref[0] - pr.qx, rz = ref[1] - pr.qz;
+      if (nx * rx + nz * rz <= 0 || Math.hypot(nx, nz) < 1e-6) {
+        if (pr.t > 0 && pr.t < 1) {
+          // prosty odcinek: na krawędź po stronie ref
+          const dx = s.b[0] - s.a[0], dz = s.b[1] - s.a[1], dl = Math.hypot(dx, dz) || 1;
+          const sd = -dz * rx + dx * rz >= 0 ? 1 : -1;
+          nx = (-dz / dl) * sd; nz = (dx / dl) * sd;
+        } else { nx = rx; nz = rz; }
+      }
+      const l = Math.hypot(nx, nz) || 1;
+      x = pr.qx + (nx / l) * (s.rw + margin + 1e-3);
+      z = pr.qz + (nz / l) * (s.rw + margin + 1e-3);
+    }
+    return [x, z];
+  }
 }
 
 // wielokąt kapsuły (do kolizji i minimapy)

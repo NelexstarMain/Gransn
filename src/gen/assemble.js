@@ -294,18 +294,32 @@ function roofQuarter(b, city, info, G, i, top) {
 // Nawierzchnia ćwiartki pustego punktu. W mieście wszystko poza jezdnią leży
 // na +0,15 m (chodnik / trawnik / bruk podwórza) i jest DOCINANE do krawędzi
 // jezdni; od strony niskiego terenu (las, plaża) dostaje obrzeże.
-function groundQuarter(b, city, G, i, q) {
-  const g = city.grid, T = city.terrain, a = G.v[i], ty = g.TY[a];
-  if (!raised(city, a)) return;
-  const roads = city.roads;
-  // ćwiartka zostaje na brzegu swojego punktu — nie rozciąga się nad rzeką na drugi brzeg
-  const own = T.bankSide(G.p[i][0], G.p[i][1]);
-  const clampAll = (p) => {
-    let c = roads.clamp(p, 0.3);
+// Docinanie ćwiartki chodnika do jezdni i brzegu rzeki. Wszystkie rogi idą na TĘ
+// stronę ulicy/rzeki, po której leży punkt odniesienia (punkt siatki albo — gdy
+// sam stoi na jezdni — jego róg najdalej od jezdni). null = ćwiartka cała na jezdni.
+export function sidewalkClamp(city, G, i) {
+  const T = city.terrain, roads = city.roads;
+  const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
+  let ref = G.p[i];
+  if (roads.clearance(ref[0], ref[1]) < 0.3) {
+    let best = -1e9;
+    for (const p of raw) { const cl = roads.clearance(p[0], p[1]); if (cl > best) { best = cl; ref = p; } }
+    if (best < 0.3) return null;
+  }
+  const own = T.bankSide(ref[0], ref[1]);
+  return (p) => {
+    let c = roads.clampSide(p, ref, 0.3);
     const bank = T.clampToBank(c[0], c[1], own);
     if (bank) c = [bank[0], bank[1]];
     return c;
   };
+}
+
+function groundQuarter(b, city, G, i, q) {
+  const g = city.grid, T = city.terrain, a = G.v[i], ty = g.TY[a];
+  if (!raised(city, a)) return;
+  const clampAll = sidewalkClamp(city, G, i);
+  if (!clampAll) return;
   const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
   const pts = raw.map(clampAll);
   // ćwiartka zjedzona przez jezdnię
@@ -460,8 +474,9 @@ export function buildChunkLOD(city, id) {
       const a = V[i];
       if (g.TY[a] !== T_BLD) {
         if (raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN) {
-          const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]];
-          if (q4.some((p) => T.river(p[0], p[1]).d < T.hw + 0.5)) continue;
+          const cl = sidewalkClamp(city, G, i);
+          if (!cl) continue;
+          const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map(cl);
           b.wpoly('slab', q4.map((p) => [p[0], T.height(p[0], p[1]) + 0.1, p[1]]), [0, 1, 0], { flat: 1 });
         }
         continue;
