@@ -263,14 +263,10 @@ export function createTextures() {
     const c = (0.35 + id * 0.35) * (0.5 + 0.5 * e);
     return [c, c * 0.95, c * 0.9, e * (1 - d1)];
   }, 4);
-  // — asfalt z pasami (u = wzdłuż drogi, okres 12 m; v = w poprzek) —
+  // — asfalt bez pasów (u = wzdłuż drogi, okres 12 m; v = w poprzek) —
   T.asphalt = bake(256, 512, (u, v) => {
     const n = nA(u, v, 16, 4), f = nB(u, v, 128, 1);
     let c = 0.22 + (n - 0.5) * 0.06 + (f - 0.5) * 0.05;
-    const line = (x, w) => Math.abs(v - x) < w;
-    if (line(0.04, 0.008) || line(0.96, 0.008)) c = 0.85;
-    else if (line(0.5, 0.012) && !line(0.5, 0.004)) c = 0.8;
-    else if ((line(0.27, 0.007) || line(0.73, 0.007)) && (u % 1) < 0.35) c = 0.82;
     return [c, c, c * 1.02, 0.5 + (f - 0.5) * 0.2];
   }, 1, { aniso: 8 });
 
