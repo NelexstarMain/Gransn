@@ -62,6 +62,16 @@ export class CollisionGrid {
           if (T.river(x, z).d < hw) this.data[k] = SOLID;
         }
     }
+    // mosty na końcu: ostatnie słowo ma pokład (inaczej koniec ulicy przy brzegu albo koryto
+    // zasypywały jego komórki i z mostu nie dało się zjechać)
+    for (const br of city.bridges) {
+      if (br.highway) continue;
+      const hw = br.width / 2 - 0.5, e = 0.5;
+      const P = (pt, s) => [pt[0] + br.perp[0] * s, pt[1] + br.perp[1] * s];
+      const e0 = [br.e0[0] - br.axis[0] * e, br.e0[1] - br.axis[1] * e], e1 = [br.e1[0] + br.axis[0] * e, br.e1[1] + br.axis[1] * e];
+      this.fill([P(e0, -hw), P(e1, -hw), P(e1, hw), P(e0, hw)], BRIDGE);
+    }
+    for (const st of city.streets) if (st.bridge) this.fill(capsulePoly(st, 0, 4), BRIDGE);
   }
 
   idx(x, z) {
