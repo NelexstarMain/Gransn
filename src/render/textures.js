@@ -212,6 +212,20 @@ export function createTextures() {
     return [base + r * 0.12, base - r * 0.06, base - r * 0.12, 0.3 + seam * 0.7 + (n - 0.5) * 0.1];
   }, 4);
 
+  // — trawa: źdźbła z szumu, plamy suchej trawy i koniczyny —
+  T.grass = bake(512, 512, (u, v) => {
+    const n = nA(u, v, 8, 4), f = nB(u, v, 256, 1), m = nC(u, v, 4, 3);
+    const dry = smooth(0.55, 0.75, m);
+    const g = 0.75 + (f - 0.5) * 0.5 + (n - 0.5) * 0.25;
+    return [(0.3 + dry * 0.22) * g, (0.45 + dry * 0.05) * g, (0.2 + dry * 0.02) * g, f * 0.7 + n * 0.3];
+  }, 3);
+
+  // — falki na wodzie (tylko normal map) —
+  T.water = bake(256, 256, (u, v) => {
+    const h = nA(u, v, 8, 4) * 0.6 + nB(u, v, 16, 3) * 0.4;
+    return [0.5, 0.5, 0.5, h];
+  }, 3);
+
   // — fasada LOD: jedno okno na kafel (przęsło × kondygnacja) —
   T.lod = bake(128, 128, (u, v) => {
     const win = u > 0.32 && u < 0.68 && v > 0.22 && v < 0.72;

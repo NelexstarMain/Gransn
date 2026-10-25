@@ -37,30 +37,30 @@ export class Streamer {
     this.city = city;
     this.pool = pool;
     this.M = M;
-    this.state = city.blocks.map(() => ({ lod: null, detail: null, pending: false, want: false }));
+    this.state = city.chunks.map(() => ({ lod: null, detail: null, pending: false, want: false }));
     this.tris = 0;
   }
 
   async loadLOD(onProgress) {
     let done = 0;
     await Promise.all(
-      this.city.blocks.map(async (blk, id) => {
+      this.city.chunks.map(async (blk, id) => {
         const mats = await this.pool.run({ seed: this.city.seed, kind: 'lod', id }, 1e6);
         const g = buildMeshes(mats, this.M, { shadows: false });
         this.state[id].lod = g;
         this.scene.add(g);
-        onProgress?.(++done / this.city.blocks.length);
+        onProgress?.(++done / this.city.chunks.length);
       }),
     );
   }
 
   distance(id, p) {
-    const b = this.city.blocks[id];
+    const b = this.city.chunks[id];
     return Math.hypot(b.center[0] - p.x, b.center[1] - p.z) - b.radius;
   }
 
   update(p) {
-    this.city.blocks.forEach((blk, id) => {
+    this.city.chunks.forEach((blk, id) => {
       const st = this.state[id];
       const d = this.distance(id, p);
       if (d < DETAIL_IN) st.want = true;

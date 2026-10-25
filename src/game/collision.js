@@ -1,27 +1,40 @@
-// Siatka kolizji 0.5 m — rasteryzowana z tych samych danych co geometria.
-// Typ komórki koduje też wysokość nawierzchni (jezdnia, chodnik, podwórze...).
-import { pointInPoly, MINISTRY } from '../city/layout.js';
+// Siatka kolizji 0.5 m — rasteryzowana z tych samych danych co geometria:
+// pełne ćwiartki parteru = mur, ćwiartki chodnika = +0.15 m itd.
+import { pointInPoly } from '../city/layout.js';
+import { filled, quadGeom, quadMixed0, T_PLAZA, T_PARK, T_GARDEN, T_COURT, T_BLD } from '../city/grid.js';
 
-export const ROAD = 0, WALK = 1, COURT = 2, PLAZA = 3, GATE = 4, SOLID = 255;
-const HEIGHT = { [ROAD]: 0, [WALK]: 0.15, [COURT]: 0.05, [PLAZA]: 0.15, [GATE]: 0.1 };
+export const ROAD = 0, WALK = 1, COURT = 2, PLAZA = 3, GATE = 4, BRIDGE = 5, SOLID = 255;
+const OFFSET = { [ROAD]: 0, [WALK]: 0.15, [COURT]: 0.05, [PLAZA]: 0.15, [GATE]: 0 };
 
 export class CollisionGrid {
   constructor(city, cell = 0.5) {
+    this.city = city;
+    this.T = city.terrain;
     this.cell = cell;
     this.origin = -city.half - 40;
     this.n = Math.ceil((city.size + 80) / cell);
     this.data = new Uint8Array(this.n * this.n);
-    for (const blk of city.blocks) {
-      this.fill(blk.curb, blk.kind === 'plaza' ? PLAZA : WALK);
-      if (blk.kind === 'plaza') {
-        const h = MINISTRY.tiers[0] + 0.25, [cx, cz] = blk.center;
-        this.fill([[cx - h, cz - h], [cx + h, cz - h], [cx + h, cz + h], [cx - h, cz + h]], SOLID);
-      } else {
-        this.fill(blk.bline, SOLID);
-        this.fill(blk.court, COURT);
-        for (const g of blk.gates) this.fill(g, GATE);
+    const T = this.T, g = city.grid;
+    for (let i = 0; i < T.left.length - 1; i++) this.fill([T.left[i], T.left[i + 1], T.right[i + 1], T.right[i]], SOLID);
+    for (let q = 0; q < g.quads.length / 4; q++) {
+      const G = quadGeom(g, q), mixed = quadMixed0(g, q);
+      for (let i = 0; i < 4; i++) {
+        const a = G.v[i], ty = g.TY[a];
+        const poly = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]];
+        if (filled(g, a, 0)) this.fill(poly, SOLID);
+        else if (ty === T_BLD) this.fill(poly, GATE);
+        else if (mixed || ty === T_PLAZA) this.fill(poly, ty === T_PLAZA && !mixed ? PLAZA : WALK);
+        else if (ty === T_PARK || ty === T_GARDEN || ty === T_COURT) this.fill(poly, COURT);
       }
-      for (const l of blk.lamps) this.disc(l.p[0], l.p[1], 0.2);
+    }
+    for (const l of city.lamps) this.disc(l.p[0], l.p[1], 0.2);
+    for (const t of city.trees) this.disc(t.p[0], t.p[1], 0.35 * t.s);
+    for (const [x, z] of city.monuments) this.fill([[x - 2.2, z - 2.2], [x + 2.2, z - 2.2], [x + 2.2, z + 2.2], [x - 2.2, z + 2.2]], SOLID);
+    for (const br of city.bridges) {
+      const hw = br.width / 2 - 0.5, e = 0.5;
+      const P = (pt, s) => [pt[0] + br.perp[0] * s, pt[1] + br.perp[1] * s];
+      const e0 = [br.e0[0] - br.axis[0] * e, br.e0[1] - br.axis[1] * e], e1 = [br.e1[0] + br.axis[0] * e, br.e1[1] + br.axis[1] * e];
+      this.fill([P(e0, -hw), P(e1, -hw), P(e1, hw), P(e0, hw)], BRIDGE);
     }
   }
 
@@ -61,6 +74,8 @@ export class CollisionGrid {
   }
 
   height(x, z) {
-    return HEIGHT[this.type(x, z)] ?? 0;
+    const t = this.type(x, z);
+    if (t === BRIDGE) return this.T.bankY + 0.15;
+    return this.T.height(x, z) + (OFFSET[t] ?? 0);
   }
 }

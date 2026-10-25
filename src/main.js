@@ -41,12 +41,12 @@ async function start() {
   await new Promise((r) => setTimeout(r, 30));
   const city = generateCity(SEED);
   const grid = new CollisionGrid(city);
-  const { M, telescreen } = createMaterials();
+  const { M, telescreen } = await createMaterials();
   const atmo = createAtmosphere(scene, renderer);
 
   // teren poza mapą
   const outer = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x4a4a46, roughness: 1 }));
-  outer.position.y = -0.08;
+  outer.position.y = city.terrain.waterY - 2;
   outer.receiveShadow = true;
   scene.add(outer);
 
@@ -57,8 +57,26 @@ async function start() {
   player.update(0);
   const hud = new Hud(city);
 
+  // rzeka: lustro wody między brzegami
+  const T = city.terrain, wv = [], wi = [], wuv = [];
+  for (let i = 0; i < T.left.length; i++) {
+    wv.push(T.left[i][0], T.waterY, T.left[i][1], T.right[i][0], T.waterY, T.right[i][1]);
+    wuv.push(T.left[i][0], T.left[i][1], T.right[i][0], T.right[i][1]);
+    if (i > 0) { const a = (i - 1) * 2; wi.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  }
+  const wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(wv, 3));
+  wg.setAttribute('uv', new THREE.Float32BufferAttribute(wuv, 2));
+  wg.setIndex(wi);
+  wg.computeVertexNormals();
+  if (wg.attributes.normal.getY(0) < 0) { wi.reverse(); wg.setIndex(wi); wg.computeVertexNormals(); }
+  const water = new THREE.Mesh(wg, M.water);
+  water.receiveShadow = true;
+  scene.add(water);
+
   // bruk + LOD całego miasta
-  setProgress(0.08, 'Układanie bruku…');
+  setProgress(0.08, 'Układanie bruku i mostów…');
+  pool.run({ seed: SEED, kind: 'river' }, -2).then((mats) => scene.add(buildMeshes(mats, M)));
   const groundJobs = [];
   for (let tz = 0; tz < GROUND_TILES; tz++)
     for (let tx = 0; tx < GROUND_TILES; tx++)
@@ -98,11 +116,12 @@ async function start() {
     if (streamAcc > 0.25) { streamAcc = 0; streamer.update(player.pos); }
     atmo.update(camera.position);
     telescreen.update(dt);
+    M.water.normalMap.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
     M.screen.emissiveIntensity = 1.05 + Math.sin(clock.elapsedTime * 37) * 0.04 + (Math.random() < 0.01 ? -0.4 : 0);
     renderer.render(scene, camera);
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
-    const info = `${fps.toFixed(0)} FPS · kwartały: ${streamer.loaded}/${city.blocks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${renderer.info.render.calls}${player.fly ? ' · LOT' : ''}`;
+    const info = `${fps.toFixed(0)} FPS · fragmenty: ${streamer.loaded}/${city.chunks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${renderer.info.render.calls}${player.fly ? ' · LOT' : ''}`;
     hud.update(dt, player, info);
     if (!TEST) requestAnimationFrame(frame);
   }

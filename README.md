@@ -1,8 +1,8 @@
 # 1984 — Pas Startowy Jeden
 
-Open world 3D w przeglądarce (Three.js). Około **1,6 km²** miasta (siatka 14×14 kwartałów, ~1,26 × 1,26 km): kamienice w pierzejach, podwórza-studnie z bramami przejazdowymi, chodniki z płyt, granitowe krawężniki, bruk z kocich łbów, latarnie, teleekrany, plakaty Wielkiego Brata i Ministerstwo Prawdy na środku placu.
+Open world 3D w przeglądarce (Three.js). Miasteczko ~1,26 × 1,26 km (≈1,6 km²) na wzgórzach, przecięte rzeką z kamiennymi mostami: śródmieście z kamienicami i podwórzami, przedmieścia z kolorowymi domkami, ogródkami i drzewami, parki z pomnikami, bulwary, latarnie, teleekrany i Ministerstwo Prawdy na placu.
 
-**Całość składa się z 21 modułów i nie używa żadnego pliku graficznego ani modelu 3D.** Tekstury są generowane szumem i diagramami Voronoi.
+**Całość składa się z 29 modułów i nie używa żadnego pliku graficznego ani modelu 3D.** Tekstury są generowane szumem i diagramami Voronoi.
 
 ```bash
 npm install
@@ -11,22 +11,32 @@ npm run dev        # http://localhost:5173
 
 Sterowanie: **WASD** chodzenie, **mysz** rozglądanie, **Shift** bieg, **Spacja** skok, **F** tryb lotu (Spacja/C góra/dół), **H** ukrycie HUD-u. Parametr `?seed=1234` generuje inne miasto.
 
-## Metoda: deformacja klatki (cage / FFD) + szum
+## Metoda: nieregularna siatka + punkty + marching squares (jak w Townscaperze)
 
-Technika pochodzi z gier Oskara Stålberga (*Townscaper*, *Bad North*). Opisuje ją m.in. jego wykład „Organic towns from square tiles”. U podstaw leży Free-Form Deformation (Sederberg & Parry, 1986).
+Technika pochodzi z gier Oskara Stålberga (*Townscaper*, *Bad North*). Opisuje ją m.in. jego wykład „Organic towns from square tiles”. Deformacja modułów to Free-Form Deformation (Sederberg & Parry, 1986).
 
-1. **Moduł jest projektowany w idealnej kostce** (u, v, w ∈ [0,1]): okno, gzyms, brama, dach i tak dalej.
-2. **Świat dzieli się na nieregularne komórki.** Węzły siatki ulic są losowo przesunięte, więc kwartały to dowolne czworokąty, a działki na narożnikach są trapezami. Każda komórka ma 8 narożników.
-3. **Każdy wierzchołek modułu jest mapowany interpolacją trójliniową** na te 8 narożników (`src/gen/cage.js`). Kostka „dopasowuje się” do każdego kształtu. Normalne przekształcamy macierzą dopełnień algebraicznych jakobianu, więc oświetlenie zostaje poprawne.
-4. **Ekstrapolacja poza kostkę** (w < 0: gzymsy, balkony, okap) na narożnikach kwartału automatycznie daje cięcie pod kątem (miter). Dachy sąsiednich krawędzi schodzą się w kosz i grzbiet bez żadnego specjalnego kodu.
-5. **Szum jest funkcją pozycji w świecie** (`src/gen/builder.js`), więc wspólne wierzchołki sąsiednich modułów przesuwają się identycznie i nie powstają szczeliny:
-   - *pochylenie*: kamienice lekko „pływają” proporcjonalnie do wysokości,
-   - *falowanie*: nierówny tynk i cegła,
-   - *wybrzuszenia*: nierówny bruk i płyty,
-   - *brud i AO*: ciemniejsze dołem, plamy w skali kilku metrów.
-6. **Moduły dobiera się regułami sąsiedztwa** (lekka wersja Wave Function Collapse, `src/gen/assemble.js`): brama nigdy obok drzwi, witryny w ciągu, balkony w osi, okna w pionie, ściany ogniowe tylko nad niższym sąsiadem.
+**1. Nieregularna siatka czworokątów** (`src/city/grid.js`):
+- siatka trójkątów, potem losowe łączenie par trójkątów w czworokąty,
+- podział każdego wielokąta na czworokąty (wierzchołek, środek krawędzi, środek ściany),
+- relaksacja „do kwadratu”: każdy czworokąt ciągnie narożniki w stronę najlepiej dopasowanego kwadratu.
 
-W efekcie 21 assetów daje setki tysięcy unikalnych komórek: każde przęsło ma inną szerokość, wysokość kondygnacji, kąt i szum.
+Efekt: organiczna siatka bez prostych linii, a jednak złożona z samych czworokątów.
+
+**2. Każdy punkt siatki to słupek** z liczbą pięter. O tym, czy punkt jest ulicą, budynkiem, podwórzem, parkiem czy placem, decyduje organiczny układ ulic: diagram Voronoi z relaksacją Lloyda, rzeka i mosty (`layout.js`). Liczba pięter zależy od strefy (śródmieście lub przedmieście), działki i szumu.
+
+**3. Każdy czworokąt dzieli się na 4 ćwiartki**, po jednej na każdy z 4 otaczających go punktów. Na każdym poziomie (marching squares):
+- pełna ćwiartka obok pustej daje **ścianę** (okno, drzwi, witrynę, balkon...),
+- najwyższy poziom punktu daje **dach**: wysokość w każdym z 4 punktów ćwiartki liczona jest z sąsiadów (okap = 0, kalenica = pole szumu), więc dachy same układają się w kalenice, naroża i kosze,
+- pusty parter pod pełnym piętrem daje **prześwit bramny** ze stropem, czyli przejście na podwórze,
+- pusta ćwiartka obok zabudowy daje **chodnik** z krawężnikiem tam, gdzie zaczyna się jezdnia.
+
+**4. Każdy moduł jest zaprojektowany w idealnej kostce** i wciśnięty w ćwiartkę (`src/gen/cage.js`) interpolacją trójliniową 8 narożników. Ćwiartki to krzywe czworokąty, a każdy narożnik stoi na terenie na innej wysokości, więc ściany wychodzą pod różnymi kątami i nic nie jest sześcianem.
+
+**5. Szum zależy od pozycji w świecie** (`src/gen/builder.js`), więc sąsiednie moduły przesuwają się identycznie i nie robią się szczeliny. Szum odpowiada za:
+- pochylenie ścian proporcjonalnie do wysokości,
+- nierówny tynk,
+- wybrzuszony bruk,
+- „zgniecione” korony drzew (korona to zaokrąglony sześcian + szum).
 
 ## Moduły (`src/gen/modules.js`)
 
@@ -42,9 +52,13 @@ W efekcie 21 assetów daje setki tysięcy unikalnych komórek: każde przęsło 
 | 8 | `gate` — brama na podwórze (przechodnia) | 19 | `lamp` — latarnia |
 | 9 | `shop` — witryna z szyldem | 20 | `telescreen` — teleekran |
 | 10 | `string` — gzyms kordonowy | 21 | `poster` — plakat / hasło |
-| 11 | `cornice` — gzyms wieńczący | | |
+| 11 | `cornice` — gzyms wieńczący | 22 | `bridge` — przęsło kamiennego mostu |
+| 23 | `quay` — nabrzeże z balustradą | 24 | `tree` — drzewo (kostka + szum) |
+| 25 | `fence` — płot sztachetowy | 26 | `bench` — ławka |
+| 27 | `monument` — obelisk na cokole | 28 | `eave` — okap domu |
+| 29 | `billboard` — billboard Partii | | |
 
-Wielki Brat ma cztery proceduralne wizerunki (`src/render/posters.js`): klasyczny („Patrzy na ciebie”), w czapce oficerskiej („Czuwa nad tobą”), wszechwidzące oko („Widzi wszystko”) i konstruktywistyczny profil („Prowadzi nas”). Plakaty losują wariant.
+Wielki Brat ma dwa wizerunki ze zdjęć (`public/posters/`, najczęściej losowane, wielki portret na szczycie Ministerstwa i na pomnikach w parkach) oraz cztery proceduralne (`src/render/posters.js`): klasyczny („Patrzy na ciebie”), w czapce oficerskiej („Czuwa nad tobą”), wszechwidzące oko („Widzi wszystko”) i konstruktywistyczny profil („Prowadzi nas”). Plakaty losują wariant.
 
 ## Architektura
 
@@ -58,6 +72,6 @@ src/render/     proceduralne tekstury PBR, atlas plakatów, teleekran, atmosfera
 src/game/       gracz (FPS), siatka kolizji 0,5 m, strumieniowanie, HUD
 ```
 
-- **Strumieniowanie:** kwartały w promieniu ~170 m od gracza są składane z modułów w workerach. Dalej stoją tanie bryły LOD z teksturą fasady. Gęsta, „orwellowska” mgła ukrywa przejście.
+- **Strumieniowanie:** świat jest podzielony na fragmenty 80×80 m; te w promieniu ~170 m od gracza są składane z modułów w workerach. Dalej stoją tanie bryły LOD z teksturą fasady. Gęsta, „orwellowska” mgła ukrywa przejście.
 - **Kolizje** rasteryzuje się z tych samych danych co geometrię. Przez bramy da się wejść na podwórza.
 - `?test` renderuje klatki tylko na żądanie (do zrzutów ekranu w headless).

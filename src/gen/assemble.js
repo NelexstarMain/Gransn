@@ -1,13 +1,15 @@
-// Składanie kwartału z modułów. Dla każdej komórki (przęsło × kondygnacja)
-// wybieramy moduł regułami sąsiedztwa (lekka wersja Wave Function Collapse:
-// brama ≠ obok drzwi, witryny w ciągu, balkony w osi, okna w pionie zgodne),
-// budujemy Cage z czterech narożników komórki i odpalamy moduł.
+// Składanie świata z modułów na nieregularnej siatce czworokątów.
+// Każda ściana, dach, chodnik i krawężnik to moduł z idealnej kostki,
+// wciśnięty w ćwiartkę czworokąta wyznaczoną przez 4 punkty dookoła.
+// Narożniki kostki NIE tworzą prostopadłościanu: czworokąty są krzywe,
+// a każdy narożnik stoi na terenie na innej wysokości.
 import { Builder } from './builder.js';
 import { Cage } from './cage.js';
 import { M } from './modules.js';
 import { SHOP_SIGNS, BIG_BROTHER } from './atlas.js';
 import { Rng, hash } from '../core/rng.js';
-import { HALF, MINISTRY } from '../city/layout.js';
+import { HALF } from '../city/layout.js';
+import { levelY, filled, quadGeom, quadMixed0, wallPlan, buildingInfo, ridgeH, T_BLD, T_COURT, T_PARK, T_PLAZA, T_GARDEN, Z_HOUSES } from '../city/grid.js';
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -17,322 +19,314 @@ function place(b, name, cage, W, H, D, p) {
   M[name](b, W, H, D, p);
 }
 
-const STONE_TINTS = [[0.78, 0.75, 0.68], [0.7, 0.68, 0.63], [0.82, 0.8, 0.74]];
-const FRAME_TINTS = [[0.34, 0.24, 0.17], [0.85, 0.83, 0.78], [0.26, 0.28, 0.24], [0.42, 0.3, 0.2]];
-const DOOR_TINTS = [[0.3, 0.2, 0.13], [0.22, 0.26, 0.2], [0.36, 0.24, 0.14]];
-const SIGN_TINTS = [[0.25, 0.3, 0.24], [0.38, 0.14, 0.12], [0.15, 0.17, 0.2]];
-const ROOF_TINTS = [[0.42, 0.42, 0.42], [0.5, 0.36, 0.3], [0.36, 0.38, 0.4], [0.46, 0.44, 0.4]];
+const NONE = [0, 0, 0, 0];
 
-function glassTint(r) {
-  return r.weighted([
-    [[0.32, 0.36, 0.4], 6],
-    [[0.78, 0.74, 0.64], 2], // firanki
-    [[0.55, 0.44, 0.3], 1],  // zasłony
-    [[0.16, 0.17, 0.18], 1], // ciemne
-  ]);
+// Narożnik komórki: punkt siatki na terenie + wysokość poziomu
+function corner(T, blk, p, y) {
+  return [p[0], T.height(p[0], p[1]) + y, p[1]];
+}
+
+// pts = [u0w0, u1w0, u0w1, u1w1] w rzucie XZ
+function cage4(T, blk, pts, fl, y0, y1) {
+  const c = (i, y) => corner(T, blk, pts[i], y);
+  return new Cage([c(0, y0), c(1, y0), c(0, y1), c(1, y1), c(2, y0), c(3, y0), c(2, y1), c(3, y1)]);
+}
+
+function boxPts(p, e, n, W, D) {
+  const P = (su, sw) => [p[0] + e[0] * (W / 2) * su + n[0] * (D / 2) * sw, p[1] + e[1] * (W / 2) * su + n[1] * (D / 2) * sw];
+  return [P(-1, -1), P(1, -1), P(-1, 1), P(1, 1)];
+}
+
+const LEAVES = [[0.36, 0.48, 0.24], [0.3, 0.42, 0.22], [0.42, 0.5, 0.26], [0.5, 0.48, 0.24], [0.28, 0.38, 0.26]];
+
+function placeLamp(b, T, l) {
+  place(b, 'lamp', cage4(T, null, boxPts(l.p, l.e, l.n, 1, 1), NONE, 0.15, 6.15), 1, 6, 1, { metalTint: [0.17, 0.22, 0.19] });
+}
+
+function placeTree(b, T, t, r) {
+  const s = t.s, W = 5.2 * s, H = 8.5 * s;
+  const a = r.float(0, Math.PI * 2), e = [Math.cos(a), Math.sin(a)], n = [-e[1], e[0]];
+  const blobs = [[r.float(-0.05, 0.05), r.float(0.62, 0.72), 0, r.float(0.42, 0.52)]];
+  for (let i = 0; i < r.int(1, 3); i++) blobs.push([r.float(-0.25, 0.25), r.float(0.5, 0.66), r.float(-0.25, 0.25), r.float(0.28, 0.38)]);
+  place(b, 'tree', cage4(T, null, boxPts(t.p, e, n, W, W), NONE, 0, H), W, H, W, { leaf: r.pick(LEAVES), blobs });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-export function buildBlock(city, id) {
-  const blk = city.blocks[id];
+//  Fragment świata = zbiór czworokątów siatki. Dla każdego czworokąta i każdego
+//  poziomu patrzymy na 4 narożniki (marching squares na nieregularnej siatce):
+//  ćwiartka narożnika pełnego obok ćwiartki pustej → ściana; najwyższy poziom
+//  narożnika → dach; pusty parter pod pełnym piętrem → strop prześwitu.
+// ─────────────────────────────────────────────────────────────────────────────
+export function buildChunk(city, id) {
+  const ch = city.chunks[id], T = city.terrain;
   const b = new Builder();
-  if (blk.kind === 'plaza') buildPlaza(b, blk);
-  else {
-    buildStreetEdge(b, blk, 'slab');
-    blk.lots.forEach((lot, i) => buildLot(b, blk, lot, i));
-    // podwórze-studnia
-    const C = blk.court;
-    place(b, 'cobble', Cage.quad(C[0], C[1], C[3], C[2], 0.05, 1.05), dist(C[0], C[1]), 1, dist(C[0], C[3]), { step: 3 });
-    for (const l of blk.lamps) placeLamp(b, l);
+  b.ground = (x, z) => T.height(x, z);
+  for (const q of ch.quads) buildQuad(b, city, q);
+  const r = new Rng(hash(city.seed, id, 99));
+  for (const t of ch.trees) placeTree(b, T, t, r);
+  for (const l of ch.lamps) placeLamp(b, T, l);
+  for (const be of ch.benches) place(b, 'bench', cage4(T, null, boxPts(be.p, be.e, be.n, 1.8, 0.6), NONE, 0.05, 1.05), 1.8, 1, 0.6, {});
+  for (const m of ch.monuments) place(b, 'monument', cage4(T, null, boxPts(m, [1, 0], [0, 1], 4, 4), NONE, 0, 13), 4, 13, 4, { poster: 'bb4' });
+  for (const bb of ch.billboards) {
+    const [w, h] = bb.size, H = bb.noPosts ? h + 0.6 : h + 3.2;
+    const pts = boxPts(bb.p, bb.e, bb.n, w, 0.6);
+    const cg = bb.y ? Cage.quad(pts[0], pts[1], pts[2], pts[3], T.plaza.y + bb.y, T.plaza.y + bb.y + H) : cage4(T, null, pts, NONE, 0, H);
+    place(b, 'billboard', cg, w, H, 0.6, { name: bb.name, posts: !bb.noPosts });
   }
   return b.finish();
 }
 
-function placeLamp(b, l) {
-  place(b, 'lamp', Cage.oriented(l.p, l.e, l.n, 1, 1, 0.15, 6.15), 1, 6, 1, { metalTint: [0.17, 0.22, 0.19] });
+function quarterInfo(G, i) {
+  // ćwiartka narożnika i: [v_i, m_i (do i+1), c, m_{i-1}]
+  return { v: G.p[i], mA: G.m[i], c: G.c, mB: G.m[(i + 3) % 4] };
 }
 
-function buildStreetEdge(b, blk, mat) {
-  const K = blk.curb, Ki = blk.curbIn, B = blk.bline;
-  for (let k = 0; k < 4; k++) {
-    const k1 = (k + 1) % 4;
-    const L = dist(K[k], K[k1]);
-    const n = Math.max(1, Math.round(L / 9));
-    for (let i = 0; i < n; i++) {
-      const ta = i / n, tb = (i + 1) / n;
-      const ka = lerp2(K[k], K[k1], ta), kb = lerp2(K[k], K[k1], tb);
-      const ia = lerp2(Ki[k], Ki[k1], ta), ib = lerp2(Ki[k], Ki[k1], tb);
-      const ba = lerp2(B[k], B[k1], ta), bb = lerp2(B[k], B[k1], tb);
-      place(b, 'curb', Cage.quad(ka, kb, ia, ib, 0, 0.16), dist(ka, kb), 0.16, 0.3, {});
-      const D = (dist(ia, ba) + dist(ib, bb)) / 2;
-      place(b, 'sidewalk', Cage.quad(ia, ib, ba, bb, 0, 0.15), dist(ia, ib), 0.15, D, { mat });
-    }
-  }
-}
+function buildQuad(b, city, q) {
+  const g = city.grid, T = city.terrain, seed = city.seed;
+  const G = quadGeom(g, q);
+  const V = G.v;
 
-// ── jedna kamienica ─────────────────────────────────────────────────────────
-function buildLot(b, blk, lot, li) {
-  const r = new Rng(lot.seed);
-  const lots = blk.lots;
-  const prev = lots[(li + lots.length - 1) % lots.length], next = lots[(li + 1) % lots.length];
-  const n = lot.bays;
-  const style = lot.style;
-  const levels = [0, lot.gH];
-  for (let k = 1; k <= lot.upper; k++) levels.push(lot.gH + k * lot.fH);
-  const top = levels[levels.length - 1];
-  const eave = top + 0.7;
-
-  b.setTint('plaster', lot.tint);
-  b.setTint('brick', style === 'brick' ? [0.78, 0.6, 0.52] : [0.68, 0.52, 0.46]);
-  b.setTint('stone', style === 'brick' ? [0.8, 0.77, 0.7] : STONE_TINTS[r.int(0, 2)]);
-  const groundMat = style === 'brick' ? 'brick' : r.chance(0.5) ? 'stone' : 'plaster';
-  const P = {
-    style,
-    wallMat: lot.wallMat,
-    groundMat,
-    frameTint: r.pick(FRAME_TINTS),
-    doorTint: r.pick(DOOR_TINTS),
-    metalTint: [0.2, 0.22, 0.21],
-    signTint: r.pick(SIGN_TINTS),
-    shopGlass: [0.3, 0.32, 0.33],
-    variant: r.int(0, 1),
-    bars: r.chance(0.35),
-  };
-
-  // — plan parteru —
-  const ground = new Array(n).fill(null);
-  if (lot.gateBay >= 0) ground[lot.gateBay] = 'gate';
-  if (lot.doorBay >= 0) ground[lot.doorBay] = 'door';
-  let shopRun = lot.shops;
-  for (let i = 0; i < n; i++) {
-    if (ground[i]) continue;
-    if (i === lot.screenBay) { ground[i] = 'rustic'; continue; }
-    if (shopRun && r.chance(0.85)) ground[i] = 'shop';
-    else ground[i] = r.chance(0.55) ? 'window' : 'rustic';
-  }
-  // — plan pięter: symetryczny układ osi okiennych —
-  const upperMod = style === 'ornate' ? 'ornate' : style === 'modern' ? 'modern' : 'window';
-  const axis = new Array(n).fill(true);
-  if (n >= 5 && style !== 'modern' && r.chance(0.4)) { axis[0] = false; axis[n - 1] = false; }
-  const balc = lot.balcony && style !== 'modern' ? new Set(n % 2 ? [(n - 1) / 2] : [n / 2 - 1, n / 2]) : new Set();
-  const glass = Array.from({ length: n * (lot.upper + 1) }, () => glassTint(r));
-  const sign = r.pick(SHOP_SIGNS);
-
-  for (let i = 0; i < n; i++) {
-    const t0 = i / n, t1 = (i + 1) / n;
-    const Fa = lerp2(lot.f0, lot.f1, t0), Fb = lerp2(lot.f0, lot.f1, t1);
-    const Ba = lerp2(lot.b0, lot.b1, t0), Bb = lerp2(lot.b0, lot.b1, t1);
-    const W = dist(Fa, Fb), Wb = dist(Ba, Bb);
-    const D = (dist(Fa, Ba) + dist(Fb, Bb)) / 2;
-
-    for (let k = 0; k < levels.length - 1; k++) {
-      const y0 = levels[k], y1 = levels[k + 1], H = y1 - y0;
-      const p = { ...P, glassTint: glass[k * n + i] };
-      const cage = Cage.quad(Fa, Fb, Ba, Bb, y0, y1);
-      // front (ulica)
-      let mod;
-      if (k === 0) {
-        mod = ground[i];
-        p.ground = true;
-        if (mod === 'shop') p.sign = i === 0 || ground[i - 1] !== 'shop' ? sign : null;
-      } else if (!axis[i]) mod = 'wall';
-      else if (balc.has(i) && k <= 2) mod = 'balcony';
-      else mod = upperMod;
-      place(b, mod, cage, W, H, D, p);
-      if (k === 0 && i === lot.screenBay) place(b, 'telescreen', cage, W, H, D, p);
-      else if (k === 0 && mod === 'rustic' && r.chance(0.35)) place(b, 'poster', cage, W, H, D, { name: r.pick(BIG_BROTHER), y: 0.9 });
-
-      // tył (podwórze) — prostsze moduły, odwrócona orientacja kostki
-      if (!(k === 0 && ground[i] === 'gate')) {
-        const cb = Cage.quad(Bb, Ba, Fb, Fa, y0, y1);
-        const pb = { ...p, simple: true, ground: false, groundMat: 'plaster', wallMat: style === 'brick' ? 'brick' : 'plaster', glassTint: glass[(k * n + i + 7) % glass.length] };
-        let bm = 'window';
-        if (k === 0 && i === lot.doorBay) bm = 'door';
-        else if (Wb < 1.6) bm = 'wall';
-        if (bm === 'door') pb.groundMat = pb.wallMat;
-        place(b, bm, cb, Wb, H, D, pb);
-      }
-    }
-    // gzymsy
-    if (style !== 'modern') place(b, 'string', Cage.quad(Fa, Fb, Ba, Bb, lot.gH, lot.gH + 0.32), W, 0.32, D, P);
-    place(b, 'cornice', Cage.quad(Fa, Fb, Ba, Bb, top, eave), W, 0.7, D, { style, consoles: style === 'ornate' });
-    place(b, 'cornice', Cage.quad(Bb, Ba, Fb, Fa, top, eave), Wb, 0.7, D, { style: 'modern', mat: lot.wallMat });
-    // lizeny na granicach kamienic
-    if ((style === 'classic' || style === 'ornate') && (i === 0 || i === n - 1)) {
-      const cg = Cage.quad(Fa, Fb, Ba, Bb, lot.gH + 0.32, top);
-      if (i === 0) place(b, 'pilaster', cg, W, top - lot.gH - 0.32, D, { side: 'L', wallMat: lot.wallMat });
-      if (i === n - 1) place(b, 'pilaster', cg, W, top - lot.gH - 0.32, D, { side: 'R', wallMat: lot.wallMat });
-    }
-  }
-
-  // dach
-  const depth = (dist(lot.f0, lot.b0) + dist(lot.f1, lot.b1)) / 2;
-  const chimneys = lot.roof === 'flat' ? null : [[0.04, 0.42], [0.96, 0.6]].filter(() => r.chance(0.7));
-  place(b, 'roof', Cage.quad(lot.f0, lot.f1, lot.b0, lot.b1, eave, eave + lot.roofH), lot.width, lot.roofH, depth, {
-    type: lot.roof, wallMat: lot.wallMat, roofTint: r.pick(ROOF_TINTS), chimneys,
-    chimneyTint: [0.6, 0.45, 0.4], glassTint: [0.3, 0.33, 0.36], frameTint: P.frameTint,
-  });
-
-  // ściany ogniowe nad niższymi sąsiadami
-  const fwTint = [0.62 + r.float(-0.05, 0.05), 0.47, 0.41];
-  for (const [nb, side] of [[prev, 'L'], [next, 'R']]) {
-    const nbEave = nb.top + 0.7;
-    if (nbEave >= eave - 0.05) continue;
-    const cg = Cage.quad(lot.f0, lot.f1, lot.b0, lot.b1, nbEave, eave);
-    place(b, 'firewall', cg, lot.width, eave - nbEave, depth, { side, tint: fwTint, poster: r.chance(0.45), posterName: r.pick(BIG_BROTHER) });
-  }
-}
-
-// ── plac + Ministerstwo Prawdy ──────────────────────────────────────────────
-function buildPlaza(b, blk) {
-  const K = blk.curb, Ki = blk.curbIn;
-  for (let k = 0; k < 4; k++) {
-    const k1 = (k + 1) % 4, L = dist(K[k], K[k1]), n = Math.max(1, Math.round(L / 9));
-    for (let i = 0; i < n; i++) {
-      const ta = i / n, tb = (i + 1) / n;
-      const ka = lerp2(K[k], K[k1], ta), kb = lerp2(K[k], K[k1], tb);
-      const ia = lerp2(Ki[k], Ki[k1], ta), ib = lerp2(Ki[k], Ki[k1], tb);
-      place(b, 'curb', Cage.quad(ka, kb, ia, ib, 0, 0.16), dist(ka, kb), 0.16, 0.3, {});
-    }
-  }
-  // posadzka placu — siatka komórek 12×12 (każda to moduł "sidewalk")
-  const G = 12;
-  for (let i = 0; i < G; i++)
-    for (let j = 0; j < G; j++) {
-      const P = (u, v) => lerp2(lerp2(Ki[0], Ki[1], u), lerp2(Ki[3], Ki[2], u), v);
-      const a = P(i / G, j / G), c = P((i + 1) / G, j / G), d = P(i / G, (j + 1) / G), e = P((i + 1) / G, (j + 1) / G);
-      place(b, 'sidewalk', Cage.quad(a, c, d, e, 0, 0.15), dist(a, c), 0.15, dist(a, d), { mat: 'slab' });
-    }
-  for (const l of blk.lamps) placeLamp(b, l);
-  buildMinistry(b, blk.center);
-}
-
-function buildMinistry(b, c) {
-  const [cx, cz] = c;
-  const { tiers, tierH } = MINISTRY;
-  const white = [0.9, 0.9, 0.87];
-  b.setTint('stone', white);
-  const P = { wallMat: 'stone', groundMat: 'stone', metalTint: [0.25, 0.26, 0.27], frameTint: [0.2, 0.2, 0.2], doorTint: [0.2, 0.2, 0.22], glassTint: [0.25, 0.28, 0.3], simple: true };
-  const slogans = ['war', 'freedom', 'ignorance', null];
-  tiers.forEach((hs, t) => {
-    const y0 = 0.15 + t * tierH, y1 = y0 + tierH;
-    const sq = [[cx - hs, cz - hs], [cx + hs, cz - hs], [cx + hs, cz + hs], [cx - hs, cz + hs]];
-    const inset = 7;
-    const sqIn = sq.map(([x, z]) => [x + Math.sign(cx - x) * inset, z + Math.sign(cz - z) * inset]);
-    const bays = Math.round((2 * hs) / 4.2);
-    const floors = t === 0 ? [0, 6, ...Array.from({ length: 6 }, (_, i) => 6 + ((i + 1) * (tierH - 6)) / 6)] : Array.from({ length: 8 }, (_, i) => (i * tierH) / 7);
-    for (let s = 0; s < 4; s++) {
-      const A = sq[s], Bq = sq[(s + 1) % 4], Ai = sqIn[s], Bi = sqIn[(s + 1) % 4];
-      for (let i = 0; i < bays; i++) {
-        const Fa = lerp2(A, Bq, i / bays), Fb = lerp2(A, Bq, (i + 1) / bays);
-        const Ba = lerp2(Ai, Bi, i / bays), Bb = lerp2(Ai, Bi, (i + 1) / bays);
-        const W = dist(Fa, Fb);
-        for (let k = 0; k < floors.length - 1; k++) {
-          const ya = y0 + floors[k], yb = y0 + floors[k + 1];
-          const cage = Cage.quad(Fa, Fb, Ba, Bb, ya, yb);
-          const centre = Math.abs(i - (bays - 1) / 2) < 1.6;
-          const mod = t === 0 && k === 0 ? (centre ? 'door' : 'wall') : 'modern';
-          place(b, mod, cage, W, yb - ya, inset, { ...P, ground: k === 0 });
-          if (t === 0 && k === 0 && Math.abs(i - (bays - 1) / 2 - 2.5) < 0.6) {
-            place(b, 'telescreen', cage, W, yb - ya, inset, { y: 3.9 });
-          }
+  for (let i = 0; i < 4; i++) {
+    const a = V[i];
+    const Qi = quarterInfo(G, i);
+    if (g.TY[a] === T_BLD) {
+      const zone = g.ZN[a];
+      const info = buildingInfo(seed, g.BID[a], zone);
+      const top = g.H[a];
+      setTints(b, info);
+      for (let L = 0; L < top; L++) {
+        if (!filled(g, a, L)) continue;
+        // ściany na dwóch wewnętrznych bokach ćwiartki
+        for (const side of [0, 1]) {
+          const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
+          if (filled(g, nb, L)) continue;
+          const f0 = side === 0 ? Qi.mA : Qi.mB, back1 = side === 0 ? Qi.mB : Qi.mA;
+          wallSegment(b, city, info, a, nb, q, side, L, [f0, Qi.c, Qi.v, back1], top);
         }
-        place(b, 'cornice', Cage.quad(Fa, Fb, Ba, Bb, y1, y1 + 0.6), W, 0.6, inset, { style: 'modern', mat: 'stone' });
+        if (L > 0 && !filled(g, a, L - 1)) {
+          const y = levelY(L);
+          b.wpoly(info.wallMat, [Qi.v, Qi.mA, Qi.c, Qi.mB].map((p) => [p[0], T.height(p[0], p[1]) + y, p[1]]), [0, -1, 0], { shade: 0.45 });
+        }
       }
-      // hasła Partii na najwyższym tarasie, Wielki Brat na czwartej ścianie
-      if (t === tiers.length - 1) {
-        const ua = 0.12, ub = 0.88;
-        const Fa = lerp2(A, Bq, ua), Fb = lerp2(A, Bq, ub), Ba = lerp2(Ai, Bi, ua), Bb = lerp2(Ai, Bi, ub);
-        const W = dist(Fa, Fb), cage = Cage.quad(Fa, Fb, Ba, Bb, y0, y1);
-        if (slogans[s]) place(b, 'poster', cage, W, tierH, inset, { name: slogans[s], w: W * 0.95, h: W * 0.95 * (200 / 512), y: tierH * 0.42, z: -0.4 });
-        else place(b, 'poster', cage, W, tierH, inset, { name: 'bb0', w: 11, h: 22, y: 2, z: -0.4 });
-      }
+      roofQuarter(b, city, info, G, i, top);
+      continue;
     }
-    place(b, 'roof', Cage.quad(sq[0], sq[1], sq[3], sq[2], y1 + 0.6, y1 + 1.5), 2 * hs, 0.9, 2 * hs, { type: 'flat', wallMat: 'stone', roofTint: [0.5, 0.5, 0.5] });
-  });
-  // antena na szczycie
-  const yt = 0.15 + tiers.length * tierH + 1.5;
-  b.cell(Cage.quad([cx - 1, cz - 1], [cx + 1, cz - 1], [cx - 1, cz + 1], [cx + 1, cz + 1], yt, yt + 1), 2, 1, 2);
-  b.cyl('metal', 1, 1, 0, 18, 0.5, 0.12, 8, { tint: [0.3, 0.3, 0.3] });
-  b.cyl('light', 1, 1, 18, 18.6, 0.25, 0.0, 8);
-}
-
-// ── LOD: prosta bryła na dalekie odległości ─────────────────────────────────
-export function buildBlockLOD(city, id) {
-  const blk = city.blocks[id];
-  const b = new Builder();
-  const sw = blk.kind === 'plaza' ? [blk.curb] : null;
-  // chodnik jako 4 trapezy
-  const K = blk.curbIn, B = blk.kind === 'plaza' ? null : blk.bline;
-  if (B) {
-    for (let k = 0; k < 4; k++) {
-      const k1 = (k + 1) % 4;
-      b.wpoly('slab', [[K[k][0], 0.15, K[k][1]], [K[k1][0], 0.15, K[k1][1]], [B[k1][0], 0.15, B[k1][1]], [B[k][0], 0.15, B[k][1]]], [0, 1, 0]);
-    }
-    const C = blk.court;
-    b.wpoly('cobble', C.map((p) => [p[0], 0.05, p[1]]), [0, 1, 0], { flat: 1 });
-    for (const lot of blk.lots) lodLot(b, lot);
-  } else if (sw) {
-    b.wpoly('slab', K.map((p) => [p[0], 0.15, p[1]]), [0, 1, 0]);
-    const [cx, cz] = blk.center;
-    MINISTRY.tiers.forEach((hs, t) => {
-      const y0 = 0.15 + t * MINISTRY.tierH, y1 = y0 + MINISTRY.tierH + 0.6;
-      const sq = [[cx - hs, cz - hs], [cx + hs, cz - hs], [cx + hs, cz + hs], [cx - hs, cz + hs]];
-      for (let s = 0; s < 4; s++) lodWall(b, sq[s], sq[(s + 1) % 4], y0, y1, 4.2, 3.7, [0.92, 0.92, 0.9], [cx, cz]);
-      b.wpoly('lodroof', sq.map((p) => [p[0], y1, p[1]]), [0, 1, 0], { tint: [0.5, 0.5, 0.5] });
-    });
+    groundQuarter(b, city, G, i, q);
   }
-  return b.finish();
 }
 
-function lodWall(b, a, c, y0, y1, bayW, floorH, tint, inside) {
-  const L = dist(a, c);
-  const nb = Math.max(1, Math.round(L / bayW));
-  const v0 = 0, v1 = (y1 - y0) / floorH;
-  const hint = [-(c[1] - a[1]), 0, c[0] - a[0]];
-  const mx = (a[0] + c[0]) / 2 - inside[0], mz = (a[1] + c[1]) / 2 - inside[1];
-  if (hint[0] * mx + hint[2] * mz < 0) { hint[0] = -hint[0]; hint[2] = -hint[2]; }
-  b.wpoly('lod', [[a[0], y0, a[1]], [c[0], y0, c[1]], [c[0], y1, c[1]], [a[0], y1, a[1]]], hint, {
-    tint, uv: [[0, v0], [nb, v0], [nb, v1], [0, v1]],
-  });
+function setTints(b, info) {
+  b.setTint('plaster', info.tint);
+  b.setTint('brick', info.style === 'brick' ? [0.78, 0.6, 0.52] : [0.68, 0.52, 0.46]);
+  b.setTint('stone', info.zone === 2 ? [0.9, 0.9, 0.87] : info.style === 'brick' ? [0.8, 0.77, 0.7] : [0.76, 0.73, 0.67]);
 }
 
-function lodLot(b, lot) {
-  const eave = lot.top + 0.7;
-  const mid = [(lot.f0[0] + lot.f1[0] + lot.b0[0] + lot.b1[0]) / 4, (lot.f0[1] + lot.f1[1] + lot.b0[1] + lot.b1[1]) / 4];
-  const tint = lot.wallMat === 'brick' ? [0.62, 0.45, 0.38] : lot.tint;
-  lodWall(b, lot.f0, lot.f1, 0, eave, lot.width / lot.bays, lot.fH, tint, mid);
-  lodWall(b, lot.b1, lot.b0, 0, eave, dist(lot.b0, lot.b1) / lot.bays, lot.fH, tint, mid);
-  const rt = [0.4, 0.38, 0.36];
-  const side = (a, c) => b.wpoly('lod', [[a[0], 0, a[1]], [c[0], 0, c[1]], [c[0], eave, c[1]], [a[0], eave, a[1]]], null, { tint: [0.55, 0.42, 0.36], uv: [[0, 0], [0.1, 0], [0.1, 0.1], [0, 0.1]] });
-  side(lot.f0, lot.b0);
-  side(lot.b1, lot.f1);
-  if (lot.roof === 'flat') {
-    b.wpoly('lodroof', [lot.f0, lot.f1, lot.b1, lot.b0].map((p) => [p[0], eave + 0.9, p[1]]), [0, 1, 0], { tint: rt });
+const GLASS = [[0.32, 0.36, 0.4], [0.32, 0.36, 0.4], [0.32, 0.36, 0.4], [0.78, 0.74, 0.64], [0.55, 0.44, 0.3], [0.16, 0.17, 0.18]];
+
+function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
+  const T = city.terrain, g = city.grid;
+  const [f0, f1, b0, b1] = pts;
+  const W = dist(f0, f1), D = (dist(f0, b0) + dist(f1, b1)) / 2;
+  const y0 = levelY(L), y1 = levelY(L + 1), H = y1 - y0;
+  const cage = cage4(T, null, pts, NONE, y0, y1);
+  const hh = hash(city.seed, a, nb, q, L);
+  const plan = wallPlan(city, a, nb, q, side, L);
+  const house = info.zone === Z_HOUSES;
+  const p = {
+    style: info.style, wallMat: info.wallMat, groundMat: info.groundMat || info.wallMat,
+    frameTint: info.frameTint, doorTint: info.doorTint, metalTint: [0.2, 0.22, 0.21], signTint: [0.25, 0.3, 0.24],
+    shopGlass: [0.3, 0.32, 0.33], variant: info.variant, bars: info.bars, glassTint: GLASS[hh % GLASS.length],
+    shutters: info.shutters, shutterTint: info.shutterTint, flowers: L > 0 ? info.flowers : null,
+    simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4],
+  };
+  let mod;
+  if (W < 1.25) mod = 'wall';
+  else if (L === 0) { mod = plan.mod; p.ground = true; }
+  else if (info.zone === 2) mod = 'modern';
+  else if (plan.balcony && !house) mod = 'balcony';
+  else mod = info.style === 'ornate' ? 'ornate' : info.style === 'modern' ? 'modern' : 'window';
+  if (mod === 'shop' && W < 2.4) mod = 'window';
+  if (mod === 'door' && W < 1.8) mod = 'wall';
+  place(b, mod, cage, W, H, D, p);
+  if (L === 0 && plan.screen) place(b, 'telescreen', cage, W, H, D, p);
+  if (L === 0 && plan.poster) place(b, 'poster', cage, W, H, D, { name: BIG_BROTHER[hh % BIG_BROTHER.length], y: 0.9, w: Math.min(W * 0.6, 1.2) });
+  // gzyms nad parterem kamienicy
+  if (L === 1 && info.zone === 1 && !filled(g, nb, 0)) place(b, 'string', cage4(T, null, pts, NONE, y0, y0 + 0.32), W, 0.32, D, p);
+  // okap / gzyms wieńczący
+  if (L === top - 1) {
+    const ce = info.ce;
+    const cg = cage4(T, null, pts, NONE, y1, y1 + ce);
+    if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint });
+    else place(b, 'cornice', cg, W, ce, D, { style: info.zone === 2 ? 'modern' : info.style, consoles: info.style === 'ornate', mat: info.zone === 2 ? 'stone' : undefined });
+  }
+}
+
+// dach ćwiartki: wysokość w każdym z 4 punktów z sąsiedztwa (okap = 0, kalenica = ridgeH)
+function roofQuarter(b, city, info, G, i, top) {
+  const g = city.grid, T = city.terrain, V = G.v;
+  const a = V[i];
+  const base = levelY(top) + info.ce;
+  const flat = info.zone === 2;
+  const lower = (v) => g.TY[v] !== T_BLD || g.H[v] < top;
+  const Hr = (p, eave) => (flat || eave ? 0 : ridgeH(p[0], p[1]));
+  const pv = G.p[i], pA = G.m[i], pB = G.m[(i + 3) % 4], pc = G.c;
+  const hv = Hr(pv, false);
+  const hA = Hr(pA, lower(V[(i + 1) % 4]));
+  const hB = Hr(pB, lower(V[(i + 3) % 4]));
+  const hc = Hr(pc, V.some(lower));
+  const P = (p, h) => [p[0], T.height(p[0], p[1]) + base + h, p[1]];
+  const o = { tint: info.roofTint };
+  b.wpoly('roof', [P(pv, hv), P(pA, hA), P(pc, hc), P(pB, hB)], [0, 1, 0], o);
+  if (!flat && hv > 2.6 && hash(city.seed, a, 77) / 4294967296 < 0.1) {
+    const e = [1, 0], n = [0, 1];
+    b.cell(cage4(T, null, boxPts(pv, e, n, 1, 1), NONE, base, base + 1), 1, 1, 1);
+    M.chimney(b, 0.5, 0.5, hv - 1.2, hv + 1.3, { chimneyTint: [0.6, 0.45, 0.4] });
+  }
+}
+
+// nawierzchnia ćwiartki pustego punktu: chodnik (z krawężnikiem), trawa, posadzka
+function groundQuarter(b, city, G, i, q) {
+  const g = city.grid, T = city.terrain, a = G.v[i], ty = g.TY[a];
+  if (T.river(G.p[i][0], G.p[i][1]).d < T.hw + 1) return;
+  const pts = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
+  const W = dist(pts[0], pts[1]), D = dist(pts[0], pts[2]);
+  const mixed = quadMixed0(g, q);
+  const cage = cage4(T, null, pts, NONE, 0, 0.15);
+  if (mixed || ty === T_PLAZA) {
+    place(b, 'sidewalk', cage, W, 0.15, D, { mat: 'slab', o: { drape: 0.15 } });
+    if (ty === T_PLAZA && !mixed) return;
+    // krawężniki od strony czworokątów bez zabudowy
+    for (const [s0, s1, inn0, inn1, other] of [
+      [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c, G.v[(i + 1) % 4]],
+      [G.m[(i + 3) % 4], G.p[i], G.c, G.m[i], G.v[(i + 3) % 4]],
+    ]) {
+      const oq = g.across(q, a, other);
+      if (oq >= 0 && (quadMixed0(g, oq) || g.TY[a] === T_PLAZA)) continue;
+      const k0 = 0.3 / (dist(s0, inn0) || 1), k1 = 0.3 / (dist(s1, inn1) || 1);
+      const bk0 = lerp2(s0, inn0, k0), bk1 = lerp2(s1, inn1, k1);
+      place(b, 'curb', cage4(T, null, [s0, s1, bk0, bk1], NONE, 0, 0.16), dist(s0, s1), 0.16, 0.3, {});
+    }
     return;
   }
-  const rH = eave + lot.roofH;
-  const r0 = lerp2(lot.f0, lot.b0, 0.5), r1 = lerp2(lot.f1, lot.b1, 0.5);
-  b.wpoly('lodroof', [[lot.f0[0], eave, lot.f0[1]], [lot.f1[0], eave, lot.f1[1]], [r1[0], rH, r1[1]], [r0[0], rH, r0[1]]], [0, 1, 0], { tint: rt });
-  b.wpoly('lodroof', [[lot.b1[0], eave, lot.b1[1]], [lot.b0[0], eave, lot.b0[1]], [r0[0], rH, r0[1]], [r1[0], rH, r1[1]]], [0, 1, 0], { tint: rt });
-  b.wpoly('lod', [[lot.f0[0], eave, lot.f0[1]], [r0[0], rH, r0[1]], [lot.b0[0], eave, lot.b0[1]]], null, { tint, uv: [[0, 0], [0.1, 0], [0.1, 0.1]] });
-  b.wpoly('lod', [[lot.f1[0], eave, lot.f1[1]], [r1[0], rH, r1[1]], [lot.b1[0], eave, lot.b1[1]]], null, { tint, uv: [[0, 0], [0.1, 0], [0.1, 0.1]] });
+  if (ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES)) place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat: 'grass', step: 3, o: { drape: 0.05 } });
+  else if (ty === T_COURT) place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat: 'cobble', step: 3, o: { drape: 0.04 } });
 }
 
-// ── nawierzchnia jezdni (bruk) w kafelkach ──────────────────────────────────
-export const GROUND_TILES = 7;
-export function buildGroundTile(city, tx, tz) {
-  const b = new Builder();
-  const size = (2 * HALF) / GROUND_TILES;
-  const x0 = -HALF + tx * size, z0 = -HALF + tz * size;
-  const pad = tx === 0 || tz === 0 || tx === GROUND_TILES - 1 || tz === GROUND_TILES - 1 ? 30 : 0;
-  const ax = x0 - (tx === 0 ? pad : 0), bx = x0 + size + (tx === GROUND_TILES - 1 ? pad : 0);
-  const az = z0 - (tz === 0 ? pad : 0), bz = z0 + size + (tz === GROUND_TILES - 1 ? pad : 0);
-  const cage = Cage.quad([ax, az], [bx, az], [ax, bz], [bx, bz], 0, 1);
-  place(b, 'cobble', cage, bx - ax, 1, bz - az, { step: 3 });
+// ── rzeka: nabrzeża i mosty (jeden stały fragment świata) ───────────────────
+export function buildRiver(city) {
+  const T = city.terrain, b = new Builder();
+  b.ground = (x, z) => T.height(x, z);
+  const yb = T.waterY - 0.6, H = T.bankY - yb;
+  const nearBridge = (p) => city.bridges.some((br) => {
+    const dx = p[0] - br.p[0], dz = p[1] - br.p[1];
+    return Math.abs(dx * br.perp[0] + dz * br.perp[1]) < br.width / 2 + 0.6 && Math.abs(dx * br.axis[0] + dz * br.axis[1]) < br.L + 3;
+  });
+  for (const bank of [T.left, T.right]) {
+    for (let i = 0; i < bank.length - 1; i++) {
+      const a = bank[i], c = bank[i + 1], L = dist(a, c), m = Math.max(1, Math.round(L / 6));
+      const mid = lerp2(a, c, 0.5), rv = T.river(mid[0], mid[1]);
+      const out = [rv.nx, rv.nz]; // od osi rzeki na ląd
+      for (let j = 0; j < m; j++) {
+        const pa = lerp2(a, c, j / m), pc = lerp2(a, c, (j + 1) / m);
+        const qa = [pa[0] + out[0], pa[1] + out[1]], qc = [pc[0] + out[0], pc[1] + out[1]];
+        const rail = !nearBridge(lerp2(pa, pc, 0.5)) && !nearBridge(pa) && !nearBridge(pc);
+        place(b, 'quay', Cage.quad(pa, pc, qa, qc, yb, T.bankY), dist(pa, pc), H, 1, { rail });
+      }
+    }
+  }
+  for (const br of city.bridges) {
+    const spans = 3, hw = br.width / 2;
+    const E = (t) => lerp2(br.e0, br.e1, t);
+    const Hb = T.bankY - yb;
+    for (let s = 0; s < spans; s++) {
+      const a = E(s / spans), c = E((s + 1) / spans);
+      const pts = [[a[0] - br.perp[0] * hw, a[1] - br.perp[1] * hw], [c[0] - br.perp[0] * hw, c[1] - br.perp[1] * hw], [a[0] + br.perp[0] * hw, a[1] + br.perp[1] * hw], [c[0] + br.perp[0] * hw, c[1] + br.perp[1] * hw]];
+      place(b, 'bridge', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), dist(a, c), Hb, br.width, { end0: s === 0, end1: s === spans - 1 });
+    }
+    for (const sd of [-1, 1]) {
+      const p = [br.p[0] + br.perp[0] * sd * (hw - 0.9), br.p[1] + br.perp[1] * sd * (hw - 0.9)];
+      const nn = [br.perp[0] * sd, br.perp[1] * sd];
+      place(b, 'lamp', Cage.oriented(p, br.axis, nn, 1, 1, T.bankY + 0.15, T.bankY + 6.15), 1, 6, 1, { metalTint: [0.17, 0.22, 0.19] });
+    }
+  }
   return b.finish();
 }
 
-export function jobSeed(...a) {
-  return hash(...a);
+// ── LOD: jedna płaszczyzna na odcinek ściany, dachy z tych samych punktów ──
+export function buildChunkLOD(city, id) {
+  const ch = city.chunks[id], T = city.terrain, g = city.grid;
+  const b = new Builder();
+  b.ground = (x, z) => T.height(x, z);
+  for (const q of ch.quads) {
+    const G = quadGeom(g, q), V = G.v;
+    for (let i = 0; i < 4; i++) {
+      const a = V[i];
+      if (g.TY[a] !== T_BLD) {
+        const ty = g.TY[a];
+        if (ty === T_PARK || ty === T_GARDEN) b.wpoly('grass', [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map((p) => [p[0], T.height(p[0], p[1]) + 0.05, p[1]]), [0, 1, 0], { flat: 1 });
+        continue;
+      }
+      const info = buildingInfo(city.seed, g.BID[a], g.ZN[a]);
+      const top = g.H[a];
+      for (const side of [0, 1]) {
+        const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
+        const nh = g.TY[nb] === T_BLD ? g.H[nb] : 0;
+        if (nh >= top) continue;
+        const f0 = side === 0 ? G.m[i] : G.m[(i + 3) % 4], f1 = G.c;
+        const y0 = levelY(nh), y1 = levelY(top) + info.ce;
+        const hint = [f0[0] - G.p[i][0] + f1[0] - G.p[i][0], 0, f0[1] - G.p[i][1] + f1[1] - G.p[i][1]];
+        const ga = T.height(f0[0], f0[1]), gb = T.height(f1[0], f1[1]);
+        b.wpoly('lod', [[f0[0], ga + y0, f0[1]], [f1[0], gb + y0, f1[1]], [f1[0], gb + y1, f1[1]], [f0[0], ga + y1, f0[1]]], hint, {
+          tint: info.wallMat === 'brick' ? [0.62, 0.45, 0.38] : info.tint, uv: [[0, nh], [1, nh], [1, top], [0, top]],
+        });
+      }
+      roofQuarterLOD(b, city, info, G, i, top);
+    }
+  }
+  for (const t of ch.trees) {
+    const gy = T.height(t.p[0], t.p[1]), r = 2.4 * t.s, h = 8 * t.s;
+    for (let k = 0; k < 4; k++) {
+      const a0 = (k / 4) * Math.PI * 2, a1 = ((k + 1) / 4) * Math.PI * 2;
+      b.wpoly('leaf', [[t.p[0] + Math.cos(a0) * r, gy + h * 0.4, t.p[1] + Math.sin(a0) * r], [t.p[0] + Math.cos(a1) * r, gy + h * 0.4, t.p[1] + Math.sin(a1) * r], [t.p[0], gy + h, t.p[1]]], null, { tint: [0.34, 0.45, 0.24] });
+    }
+  }
+  return b.finish();
+}
+
+function roofQuarterLOD(b, city, info, G, i, top) {
+  const g = city.grid, T = city.terrain, V = G.v;
+  const base = levelY(top) + info.ce, flat = info.zone === 2;
+  const lower = (v) => g.TY[v] !== T_BLD || g.H[v] < top;
+  const Hr = (p, eave) => (flat || eave ? 0 : ridgeH(p[0], p[1]));
+  const pts = [[G.p[i], false], [G.m[i], lower(V[(i + 1) % 4])], [G.c, V.some(lower)], [G.m[(i + 3) % 4], lower(V[(i + 3) % 4])]];
+  b.wpoly('lodroof', pts.map(([p, e]) => [p[0], T.height(p[0], p[1]) + base + Hr(p, e), p[1]]), [0, 1, 0], { tint: info.roofTint });
+}
+
+// ── nawierzchnia (bruk) na terenie, przycięta do brzegów rzeki ──────────────
+export const GROUND_TILES = 7;
+export function buildGroundTile(city, tx, tz) {
+  const T = city.terrain, b = new Builder();
+  const size = (2 * HALF) / GROUND_TILES;
+  const pad = 40;
+  const ax = -HALF + tx * size - (tx === 0 ? pad : 0), bx = -HALF + (tx + 1) * size + (tx === GROUND_TILES - 1 ? pad : 0);
+  const az = -HALF + tz * size - (tz === 0 ? pad : 0), bz = -HALF + (tz + 1) * size + (tz === GROUND_TILES - 1 ? pad : 0);
+  const step = 3, nx = Math.round((bx - ax) / step), nz = Math.round((bz - az) / step);
+  const V = [], side = [];
+  for (let j = 0; j <= nz; j++)
+    for (let i = 0; i <= nx; i++) {
+      let x = ax + ((bx - ax) * i) / nx, z = az + ((bz - az) * j) / nz;
+      const cl = T.clampToBank(x, z);
+      side.push(cl ? cl[2] : 0);
+      if (cl) { x = cl[0]; z = cl[1]; }
+      V.push([x, T.height(x, z), z]);
+    }
+  for (let j = 0; j < nz; j++)
+    for (let i = 0; i < nx; i++) {
+      const ids = [j * (nx + 1) + i, j * (nx + 1) + i + 1, (j + 1) * (nx + 1) + i + 1, (j + 1) * (nx + 1) + i];
+      // kafel z wierzchołkami rzuconymi na OBA brzegi zakryłby rzekę — pomijamy
+      if (ids.some((k) => side[k] > 0) && ids.some((k) => side[k] < 0)) continue;
+      if (ids.every((k) => side[k] !== 0)) continue;
+      b.wpoly('cobble', ids.map((k) => V[k]), [0, 1, 0]);
+    }
+  return b.finish();
 }

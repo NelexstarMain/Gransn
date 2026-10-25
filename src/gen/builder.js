@@ -27,13 +27,15 @@ export const MATDEF = {
   screen: {},
   poster: { ao: 1, dirt: 1 },
   cobble: { bump: 0.04, dirt: 1.8, ground: 1 },
+  grass: { bump: 0.05, dirt: 2.2, ground: 1 },
+  leaf: { wob: 0.55, dirt: 2.5 },
   slab: { bump: 0.008, dirt: 1.2, ground: 1 },
   curb: { dirt: 1, ground: 1 },
   lod: { ao: 1, dirt: 1 },
   lodroof: { dirt: 1 },
 };
 
-const LEAN = 0.0045; // m bocznego "pływania" na metr wysokości (stare kamienice)
+const LEAN = 0.012; // m bocznego "pływania" na metr wysokości (stare kamienice)
 const EMPTY = {};
 const WHITE = [1, 1, 1];
 export const NX = [-1, 0, 0], PX = [1, 0, 0], NY = [0, -1, 0], PY = [0, 1, 0], NZ = [0, 0, -1], PZ = [0, 0, 1];
@@ -47,6 +49,7 @@ export class Builder {
     this.cage = null;
     this.W = this.H = this.D = 1;
     this.tints = Object.create(null);
+    this.ground = () => 0; // wysokość terenu (x,z) — pochylenie i AO liczone względem gruntu
     this._Q = new Float64Array(12);
     this._N = new Float64Array(12);
     this._t = [0, 0, 0];
@@ -150,6 +153,12 @@ export class Builder {
     const k = rev ? -1 / fl : 1 / fl;
     fx *= k; fy *= k; fz *= k;
 
+    // klin zbiegający się w punkt ma zerowy jakobian w wierzchołku — wtedy normalna ściany
+    for (let v = 0; v < cnt; v++) {
+      if (N[v * 3] * N[v * 3] + N[v * 3 + 1] * N[v * 3 + 1] + N[v * 3 + 2] * N[v * 3 + 2] < 0.25) {
+        N[v * 3] = rev ? -fx : fx; N[v * 3 + 1] = rev ? -fy : fy; N[v * 3 + 2] = rev ? -fz : fz;
+      }
+    }
     const horiz = Math.abs(fy) > 0.7;
     let tx = fz, tz = -fx;
     const tl = Math.hypot(tx, tz) || 1;
@@ -164,9 +173,12 @@ export class Builder {
     for (let v = 0; v < cnt; v++) {
       const qx = Q[v * 3], qy = Q[v * 3 + 1], qz = Q[v * 3 + 2];
       let x = qx, y = qy, z = qz;
+      const gy = def.ground && o.drape === undefined ? 0 : this.ground(qx, qz);
+      const rel = qy - gy;
+      if (o.drape !== undefined) y = gy + o.drape;
       if (!def.ground && !o.noLean) {
         const s = 0.012;
-        const h = Math.max(0, qy) * LEAN;
+        const h = Math.max(0, rel) * LEAN;
         x += noise3(qx * s, 3.7, qz * s) * h;
         z += noise3(qx * s, 9.1, qz * s) * h;
       }
@@ -187,7 +199,7 @@ export class Builder {
       else bk.uv.push((qx * tx + qz * tz) * uvs, qy * uvs);
 
       let s = shade0;
-      if (def.ao) s *= 0.55 + 0.45 * smooth(qy / 3.4);
+      if (def.ao) s *= 0.55 + 0.45 * smooth(rel / 3.4);
       if (def.dirt) {
         const d = noise3(qx * 0.11, qy * 0.23, qz * 0.11) + 0.5 * noise3(qx * 0.5, qy * 0.5, qz * 0.5);
         s *= 1 + 0.13 * def.dirt * d;

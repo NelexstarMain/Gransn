@@ -1,42 +1,89 @@
-// Układ miasta — czyste dane (bez geometrii). Generowany deterministycznie
-// z seeda zarówno w wątku głównym (kolizje, minimapa), jak i w workerach.
+// Organiczny układ miasta — czyste dane (bez geometrii), deterministyczne z seeda.
 //
-// Siatka ulic 14×14 kwartałów po ~90 m z losowo przesuniętymi węzłami
-// (≈1.26 × 1.26 km ≈ 1.6 km²). Każdy kwartał to nieregularny czworokąt —
-// pierzeja kamienic dookoła i podwórze-studnia w środku. Dzięki cage
-// deformation te same moduły pasują do każdego kąta i długości.
+//  1. Teren + rzeka (terrain.js), plac Ministerstwa w środku.
+//  2. Mosty: dla każdego mostu pary "lustrzanych" ziaren po obu stronach osi,
+//     więc dwusieczna Voronoi = ulica, która przechodzi płynnie w most.
+//  3. Poisson-disc + 2× relaksacja Lloyda → nieregularne, ale "zdrowe" komórki.
+//  4. Diagram Voronoi, przycięcie komórek brzegami rzeki, zgrzanie wierzchołków
+//     i zwinięcie krótkich krawędzi (ulice = wspólne krawędzie komórek).
+//  5. Komórki Voronoi wyznaczają ulice i strefy (kamienice / domki / park /
+//     plac). Same budynki powstają na nieregularnej siatce czworokątów (grid.js).
 import { Rng, hash } from '../core/rng.js';
-import { gateWidth } from '../gen/modules.js';
+import { makeQuadGrid, classifyGrid, decorate, makeChunks, levelY } from './grid.js';
+import { Terrain } from './terrain.js';
 
-export const N = 14;
-export const S = 90;
-export const HALF = (N * S) / 2;
-export const PLAZA = { i0: 6, i1: 8, j0: 6, j1: 8 };
+export const HALF = 630;
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 
-// Odsunięcie czworokąta do środka o różne odległości na każdej krawędzi.
-export function offsetQuad(q, d) {
-  const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4;
-  const cz = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+export function polyCentroid(p) {
+  let a = 0, cx = 0, cz = 0;
+  for (let i = 0; i < p.length; i++) {
+    const [x0, z0] = p[i], [x1, z1] = p[(i + 1) % p.length];
+    const c = x0 * z1 - x1 * z0;
+    a += c; cx += (x0 + x1) * c; cz += (z0 + z1) * c;
+  }
+  if (Math.abs(a) < 1e-9) return [p[0][0], p[0][1]];
+  return [cx / (3 * a), cz / (3 * a)];
+}
+
+export function polyArea(p) {
+  let a = 0;
+  for (let i = 0; i < p.length; i++) {
+    const [x0, z0] = p[i], [x1, z1] = p[(i + 1) % p.length];
+    a += x0 * z1 - x1 * z0;
+  }
+  return Math.abs(a) / 2;
+}
+
+// zachowuje punkty z nx*x + nz*z <= c (Sutherland–Hodgman)
+function clipPoly(poly, nx, nz, c) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const da = nx * a[0] + nz * a[1] - c, db = nx * b[0] + nz * b[1] - c;
+    if (da <= 0) out.push(a);
+    if (da * db < 0) {
+      const t = da / (da - db);
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  return out;
+}
+
+// Odsunięcie wielokąta do środka o różne odległości na każdej krawędzi.
+export function offsetPoly(q, d) {
+  const n = q.length, c = polyCentroid(q);
   const lines = [];
-  for (let k = 0; k < 4; k++) {
-    const a = q[k], b = q[(k + 1) % 4];
+  for (let k = 0; k < n; k++) {
+    const a = q[k], b = q[(k + 1) % n];
     const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz);
     let nx = -dz / l, nz = dx / l;
-    const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
-    if ((cx - mx) * nx + (cz - mz) * nz < 0) { nx = -nx; nz = -nz; }
-    lines.push({ p: [a[0] + nx * d[k], a[1] + nz * d[k]], d: [dx / l, dz / l] });
+    if ((c[0] - (a[0] + b[0]) / 2) * nx + (c[1] - (a[1] + b[1]) / 2) * nz < 0) { nx = -nx; nz = -nz; }
+    lines.push({ p: [a[0] + nx * d[k], a[1] + nz * d[k]], d: [dx / l, dz / l], n: [nx, nz] });
   }
   const out = [];
-  for (let k = 0; k < 4; k++) {
-    const L1 = lines[(k + 3) % 4], L2 = lines[k];
+  for (let k = 0; k < n; k++) {
+    const L1 = lines[(k + n - 1) % n], L2 = lines[k];
     const den = L1.d[0] * L2.d[1] - L1.d[1] * L2.d[0];
+    if (Math.abs(den) < 1e-6) { out.push(L2.p); continue; }
     const t = ((L2.p[0] - L1.p[0]) * L2.d[1] - (L2.p[1] - L1.p[1]) * L2.d[0]) / den;
     out.push([L1.p[0] + L1.d[0] * t, L1.p[1] + L1.d[1] * t]);
   }
+  out.normals = lines.map((l) => l.n);
   return out;
+}
+
+// krawędzie nie mogą się "przewrócić" ani zniknąć
+function offsetValid(orig, off, minLen = 3) {
+  const n = orig.length;
+  for (let k = 0; k < n; k++) {
+    const a = orig[k], b = orig[(k + 1) % n], c = off[k], d = off[(k + 1) % n];
+    const dot = (b[0] - a[0]) * (d[0] - c[0]) + (b[1] - a[1]) * (d[1] - c[1]);
+    if (dot <= 0 || dist(c, d) < minLen) return false;
+  }
+  return polyArea(off) > 50;
 }
 
 export function pointInPoly(poly, x, z) {
@@ -48,207 +95,297 @@ export function pointInPoly(poly, x, z) {
   return inside;
 }
 
-const PALETTE = [
-  [0.74, 0.72, 0.66], [0.70, 0.66, 0.56], [0.62, 0.62, 0.58], [0.72, 0.64, 0.52],
-  [0.66, 0.68, 0.62], [0.58, 0.56, 0.52], [0.76, 0.70, 0.62], [0.64, 0.58, 0.52],
-  [0.55, 0.58, 0.56], [0.70, 0.60, 0.55],
-];
-
-function streetSpec(k) {
-  // główne aleje: linie 3, 11 oraz obie linie wokół placu Ministerstwa
-  const avenue = k === 3 || k === 11 || k === PLAZA.i0 || k === PLAZA.i1;
-  return avenue ? { road: 7.5, walk: 4.5, avenue: true } : { road: 4.0, walk: 3.0, avenue: false };
+function inradius(poly, c) {
+  let r = 1e9;
+  for (let k = 0; k < poly.length; k++) {
+    const a = poly[k], b = poly[(k + 1) % poly.length];
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz);
+    r = Math.min(r, Math.abs((c[0] - a[0]) * dz - (c[1] - a[1]) * dx) / l);
+  }
+  return r;
 }
 
+// ── mosty ───────────────────────────────────────────────────────────────────
+function makeBridges(terrain, rng) {
+  const out = [];
+  const xs = [-400, rng.float(-90, 90), 390];
+  for (const x0 of xs) {
+    const x = x0 + rng.float(-40, 40);
+    const r = terrain.river(x, terrain.pts[0][1]);
+    // punkt na osi rzeki o danym x
+    let best = null;
+    const P = terrain.pts;
+    for (let i = 0; i < P.length - 1; i++) {
+      const a = P[i], b = P[i + 1];
+      if (x >= a[0] && x <= b[0]) {
+        const t = (x - a[0]) / (b[0] - a[0]);
+        best = { p: lerp2(a, b, t), tx: b[0] - a[0], tz: b[1] - a[1] };
+      }
+    }
+    if (!best) continue;
+    void r;
+    const tl = Math.hypot(best.tx, best.tz);
+    const T = [best.tx / tl, best.tz / tl], Nn = [-T[1], T[0]];
+    const skew = rng.float(-0.22, 0.22), c = Math.cos(skew), s = Math.sin(skew);
+    const A = [Nn[0] * c - Nn[1] * s, Nn[0] * s + Nn[1] * c];
+    const perp = [-A[1], A[0]];
+    const L = terrain.hw / Math.abs(A[0] * Nn[0] + A[1] * Nn[1]) + 0.2;
+    out.push({ p: best.p, axis: A, perp, L, width: 12, e0: [best.p[0] - A[0] * L, best.p[1] - A[1] * L], e1: [best.p[0] + A[0] * L, best.p[1] + A[1] * L] });
+  }
+  return out;
+}
+
+// ── ziarna Voronoi ──────────────────────────────────────────────────────────
+function seedAllowed(x, z, terrain, bridges, center) {
+  if (Math.abs(x) > HALF - 8 || Math.abs(z) > HALF - 8) return false;
+  if (terrain.river(x, z).d < terrain.hw + 24) return false;
+  if (Math.hypot(x - center[0], z - center[1]) < 125) return false;
+  for (const b of bridges) {
+    const dx = x - b.p[0], dz = z - b.p[1];
+    const along = dx * b.axis[0] + dz * b.axis[1], across = dx * b.perp[0] + dz * b.perp[1];
+    if (Math.abs(along) < b.L + 140 && Math.abs(across) < 52) return false;
+  }
+  return true;
+}
+
+function placeSeeds(terrain, bridges, center, rng) {
+  const seeds = [{ x: center[0], z: center[1], fixed: true, plaza: true }];
+  for (const b of bridges)
+    for (const s of [-1, 1])
+      for (const d of [32, 100])
+        for (const q of [-1, 1]) {
+          const along = s * (b.L + d);
+          seeds.push({ x: b.p[0] + b.axis[0] * along + b.perp[0] * 36 * q, z: b.p[1] + b.axis[1] * along + b.perp[1] * 36 * q, fixed: true });
+        }
+  const minD = 64;
+  for (let i = 0; i < 9000; i++) {
+    const x = rng.float(-HALF + 10, HALF - 10), z = rng.float(-HALF + 10, HALF - 10);
+    if (!seedAllowed(x, z, terrain, bridges, center)) continue;
+    let ok = true;
+    for (const s of seeds) if ((s.x - x) ** 2 + (s.z - z) ** 2 < minD * minD) { ok = false; break; }
+    if (ok) seeds.push({ x, z, fixed: false });
+  }
+  return seeds;
+}
+
+function voronoi(seeds) {
+  const box = [[-HALF, -HALF], [HALF, -HALF], [HALF, HALF], [-HALF, HALF]];
+  return seeds.map((s, i) => {
+    let poly = box;
+    const near = [];
+    for (let j = 0; j < seeds.length; j++) {
+      if (j === i) continue;
+      const d2 = (seeds[j].x - s.x) ** 2 + (seeds[j].z - s.z) ** 2;
+      if (d2 < 360 * 360) near.push([d2, seeds[j]]);
+    }
+    near.sort((a, b) => a[0] - b[0]);
+    for (const [, o] of near) {
+      // |p-s|² <= |p-o|²  ⇔  2(o-s)·p <= |o|² - |s|²
+      poly = clipPoly(poly, 2 * (o.x - s.x), 2 * (o.z - s.z), o.x * o.x + o.z * o.z - s.x * s.x - s.z * s.z);
+      if (poly.length < 3) break;
+    }
+    return poly;
+  });
+}
+
+function clipRiver(poly, seed, terrain) {
+  const P = terrain.pts;
+  for (let i = 0; i < P.length - 1 && poly.length >= 3; i++) {
+    const a = P[i], b = P[i + 1];
+    let near = false;
+    for (const v of poly) {
+      const r = terrain.river(v[0], v[1]);
+      if (r.seg === i && r.d < terrain.hw + 0.5) { near = true; break; }
+    }
+    if (!near) {
+      const segLen = dist(a, b);
+      for (let s = 0; s <= segLen && !near; s += 8) if (pointInPoly(poly, ...lerp2(a, b, s / segLen))) near = true;
+    }
+    if (!near) continue;
+    const side = (b[0] - a[0]) * (seed.z - a[1]) - (b[1] - a[1]) * (seed.x - a[0]) > 0 ? 1 : -1;
+    // brzeg po stronie ziarna
+    const bank = side > 0 ? terrain.left : terrain.right;
+    const p0 = bank[i], p1 = bank[i + 1];
+    let nx = -(p1[1] - p0[1]), nz = p1[0] - p0[0];
+    // n ma wskazywać w stronę rzeki (to, co odcinamy)
+    const mid = lerp2(a, b, 0.5);
+    if ((mid[0] - p0[0]) * nx + (mid[1] - p0[1]) * nz < 0) { nx = -nx; nz = -nz; }
+    poly = clipPoly(poly, nx, nz, nx * p0[0] + nz * p0[1]);
+  }
+  return poly;
+}
+
+function weld(cells, seeds, terrain) {
+  const V = [], grid = new Map();
+  const find = (x, z) => {
+    const gx = Math.floor(x / 0.5), gz = Math.floor(z / 0.5);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++) {
+        const list = grid.get(`${gx + dx},${gz + dz}`);
+        if (list) for (const id of list) if (Math.abs(V[id].x - x) < 0.05 && Math.abs(V[id].z - z) < 0.05) return id;
+      }
+    const id = V.length;
+    V.push({ x, z });
+    const k = `${gx},${gz}`;
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push(id);
+    return id;
+  };
+  const out = [];
+  cells.forEach((poly, i) => {
+    if (poly.length < 3 || polyArea(poly) < 300) return;
+    const ids = [];
+    for (const p of poly) {
+      const id = find(p[0], p[1]);
+      if (ids[ids.length - 1] !== id) ids.push(id);
+    }
+    if (ids.length > 1 && ids[0] === ids[ids.length - 1]) ids.pop();
+    if (ids.length >= 3) out.push({ ids, seed: seeds[i] });
+  });
+  for (const v of V) {
+    v.bank = Math.abs(terrain.river(v.x, v.z).d - terrain.hw) < 0.8;
+    v.border = Math.abs(v.x) > HALF - 0.01 || Math.abs(v.z) > HALF - 0.01;
+  }
+  return { V, cells: out };
+}
+
+// zwijanie krótkich krawędzi — skrzyżowania zamiast "ząbków"
+function collapse(g, minLen) {
+  const { V } = g;
+  for (let iter = 0; iter < 3000; iter++) {
+    let best = null, bl = minLen;
+    for (const c of g.cells)
+      for (let k = 0; k < c.ids.length; k++) {
+        const a = c.ids[k], b = c.ids[(k + 1) % c.ids.length];
+        const l = Math.hypot(V[a].x - V[b].x, V[a].z - V[b].z);
+        if (l < bl) { bl = l; best = [a, b]; }
+      }
+    if (!best) break;
+    const [a, b] = best, A = V[a], B = V[b];
+    const pri = (v) => (v.border ? 2 : v.bank ? 1 : 0);
+    if (pri(B) > pri(A)) { A.x = B.x; A.z = B.z; A.bank = B.bank; A.border = B.border; }
+    else if (pri(A) === pri(B)) { A.x = (A.x + B.x) / 2; A.z = (A.z + B.z) / 2; }
+    for (const c of g.cells) {
+      c.ids = c.ids.map((id) => (id === b ? a : id)).filter((id, k, arr) => id !== arr[(k + 1) % arr.length]);
+    }
+    g.cells = g.cells.filter((c) => c.ids.length >= 3);
+  }
+}
+
+// ── ulice ───────────────────────────────────────────────────────────────────
+const SPEC = {
+  bank: { road: 0.35, walk: 4.5, bank: true },
+  border: { road: 3, walk: 2.5 },
+  bridge: { road: 3.5, walk: 2.5, avenue: true },
+  lane: { road: 2.3, walk: 1.8 },
+  street: { road: 3.3, walk: 2.6 },
+  avenue: { road: 5.5, walk: 4.2, avenue: true },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 export function generateCity(seed = 1984) {
   const rng = new Rng(seed);
-  const nodes = [];
-  for (let j = 0; j <= N; j++)
-    for (let i = 0; i <= N; i++) {
-      let x = -HALF + i * S, z = -HALF + j * S;
-      if (i > 0 && j > 0 && i < N && j < N) { x += rng.float(-13, 13); z += rng.float(-13, 13); }
-      nodes.push([x, z]);
-    }
-  const node = (i, j) => nodes[j * (N + 1) + i];
-  // krawędzie placu muszą być proste
-  const { i0, i1, j0, j1 } = PLAZA;
-  for (let i = i0 + 1; i < i1; i++) {
-    nodes[j0 * (N + 1) + i] = lerp2(node(i0, j0), node(i1, j0), (i - i0) / (i1 - i0));
-    nodes[j1 * (N + 1) + i] = lerp2(node(i0, j1), node(i1, j1), (i - i0) / (i1 - i0));
-  }
-  for (let j = j0 + 1; j < j1; j++) {
-    nodes[j * (N + 1) + i0] = lerp2(node(i0, j0), node(i0, j1), (j - j0) / (j1 - j0));
-    nodes[j * (N + 1) + i1] = lerp2(node(i1, j0), node(i1, j1), (j - j0) / (j1 - j0));
-  }
+  const terrain = new Terrain(seed, HALF);
+  const center = [0, 0];
+  terrain.plaza = { x: center[0], z: center[1], r: 100, y: terrain.hills(center[0], center[1]) };
+  const bridges = makeBridges(terrain, rng);
+  const seeds = placeSeeds(terrain, bridges, center, rng);
 
-  const V = [], Hs = [];
-  for (let k = 0; k <= N; k++) { V.push(streetSpec(k)); Hs.push(streetSpec(k)); }
+  let cells = voronoi(seeds);
+  for (let it = 0; it < 2; it++) {
+    cells.forEach((c, i) => {
+      const s = seeds[i];
+      if (s.fixed || c.length < 3) return;
+      const cc = polyCentroid(c);
+      if (seedAllowed(cc[0], cc[1], terrain, bridges, center)) { s.x = cc[0]; s.z = cc[1]; }
+    });
+    cells = voronoi(seeds);
+  }
+  cells = cells.map((c, i) => (c.length >= 3 ? clipRiver(c, seeds[i], terrain) : c));
+  const g = weld(cells, seeds, terrain);
+  collapse(g, 15);
+
+  const onAxis = (v) => bridges.some((b) => {
+    const dx = v.x - b.p[0], dz = v.z - b.p[1];
+    return Math.abs(dx * b.perp[0] + dz * b.perp[1]) < 2 && Math.abs(dx * b.axis[0] + dz * b.axis[1]) < 400;
+  });
+  const specs = new Map();
+  const edgeSpec = (a, b) => {
+    const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+    let s = specs.get(key);
+    if (!s) {
+      const va = g.V[a], vb = g.V[b];
+      const r = new Rng(hash(seed, a, b, 5));
+      if (va.bank && vb.bank) s = SPEC.bank;
+      else if (va.border && vb.border) s = SPEC.border;
+      else if (onAxis(va) && onAxis(vb)) s = SPEC.bridge;
+      else s = r.weighted([[SPEC.lane, 2], [SPEC.street, 6], [SPEC.avenue, 1.3]]);
+      specs.set(key, s);
+    }
+    return s;
+  };
 
   const blocks = [];
-  const mkBlock = (quad, specs, kind, gi, gj) => {
-    const id = blocks.length;
-    const curb = offsetQuad(quad, specs.map((s) => s.road));
-    const curbIn = offsetQuad(quad, specs.map((s) => s.road + 0.3));
-    const bline = offsetQuad(quad, specs.map((s) => s.road + s.walk));
-    const c = [0, 0];
-    for (const p of quad) { c[0] += p[0] / 4; c[1] += p[1] / 4; }
-    let r = 0;
-    for (const p of curb) r = Math.max(r, dist(p, c));
-    const blk = { id, kind, gi, gj, quad, specs, curb, curbIn, bline, center: c, radius: r, lots: [], lamps: [], screens: [] };
+  const streets = [];
+  const seen = new Set();
+  for (const cell of g.cells) {
+    const poly = cell.ids.map((id) => [g.V[id].x, g.V[id].z]);
+    const n = poly.length;
+    const sp = cell.ids.map((id, k) => edgeSpec(id, cell.ids[(k + 1) % n]));
+    cell.ids.forEach((id, k) => {
+      const nx = cell.ids[(k + 1) % n], key = id < nx ? `${id}_${nx}` : `${nx}_${id}`;
+      if (seen.has(key) || sp[k].bank) return;
+      seen.add(key);
+      streets.push({ a: poly[k], b: poly[(k + 1) % n], w: sp[k].road + 2.4 });
+    });
+    const curb = offsetPoly(poly, sp.map((s) => s.road));
+    const bline = offsetPoly(poly, sp.map((s) => s.road + s.walk));
+    const ok = offsetValid(poly, curb) && offsetValid(curb, bline);
+    const c = polyCentroid(poly);
+    const blk = { id: blocks.length, poly, specs: sp, curb: ok ? curb : poly, bline: ok ? bline : poly, center: c, bc: polyCentroid(ok ? bline : poly) };
+    const br = new Rng(hash(seed, Math.round(c[0] * 10), Math.round(c[1] * 10)));
+    const rIn = inradius(blk.bline, blk.bc);
+    const dC = Math.hypot(c[0] - center[0], c[1] - center[1]);
+    if (cell.seed.plaza) blk.kind = 'plaza';
+    else if (!ok || rIn < 13 || polyArea(blk.bline) < 1400 || br.chance(0.1)) blk.kind = 'park';
+    else if (br.chance(Math.max(0.12, Math.min(0.92, 1.3 - dC / 430))) && rIn > 22) blk.kind = 'tenement';
+    else blk.kind = 'houses';
+    cell.seed.kind = blk.kind;
+    if (blk.kind === 'plaza') fillPlaza(blk, terrain);
     blocks.push(blk);
-    return blk;
-  };
+  }
+  for (const s of seeds) if (!s.kind) s.kind = 'houses';
 
-  for (let j = 0; j < N; j++)
-    for (let i = 0; i < N; i++) {
-      if (i >= i0 && i < i1 && j >= j0 && j < j1) continue;
-      const quad = [node(i, j), node(i + 1, j), node(i + 1, j + 1), node(i, j + 1)];
-      const specs = [Hs[j], V[i + 1], Hs[j + 1], V[i]];
-      const blk = mkBlock(quad, specs, 'block', i, j);
-      fillBlock(blk, new Rng(hash(seed, i, j)));
-    }
-  const plazaQuad = [node(i0, j0), node(i1, j0), node(i1, j1), node(i0, j1)];
-  const plaza = mkBlock(plazaQuad, [Hs[j0], V[i1], Hs[j1], V[i0]], 'plaza', i0, j0);
-  fillPlaza(plaza);
+  const monuments = blocks.filter((b) => b.kind === 'park' && polyArea(b.bline) > 2500).map((b) => b.bc);
+  const plaza = blocks.find((b) => b.kind === 'plaza');
+  // billboardy z hasłami Partii wokół Ministerstwa + portret na szczycie
+  const billboards = [];
+  const hs0 = plaza.ministry.tiers[0], pc = [terrain.plaza.x, terrain.plaza.z];
+  ['war', 'freedom', 'ignorance', 'bb5'].forEach((name, i) => {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4, d = [Math.cos(a), Math.sin(a)];
+    const r0 = hs0 * Math.SQRT2 + 12;
+    billboards.push({ p: [pc[0] + d[0] * r0, pc[1] + d[1] * r0], n: [-d[0], -d[1]], e: [-d[1], d[0]], name, y: 0, size: name.startsWith('bb') ? [5, 10] : [12, 3] });
+  });
+  const topY = 0.15 + levelY(28) + 0.6;
+  billboards.push({ p: pc, n: [0, 1], e: [1, 0], name: 'bb4', y: topY, size: [12, 24], noPosts: true });
 
-  // start: zachodnia krawędź placu, twarzą do Ministerstwa
-  const pc = plaza.curbIn;
-  const west = lerp2(pc[3], pc[0], 0.5);
-  const toC = [plaza.center[0] - west[0], plaza.center[1] - west[1]];
-  const tl = Math.hypot(toC[0], toC[1]);
-  // po drugiej stronie alei, na chodniku — Ministerstwo wyłania się z mgły
-  const sx = west[0] - (toC[0] / tl) * 17.5, sz = west[1] - (toC[1] / tl) * 17.5 + 22;
-  const spawn = { x: sx, z: sz, yaw: Math.atan2(-(plaza.center[0] - sx), -(plaza.center[1] - sz)) };
+  // start: na środku mostu najbliżej centrum, twarzą w stronę placu
+  const b0 = bridges.reduce((a, b) => (Math.abs(b.p[0]) < Math.abs(a.p[0]) ? b : a), bridges[0]);
+  const toP = [plaza.center[0] - b0.p[0], plaza.center[1] - b0.p[1]];
+  const sgn = toP[0] * b0.axis[0] + toP[1] * b0.axis[1] > 0 ? 1 : -1;
+  const spawn = { x: b0.p[0] + b0.perp[0] * 2, z: b0.p[1] + b0.perp[1] * 2, yaw: Math.atan2(-b0.axis[0] * sgn, -b0.axis[1] * sgn) };
 
-  const screens = blocks.flatMap((b) => b.screens);
-  return { seed, blocks, nodes, spawn, screens, size: N * S, half: HALF };
+  const city = { seed, blocks, terrain, bridges, spawn, streets, seedList: seeds, monuments, billboards, size: 2 * HALF, half: HALF };
+  city.grid = makeQuadGrid(seed, HALF);
+  classifyGrid(city);
+  decorate(city);
+  city.chunks = makeChunks(city);
+  return city;
 }
 
-// ── działki (kamienice) w kwartale ──────────────────────────────────────────
-function fillBlock(blk, rng) {
-  const depth = rng.float(11.5, 14);
-  blk.court = offsetQuad(blk.bline, [0, 1, 2, 3].map((k) => depth + (blk.specs[k].avenue ? 1.5 : 0)));
-  const B = blk.bline, C = blk.court;
-
-  for (let k = 0; k < 4; k++) {
-    const avenue = blk.specs[k].avenue;
-    const L = dist(B[k], B[(k + 1) % 4]);
-    let t = 0;
-    while (t < 1 - 1e-6) {
-      let w = rng.float(11, 19) / L;
-      if (1 - t - w < 9 / L) w = 1 - t;
-      blk.lots.push(makeLot(blk, k, t, t + w, avenue, rng));
-      t += w;
-    }
-  }
-  // każdy kwartał ma przynajmniej jedną bramę na podwórze
-  const lots = blk.lots;
-  const eligible = lots.filter((l) => l.bays >= 3);
-  for (const l of eligible) if (rng.chance(0.3)) l.gateBay = 1 + Math.floor(rng.next() * (l.bays - 2));
-  if (!lots.some((l) => l.gateBay >= 0) && eligible.length) {
-    const l = eligible[Math.floor(rng.next() * eligible.length)];
-    l.gateBay = 1 + Math.floor(rng.next() * (l.bays - 2));
-  }
-  for (const l of lots) {
-    do l.doorBay = Math.floor(rng.next() * l.bays);
-    while (l.bays > 1 && l.doorBay === l.gateBay);
-    if (l.doorBay === l.gateBay) l.doorBay = -1;
-  }
-  lots.forEach((l, idx) => { l.idx = idx; });
-
-  // otwory bram (do kolizji)
-  blk.gates = [];
-  for (const l of lots) {
-    if (l.gateBay < 0) continue;
-    const t0 = l.gateBay / l.bays, t1 = (l.gateBay + 1) / l.bays;
-    const Fa = lerp2(l.f0, l.f1, t0), Fb = lerp2(l.f0, l.f1, t1);
-    const Ba = lerp2(l.b0, l.b1, t0), Bb = lerp2(l.b0, l.b1, t1);
-    const W = dist(Fa, Fb), gw = gateWidth(W) - 0.5;
-    const ua = 0.5 - gw / (2 * W), ub = 0.5 + gw / (2 * W);
-    const ext = (a, b, s) => [a[0] + (a[0] - b[0]) * s, a[1] + (a[1] - b[1]) * s];
-    const fA = lerp2(Fa, Fb, ua), fB = lerp2(Fa, Fb, ub), bA = lerp2(Ba, Bb, ua), bB = lerp2(Ba, Bb, ub);
-    blk.gates.push([ext(fA, bA, 0.05), ext(fB, bB, 0.05), ext(bB, fB, 0.05), ext(bA, fA, 0.05)]);
-  }
-
-  // teleekrany na boniowanych przęsłach parteru
-  for (const l of lots) {
-    if (!rng.chance(0.18) || l.bays < 2) continue;
-    let bay = Math.floor(rng.next() * l.bays);
-    if (bay === l.gateBay || bay === l.doorBay) bay = (bay + 1) % l.bays;
-    if (bay === l.gateBay || bay === l.doorBay) continue;
-    l.screenBay = bay;
-    const t = (bay + 0.5) / l.bays;
-    const f = lerp2(l.f0, l.f1, t), bk = lerp2(l.b0, l.b1, t);
-    const n = [f[0] - bk[0], f[1] - bk[1]], nl = Math.hypot(n[0], n[1]);
-    blk.screens.push({ x: f[0] + (n[0] / nl) * 0.3, z: f[1] + (n[1] / nl) * 0.3, y: 2.7 });
-  }
-
-  // latarnie wzdłuż krawężnika
-  for (let k = 0; k < 4; k++) {
-    const a = blk.curbIn[k], b = blk.curbIn[(k + 1) % 4], L = dist(a, b);
-    const n = Math.max(1, Math.round(L / 27));
-    const e = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
-    const inward = inwardNormal(blk.curbIn, k);
-    for (let i = 0; i < n; i++) {
-      const t = (i + 0.5) / n;
-      const p = lerp2(a, b, t);
-      blk.lamps.push({ p: [p[0] + inward[0] * 0.45, p[1] + inward[1] * 0.45], e, n: inward });
-    }
-  }
-}
-
-function inwardNormal(q, k) {
-  const a = q[k], b = q[(k + 1) % 4];
-  const c = [(q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4];
-  const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz);
-  let nx = -dz / l, nz = dx / l;
-  if ((c[0] - (a[0] + b[0]) / 2) * nx + (c[1] - (a[1] + b[1]) / 2) * nz < 0) { nx = -nx; nz = -nz; }
-  return [nx, nz];
-}
-
-function makeLot(blk, k, t0, t1, avenue, rng) {
-  const B = blk.bline, C = blk.court;
-  const f0 = lerp2(B[k], B[(k + 1) % 4], t0), f1 = lerp2(B[k], B[(k + 1) % 4], t1);
-  const b0 = lerp2(C[k], C[(k + 1) % 4], t0), b1 = lerp2(C[k], C[(k + 1) % 4], t1);
-  const width = dist(f0, f1);
-  const style = rng.weighted([['classic', 4], ['ornate', 3], ['plain', 3], ['brick', 2], ['modern', avenue ? 1.2 : 0.4]]);
-  const upper = avenue ? rng.int(4, 6) : rng.int(3, 5);
-  const gH = rng.float(4.1, 4.6), fH = style === 'modern' ? 3.2 : rng.float(3.15, 3.55);
-  const top = gH + upper * fH;
-  const base = PALETTE[Math.floor(rng.next() * PALETTE.length)];
-  const j = () => rng.float(-0.04, 0.04);
-  const tint = [base[0] + j(), base[1] + j(), base[2] + j()];
-  const roof = style === 'modern' ? 'flat' : rng.weighted([['pitch', 5], ['mansard', 3], ['flat', 1.2]]);
-  return {
-    k, t0, t1, f0, f1, b0, b1, width,
-    bays: Math.max(2, Math.round(width / 3.7)),
-    upper, gH, fH, top, style, tint,
-    wallMat: style === 'brick' ? 'brick' : 'plaster',
-    roof, roofH: roof === 'flat' ? 0.9 : roof === 'mansard' ? rng.float(4.0, 4.8) : rng.float(3.0, 4.6),
-    shops: rng.chance(avenue ? 0.85 : 0.35),
-    balcony: rng.chance(0.45),
-    gateBay: -1, doorBay: 0, screenBay: -1,
-    seed: rng.int(0, 1e9),
-  };
-}
-
-// ── plac Ministerstwa Prawdy ────────────────────────────────────────────────
-export const MINISTRY = { tiers: [52, 41, 31, 22], tierH: 26 };
-
-function fillPlaza(blk) {
-  blk.court = null;
-  blk.gates = [];
-  for (let k = 0; k < 4; k++) {
-    const a = blk.curbIn[k], b = blk.curbIn[(k + 1) % 4], L = dist(a, b);
-    const n = Math.max(1, Math.round(L / 24));
-    const e = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
-    const inward = inwardNormal(blk.curbIn, k);
-    for (let i = 0; i < n; i++) {
-      const p = lerp2(a, b, (i + 0.5) / n);
-      blk.lamps.push({ p: [p[0] + inward[0] * 0.45, p[1] + inward[1] * 0.45], e, n: inward });
-    }
-  }
-  const [cx, cz] = blk.center;
-  const h = MINISTRY.tiers[0] + 0.3;
-  for (const [dx, dz] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) blk.screens.push({ x: cx + dx * h, z: cz + dz * h, y: 4 });
+// ── plac Ministerstwa ───────────────────────────────────────────────────────
+function fillPlaza(blk, terrain) {
+  const r = inradius(blk.curb, [terrain.plaza.x, terrain.plaza.z]);
+  const hs = Math.max(22, Math.min(46, r * 0.55));
+  blk.ministry = { tiers: [1, 0.79, 0.6, 0.42].map((k) => hs * k), tierH: 22, y: terrain.plaza.y };
 }

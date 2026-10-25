@@ -13,10 +13,10 @@ function tex(set, sx, sy = sx) {
   return { map, normalMap };
 }
 
-export function createMaterials() {
+export async function createMaterials() {
   const T = createTextures();
   const telescreen = new Telescreen();
-  const atlas = createPosterAtlas();
+  const atlas = await createPosterAtlas();
   const std = (o) => new THREE.MeshStandardMaterial({ vertexColors: true, ...o });
 
   const M = {
@@ -27,6 +27,8 @@ export function createMaterials() {
     cobble: std({ ...tex(T.cobble, 1.7), roughness: 0.72, normalScale: new THREE.Vector2(1.6, 1.6) }),
     slab: std({ ...tex(T.slab, 2.0), roughness: 0.88 }),
     curb: std({ ...tex(T.curb, 1.0), roughness: 0.7 }),
+    grass: std({ ...tex(T.grass, 2.5), roughness: 0.95 }),
+    leaf: std({ roughness: 0.85 }),
     wood: std({ roughness: 0.65 }),
     metal: std({ roughness: 0.5, metalness: 0.45 }),
     glass: std({ roughness: 0.06, metalness: 0.15, envMapIntensity: 1.6 }),
@@ -44,5 +46,9 @@ export function createMaterials() {
   M.poster.polygonOffsetFactor = -2;
   M.screen.polygonOffset = true;
   M.screen.polygonOffsetFactor = -2;
+  const waterNormal = T.water.normalMap.clone();
+  waterNormal.repeat.set(1 / 9, 1 / 9);
+  waterNormal.needsUpdate = true;
+  M.water = new THREE.MeshStandardMaterial({ color: 0x1d2c27, roughness: 0.22, metalness: 0.0, normalMap: waterNormal, normalScale: new THREE.Vector2(0.6, 0.6), envMapIntensity: 0.7 });
   return { M, telescreen };
 }

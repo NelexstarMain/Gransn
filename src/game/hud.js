@@ -1,5 +1,6 @@
 // HUD: minimapa, zegar (13:00), komunikaty teleekranów, statystyki.
 import { pointInPoly } from '../city/layout.js';
+import { quadGeom, T_BLD } from '../city/grid.js';
 
 export class Hud {
   constructor(city) {
@@ -30,14 +31,20 @@ export class Hud {
       ctx.fillStyle = fill;
       ctx.fill();
     };
-    for (const b of this.city.blocks) {
-      poly(b.curb, '#7d807a');
-      if (b.kind === 'plaza') {
-        const h = 52, [cx, cz] = b.center;
-        poly([[cx - h, cz - h], [cx + h, cz - h], [cx + h, cz + h], [cx - h, cz + h]], '#e6e3da');
-      } else {
-        poly(b.bline, '#a49c8c');
-        poly(b.court, '#5c5d58');
+    const T = this.city.terrain, g = this.city.grid;
+    for (const blk of this.city.blocks) if (blk.kind === 'park') poly(blk.poly, '#5d7046');
+    for (let i = 0; i < T.left.length - 1; i++) poly([T.left[i], T.left[i + 1], T.right[i + 1], T.right[i]], '#3c5560');
+    for (const br of this.city.bridges) {
+      const w = br.width / 2, P = (p, s) => [p[0] + br.perp[0] * s, p[1] + br.perp[1] * s];
+      poly([P(br.e0, -w), P(br.e1, -w), P(br.e1, w), P(br.e0, w)], '#8a857a');
+    }
+    for (let q = 0; q < g.quads.length / 4; q++) {
+      const G = quadGeom(g, q);
+      for (let i = 0; i < 4; i++) {
+        const a = G.v[i];
+        if (g.TY[a] !== T_BLD) continue;
+        const h = Math.min(1, g.H[a] / 7);
+        poly([G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]], g.ZN[a] === 2 ? '#e6e3da' : `rgb(${150 + h * 40},${140 + h * 30},${120 + h * 20})`);
       }
     }
     return c;
@@ -69,8 +76,9 @@ export class Hud {
     this.msgT -= dt;
     this.msg.style.opacity = this.msgT > 0 ? '1' : '0';
 
-    const inPlaza = this.city.blocks.some((b) => b.kind === 'plaza' && pointInPoly(b.curb, player.pos.x, player.pos.z));
-    this.clock.textContent = `13:00 · Pas Startowy Jeden${inPlaza ? ' · Plac Zwycięstwa' : ''}`;
+    const here = this.city.blocks.find((b) => pointInPoly(b.curb, player.pos.x, player.pos.z));
+    const name = here ? { plaza: ' · Plac Zwycięstwa', park: ' · Park Ludowy', houses: ' · Przedmieście', tenement: ' · Śródmieście' }[here.kind] : this.city.terrain.inRiver(player.pos.x, player.pos.z, 2) ? ' · Most na rzece' : '';
+    this.clock.textContent = `13:00 · Pas Startowy Jeden${name}`;
     if (info) this.stats.textContent = info;
   }
 

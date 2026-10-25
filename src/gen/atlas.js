@@ -3,21 +3,25 @@
 export const ATLAS_SIZE = 2048;
 
 export const ATLAS = {
-  // cztery wizerunki Wielkiego Brata (górny rząd, 512×1024 każdy)
+  // wizerunki Wielkiego Brata (512×1024)
   bb0: [0, 0, 512, 1024],
   bb1: [512, 0, 512, 1024],
   bb2: [1024, 0, 512, 1024],
   bb3: [1536, 0, 512, 1024],
-  war: [0, 1024, 1024, 400],
-  freedom: [1024, 1024, 1024, 400],
-  ignorance: [0, 1424, 1024, 400],
-  milk: [1024, 1424, 1024, 200],
-  bread: [1024, 1624, 1024, 200],
-  gin: [0, 1824, 1024, 200],
-  tobacco: [1024, 1824, 1024, 200],
+  bb4: [0, 1024, 512, 1024], // zdjęcie 1
+  bb5: [512, 1024, 512, 1024], // zdjęcie 2
+  war: [1024, 1024, 1024, 256],
+  freedom: [1024, 1280, 1024, 256],
+  ignorance: [1024, 1536, 1024, 256],
+  milk: [1024, 1792, 512, 128],
+  bread: [1536, 1792, 512, 128],
+  gin: [1024, 1920, 512, 128],
+  tobacco: [1536, 1920, 512, 128],
 };
 
-export const BIG_BROTHER = ['bb0', 'bb1', 'bb2', 'bb3'];
+// zdjęcia mają większą wagę — to on jest Wielkim Bratem
+export const BIG_BROTHER = ['bb4', 'bb5', 'bb4', 'bb5', 'bb0', 'bb1', 'bb2', 'bb3'];
+export const PHOTOS = { bb4: { src: 'posters/brat1.jpg', text: 'PATRZY NA CIEBIE' }, bb5: { src: 'posters/brat2.jpg', text: 'KOCHA CIĘ' } };
 
 export const SLOGANS = {
   war: 'WOJNA TO POKÓJ',
@@ -30,6 +34,11 @@ export const SLOGANS = {
 };
 
 export const SHOP_SIGNS = ['milk', 'bread', 'gin', 'tobacco'];
+
+export function atlasAspect(name) {
+  const r = ATLAS[name] || ATLAS.bb0;
+  return r[2] / r[3];
+}
 
 // UV dla quada [lewy-dół, prawy-dół, prawy-góra, lewy-góra]
 export function atlasUV(name) {

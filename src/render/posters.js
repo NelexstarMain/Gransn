@@ -1,6 +1,6 @@
 // Atlas plakatów (Wielki Brat, hasła Partii, szyldy) i animowany teleekran.
 import * as THREE from 'three';
-import { ATLAS, ATLAS_SIZE, SLOGANS, BIG_BROTHER } from '../gen/atlas.js';
+import { ATLAS, ATLAS_SIZE, SLOGANS, PHOTOS } from '../gen/atlas.js';
 import { mulberry32 } from '../core/rng.js';
 
 function weather(ctx, x, y, w, h, seed, amount = 1) {
@@ -284,11 +284,50 @@ function drawSlogan(ctx, [x, y, w, h], text, bg, fg) {
   weather(ctx, x, y, w, h, x + y, 0.5);
 }
 
-export function createPosterAtlas() {
+function loadImage(src) {
+  return new Promise((res) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = src;
+  });
+}
+
+// Plakat ze zdjęciem: kadr "cover", lekka sepia i ziarno, napisy Partii.
+function drawPhotoPoster(ctx, [x, y, w, h], img, bottom, seed) {
+  ctx.save();
+  ctx.translate(x, y);
+  posterFrame(ctx, w, h, '#d8ccb0', '#1c1c1c');
+  const fx = 16, fy = 140, fw = w - 32, fh = h - 300;
+  if (img) {
+    const s = Math.max(fw / img.width, fh / img.height);
+    const sw = fw / s, sh = fh / s;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(fx, fy, fw, fh);
+    ctx.clip();
+    ctx.filter = 'grayscale(0.55) sepia(0.35) contrast(1.15)';
+    ctx.drawImage(img, (img.width - sw) / 2, Math.max(0, (img.height - sh) * 0.2), sw, sh, fx, fy, fw, fh);
+    ctx.filter = 'none';
+    const g = ctx.createRadialGradient(w / 2, h * 0.45, fw * 0.3, w / 2, h * 0.45, fw * 0.9);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = g;
+    ctx.fillRect(fx, fy, fw, fh);
+    ctx.restore();
+  }
+  posterText(ctx, w, h, 'WIELKI BRAT', bottom, '#b8261d');
+  weather(ctx, 0, 0, w, h, seed, 1.0);
+  ctx.restore();
+}
+
+export async function createPosterAtlas() {
   const c = document.createElement('canvas');
   c.width = c.height = ATLAS_SIZE;
   const ctx = c.getContext('2d');
-  BIG_BROTHER.forEach((v, i) => drawBigBrother(ctx, ATLAS[v], v, 5 + i * 17));
+  ['bb0', 'bb1', 'bb2', 'bb3'].forEach((v, i) => drawBigBrother(ctx, ATLAS[v], v, 5 + i * 17));
+  const base = import.meta.env?.BASE_URL ?? '/';
+  for (const [k, ph] of Object.entries(PHOTOS)) drawPhotoPoster(ctx, ATLAS[k], await loadImage(base + ph.src), ph.text, k.length * 31);
   drawSlogan(ctx, ATLAS.war, SLOGANS.war, '#1b1b1b', '#e8e2d2');
   drawSlogan(ctx, ATLAS.freedom, SLOGANS.freedom, '#a3221a', '#f0e9d6');
   drawSlogan(ctx, ATLAS.ignorance, SLOGANS.ignorance, '#1b1b1b', '#e8e2d2');

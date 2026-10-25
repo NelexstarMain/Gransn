@@ -6,7 +6,7 @@
 //  skosu narożnika, innej wysokości piętra itd. W/H/D służą tylko po to,
 //  żeby detale (ramy, parapety) zachowały wymiary w metrach.
 // ─────────────────────────────────────────────────────────────────────────────
-import { atlasUV } from './atlas.js';
+import { atlasUV, atlasAspect } from './atlas.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
@@ -44,6 +44,18 @@ function windowCore(b, W, H, p) {
     b.box('stone', x0 - s, y0, -0.035, x0, y1, 0, 'xXz');
     b.box('stone', x1, y0, -0.035, x1 + s, y1, 0, 'xXz');
     b.box('stone', x0 - s, y1, -0.035, x1 + s, y1 + s, 0, 'xXyYz');
+  }
+  if (p.shutters) {
+    const sw = (x1 - x0) / 2, so = { tint: p.shutterTint };
+    b.box('wood', x0 - sw - 0.02, y0, -0.06, x0 - 0.02, y1, -0.02, 'xXyYz', so);
+    b.box('wood', x1 + 0.02, y0, -0.06, x1 + sw + 0.02, y1, -0.02, 'xXyYz', so);
+    for (const x of [x0 - sw / 2 - 0.02, x1 + sw / 2 + 0.02])
+      for (let y = y0 + 0.12; y < y1 - 0.1; y += 0.16) b.rect('wood', x - sw * 0.38, y, x + sw * 0.38, y + 0.03, -0.061, { tint: p.shutterTint, shade: 0.6 });
+  }
+  if (p.flowers) {
+    b.box('wood', x0 - 0.05, y0 - 0.02, -0.32, x1 + 0.05, y0 + 0.2, -0.08, 'xXyYz', { tint: [0.4, 0.28, 0.2] });
+    const fo = { tint: p.flowers };
+    for (let x = x0; x < x1 - 0.1; x += 0.22) b.box('wood', x, y0 + 0.2, -0.3, x + 0.2, y0 + 0.38, -0.1, 'xXYz', fo);
   }
   if (p.ground) {
     plinth(b, [[0, W]], 'stone');
@@ -233,7 +245,7 @@ export const M = {
     if (p.sign) {
       const uv = atlasUV(p.sign);
       const m = 0.18, sw = x1 - x0 - 2 * m, sh = sy1 - sy0 - 0.12;
-      const tw = Math.min(sw, sh * 5.12), cx = (x0 + x1) / 2;
+      const tw = Math.min(sw, sh * atlasAspect(p.sign)), cx = (x0 + x1) / 2;
       posterQuad(b, cx - tw / 2, sy0 + 0.06, cx + tw / 2, sy0 + 0.06 + sh, -0.125, uv);
     }
     plinth(b, [[0, x0], [x1, W]]);
@@ -290,6 +302,7 @@ export const M = {
       b.poly(rm, [[W, ey, D + ov], [0, ey, D + ov], [0, hm, D - zm], [W, hm, D - zm]], [0, 1, 1], ro);
       b.poly(rm, [[W, hm, D - zm], [0, hm, D - zm], [0, H, zr], [W, H, zr]], [0, 1, 0.3], ro);
       for (const [x, dir] of [[0, -1], [W, 1]]) {
+        if ((dir < 0 && p.gL === false) || (dir > 0 && p.gR === false)) continue;
         const h = [dir, 0, 0];
         b.poly(p.wallMat, [[x, 0, 0], [x, hm, zm], [x, hm, D - zm], [x, 0, D]], h);
         b.poly(p.wallMat, [[x, hm, zm], [x, H, zr], [x, hm, D - zm]], h);
@@ -306,8 +319,8 @@ export const M = {
     } else {
       b.poly(rm, [[0, ey, -ov], [W, ey, -ov], [W, H, zr], [0, H, zr]], [0, 1, -1], ro);
       b.poly(rm, [[W, ey, D + ov], [0, ey, D + ov], [0, H, zr], [W, H, zr]], [0, 1, 1], ro);
-      b.poly(p.wallMat, [[0, 0, 0], [0, H, zr], [0, 0, D]], [-1, 0, 0]);
-      b.poly(p.wallMat, [[W, 0, 0], [W, 0, D], [W, H, zr]], [1, 0, 0]);
+      if (p.gL !== false) b.poly(p.wallMat, [[0, 0, 0], [0, H, zr], [0, 0, D]], [-1, 0, 0]);
+      if (p.gR !== false) b.poly(p.wallMat, [[W, 0, 0], [W, 0, D], [W, H, zr]], [1, 0, 0]);
     }
     if (p.chimneys) {
       for (const [x, z] of p.chimneys) M.chimney(b, x * W, z * D, H * 0.55, H + 1.3, p);
@@ -325,7 +338,7 @@ export const M = {
   // 15. Ściana szczytowa (ogniowa) — odsłonięty mur nad niższym sąsiadem
   firewall(b, W, H, D, p) {
     const x = p.side === 'R' ? W : 0, dir = p.side === 'R' ? 1 : -1;
-    b.gridX('brick', x, 0, 0, D, H, Math.max(1, Math.round(D / 3)), Math.max(1, Math.round(H / 3)), dir, { tint: p.tint });
+    b.gridX(p.mat || 'brick', x, 0, 0, D, H, Math.max(1, Math.round(D / 3)), Math.max(1, Math.round(H / 3)), dir, { tint: p.tint });
     if (p.poster && H > 7 && D > 6) {
       const pw = Math.min(D * 0.55, 6), ph = pw * 1.9;
       const zc = D * 0.45, y0 = Math.max(0.5, H - ph - 1.2);
@@ -360,7 +373,7 @@ export const M = {
   // 18. Bruk (kocie łby) — nawierzchnia jezdni
   cobble(b, W, H, D, p) {
     const s = p.step || 4;
-    b.gridY('cobble', 0, 0, 0, W, D, Math.max(1, Math.round(W / s)), Math.max(1, Math.round(D / s)), p.o);
+    b.gridY(p.mat || 'cobble', 0, 0, 0, W, D, Math.max(1, Math.round(W / s)), Math.max(1, Math.round(D / s)), p.o);
   },
 
   // 19. Latarnia uliczna (ramię w stronę jezdni = -z)
@@ -400,6 +413,196 @@ export const M = {
 function posterQuad(b, x0, y0, x1, y1, z, uv) {
   const mirror = b.cage.sign > 0;
   b.rect('poster', x0, y0, x1, y1, z, { uv: mirror ? [uv[1], uv[0], uv[3], uv[2]] : uv });
+}
+
+// ── miasteczko: mosty, nabrzeża, zieleń ─────────────────────────────────────
+Object.assign(M, {
+  // 22. Przęsło kamiennego mostu — łuk eliptyczny, sklepienie, filary,
+  //     jezdnia z brukiem, chodniki i balustrady. x = wzdłuż mostu, z = w poprzek.
+  bridge(b, W, H, D, p) {
+    const so = { tint: [0.72, 0.7, 0.66] };
+    const x0 = W * 0.13, x1 = W * 0.87, cx = W / 2, rx = (x1 - x0) / 2;
+    const ys = H * 0.2, ry = H * 0.62, N = 12;
+    const arc = [];
+    for (let i = 0; i <= N; i++) {
+      const a = Math.PI - (i / N) * Math.PI;
+      arc.push([cx + Math.cos(a) * rx, ys + Math.sin(a) * ry]);
+    }
+    for (const [z, f] of [[0, -1], [D, 1]]) {
+      const h = [0, 0, f];
+      b.poly('stone', [[0, 0, z], [x0, 0, z], [x0, H, z], [0, H, z]], h, so);
+      b.poly('stone', [[x1, 0, z], [W, 0, z], [W, H, z], [x1, H, z]], h, so);
+      for (let i = 0; i < N; i++) {
+        const a = arc[i], c = arc[i + 1];
+        b.poly('stone', [[a[0], a[1], z], [c[0], c[1], z], [c[0], H, z], [a[0], H, z]], h, so);
+      }
+      // archiwolta
+      for (let i = 0; i < N; i++) {
+        const a0 = Math.PI - (i / N) * Math.PI, a1 = Math.PI - ((i + 1) / N) * Math.PI;
+        const P = (a, k) => [cx + Math.cos(a) * rx * k, ys + Math.sin(a) * ry * k];
+        const p0 = P(a0, 1), p1 = P(a1, 1), q1 = P(a1, 1.12), q0 = P(a0, 1.12), zz = z + f * 0.08;
+        b.poly('stone', [[p0[0], p0[1], zz], [p1[0], p1[1], zz], [q1[0], q1[1], zz], [q0[0], q0[1], zz]], h, { tint: [0.62, 0.6, 0.56] });
+      }
+      // gzyms pod balustradą
+      b.box('stone', 0, H - 0.35, z - (f < 0 ? 0.25 : 0), W, H - 0.1, z + (f > 0 ? 0.25 : 0), f < 0 ? 'yYz' : 'yYZ', so);
+    }
+    b.rectX('stone', x0, 0, 0, D, ys, 1, { ...so, shade: 0.5 });
+    b.rectX('stone', x1, 0, 0, D, ys, -1, { ...so, shade: 0.5 });
+    for (let i = 0; i < N; i++) {
+      const a = arc[i], c = arc[i + 1], mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2;
+      b.poly('stone', [[a[0], a[1], 0], [c[0], c[1], 0], [c[0], c[1], D], [a[0], a[1], D]], [cx - mx, ys - my, 0], { ...so, shade: 0.4 });
+    }
+    // nawierzchnia
+    const sw = Math.min(2.5, D * 0.22), pw = 0.45;
+    b.gridY('cobble', H, 0, sw, W, D - sw, Math.max(1, Math.round(W / 3)), 2, { flat: 1 });
+    for (const [za, zb, fz] of [[pw, sw, 1], [D - sw, D - pw, -1]]) {
+      b.rectY('slab', H + 0.15, 0, za, W, zb, 1);
+      const zc = fz > 0 ? zb : za;
+      b.rectX('curb', 0, zc, H, zc, H + 0.15, 1);
+      b.poly('curb', [[0, H, zc], [W, H, zc], [W, H + 0.15, zc], [0, H + 0.15, zc]], [0, 0, fz]);
+    }
+    // balustrady: cokół, tralki, pochwyt
+    for (const [za, zb] of [[0, pw], [D - pw, D]]) {
+      b.box('stone', 0, H, za, W, H + 0.3, zb, 'yYzZ', so);
+      b.box('stone', 0, H + 0.95, za - 0.04, W, H + 1.12, zb + 0.04, 'yYzZ', so);
+      const nb = Math.max(2, Math.round(W / 0.32));
+      for (let i = 0; i < nb; i++) {
+        const x = ((i + 0.5) * W) / nb;
+        b.cyl('stone', x, (za + zb) / 2, H + 0.3, H + 0.95, 0.09, 0.07, 6, so);
+      }
+      if (p.end0) b.box('stone', 0, H, za - 0.05, 0.5, H + 1.35, zb + 0.05, 'xXYzZ', so);
+      if (p.end1) b.box('stone', W - 0.5, H, za - 0.05, W, H + 1.35, zb + 0.05, 'xXYzZ', so);
+    }
+  },
+
+  // 23. Nabrzeże — kamienny mur oporowy, kapinos, balustrada
+  quay(b, W, H, D, p) {
+    const so = { tint: [0.6, 0.6, 0.57] };
+    const rows = Math.max(3, Math.round(H / 0.6));
+    for (let r = 0; r < rows; r++) {
+      const ya = (r * (H - 0.3)) / rows, yb = ((r + 1) * (H - 0.3)) / rows;
+      b.rect('stone', 0, ya, W, yb - 0.03, 0, { ...so, shade: 0.75 + 0.2 * (r / rows) });
+      b.rect('stone', 0, yb - 0.03, W, yb, 0.02, { ...so, shade: 0.45 });
+    }
+    b.box('stone', 0, H - 0.3, -0.3, W, H + 0.02, 0.6, 'yYz', so);
+    if (p.rail) {
+      const mo = { tint: [0.15, 0.17, 0.16] };
+      const n = Math.max(1, Math.round(W / 2.2));
+      for (let i = 0; i <= n; i++) {
+        const x = (i * W) / n;
+        b.box('metal', x - 0.04, H, 0.1, x + 0.04, H + 1.05, 0.18, 'xXzZ', mo);
+      }
+      b.box('metal', 0, H + 0.98, 0.08, W, H + 1.05, 0.2, 'yYzZ', mo);
+      b.box('metal', 0, H + 0.5, 0.12, W, H + 0.53, 0.16, 'yYzZ', mo);
+    }
+  },
+
+  // 24. Drzewo — korona to sześcian zaokrąglony i "zgnieciony" szumem
+  tree(b, W, H, D, p) {
+    const cx = W / 2, cz = D / 2, bo = { tint: [0.36, 0.3, 0.24] };
+    const th = H * 0.42;
+    b.cyl('wood', cx, cz, 0, th + 0.6, 0.2, 0.12, 7, bo);
+    b.box('wood', cx - 0.04, th - 0.2, cz - 0.9, cx + 0.04, th - 0.1, cz, 'xXyYzZ', bo);
+    const lo = { tint: p.leaf };
+    const blobs = p.blobs || [[0, 0.68, 0, 0.5], [0.22, 0.58, 0.15, 0.36], [-0.2, 0.6, -0.12, 0.35]];
+    for (const [ox, oy, oz, r] of blobs) {
+      const c = [cx + ox * W, oy * H, cz + oz * D], R = [r * W, r * H * 0.9, r * D];
+      cubeSphere(b, 'leaf', c, R, 3, lo);
+    }
+  },
+
+  // 25. Płot sztachetowy (front ogródka)
+  fence(b, W, H, D, p) {
+    const fo = { tint: p.tint };
+    const n = Math.max(1, Math.round(W / 2));
+    for (let i = 0; i <= n; i++) {
+      const x = (i * W) / n;
+      b.box('wood', x - 0.05, 0, -0.05, x + 0.05, 1.15, 0.05, 'xXYzZ', fo);
+    }
+    for (const y of [0.3, 0.8]) b.box('wood', 0, y, 0.05, W, y + 0.07, 0.08, 'yYzZ', fo);
+    for (let x = 0.08; x < W - 0.05; x += 0.15) {
+      b.rect('wood', x, 0.1, x + 0.08, 0.95, 0.08, fo);
+      b.poly('wood', [[x, 0.95, 0.08], [x + 0.08, 0.95, 0.08], [x + 0.04, 1.02, 0.08]], [0, 0, -1], fo);
+      b.poly('wood', [[x, 0.1, 0.1], [x + 0.08, 0.1, 0.1], [x + 0.08, 0.95, 0.1], [x, 0.95, 0.1]], [0, 0, 1], { ...fo, shade: 0.8 });
+    }
+  },
+
+  // 26. Ławka parkowa
+  bench(b, W, H, D, p) {
+    const wo = { tint: [0.45, 0.3, 0.18] }, mo = { tint: [0.15, 0.16, 0.15] };
+    for (const x of [0.15, W - 0.2]) {
+      b.box('metal', x, 0, 0.05, x + 0.05, 0.45, 0.5, 'xXzZ', mo);
+      b.box('metal', x, 0.45, 0.45, x + 0.05, 0.9, 0.52, 'xXzZ', mo);
+    }
+    for (let i = 0; i < 4; i++) b.box('wood', 0, 0.42, 0.04 + i * 0.12, W, 0.47, 0.13 + i * 0.12, 'xXyYzZ', wo);
+    for (let i = 0; i < 3; i++) b.box('wood', 0, 0.55 + i * 0.12, 0.5, W, 0.64 + i * 0.12, 0.54, 'xXyYzZ', wo);
+  },
+
+  // 27. Pomnik — cokół z plakatami i obelisk (jedna zdeformowana kostka)
+  monument(b, W, H, D, p) {
+    const so = { tint: [0.8, 0.79, 0.76] };
+    b.box('stone', 0, 0, 0, W, 0.5, D, 'xXYzZ', so);
+    b.box('stone', W * 0.15, 0.5, D * 0.15, W * 0.85, 3, D * 0.85, 'xXYzZ', so);
+    const a = W * 0.3, c = W * 0.7, za = D * 0.3, zc = D * 0.7, t = 0.12;
+    const top = H - 2;
+    b.poly('stone', [[a, 3, za], [c, 3, za], [W / 2 + t, top, D / 2 - t], [W / 2 - t, top, D / 2 - t]], [0, 0.1, -1], so);
+    b.poly('stone', [[c, 3, za], [c, 3, zc], [W / 2 + t, top, D / 2 + t], [W / 2 + t, top, D / 2 - t]], [1, 0.1, 0], so);
+    b.poly('stone', [[c, 3, zc], [a, 3, zc], [W / 2 - t, top, D / 2 + t], [W / 2 + t, top, D / 2 + t]], [0, 0.1, 1], so);
+    b.poly('stone', [[a, 3, zc], [a, 3, za], [W / 2 - t, top, D / 2 - t], [W / 2 - t, top, D / 2 + t]], [-1, 0.1, 0], so);
+    b.cyl('light', W / 2, D / 2, top, H, t * 1.2, 0, 4);
+    const uv = atlasUV(p.poster || 'bb4');
+    const pw = W * 0.5, ph = Math.min(2.2, pw / atlasAspect(p.poster || 'bb4'));
+    const x0 = (W - pw) / 2, y0 = 0.6;
+    const fl = (q) => (b.cage.sign > 0 ? [q[1], q[0], q[3], q[2]] : q);
+    b.rect('poster', x0, y0, x0 + pw, y0 + ph, D * 0.15 - 0.02, { uv: fl(uv) });
+    b.rectBack('poster', x0, y0, x0 + pw, y0 + ph, D * 0.85 + 0.02, { uv: fl([uv[1], uv[0], uv[3], uv[2]]) });
+  },
+});
+
+Object.assign(M, {
+  // 28. Okap domu — deska czołowa + wysunięty pas dachu
+  eave(b, W, H, D, p) {
+    const ro = { tint: p.roofTint };
+    b.box('wood', 0, 0, -0.05, W, H, 0, 'yz', { tint: [0.85, 0.82, 0.76] });
+    b.poly('roof', [[0, H, 0.3], [W, H, 0.3], [W, H - 0.32, -0.55], [0, H - 0.32, -0.55]], [0, 1, -0.4], ro);
+    b.poly('wood', [[0, H - 0.34, -0.55], [W, H - 0.34, -0.55], [W, H - 0.02, 0.3], [0, H - 0.02, 0.3]], [0, -1, 0.4], { tint: [0.5, 0.4, 0.3], shade: 0.6 });
+  },
+
+  // 29. Billboard Partii — rama, plakat z dwóch stron, słupy
+  billboard(b, W, H, D, p) {
+    const mo = { tint: [0.14, 0.15, 0.14] };
+    const y0 = p.posts ? 3.2 : 0.6, y1 = H;
+    if (p.posts) for (const x of [W * 0.2, W * 0.8]) b.box('metal', x - 0.15, 0, D / 2 - 0.15, x + 0.15, y0, D / 2 + 0.15, 'xXzZ', mo);
+    else b.box('metal', 0, 0, D / 2 - 0.3, W, y0, D / 2 + 0.3, 'xXYzZ', mo);
+    b.box('metal', -0.15, y0 - 0.15, D / 2 - 0.12, W + 0.15, y1 + 0.15, D / 2 + 0.12, 'xXyYzZ', mo);
+    const uv = atlasUV(p.name);
+    const fl = (q) => [q[1], q[0], q[3], q[2]];
+    const m = b.cage.sign > 0;
+    b.rect('poster', 0, y0, W, y1, D / 2 - 0.13, { uv: m ? fl(uv) : uv });
+    b.rectBack('poster', 0, y0, W, y1, D / 2 + 0.13, { uv: m ? uv : fl(uv) });
+  },
+});
+
+// sześcian dzielony na siatkę i "nadmuchany" w stronę kuli — reszta kształtu
+// pochodzi z szumu materiału 'leaf' (wob), więc każda korona jest inna
+function cubeSphere(b, mat, c, R, n, o) {
+  const faces = [
+    [[1, 0, 0], [0, 0, -1], [0, 1, 0]], [[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
+    [[0, 1, 0], [1, 0, 0], [0, 0, -1]], [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+    [[0, 0, 1], [1, 0, 0], [0, 1, 0]], [[0, 0, -1], [-1, 0, 0], [0, 1, 0]],
+  ];
+  const P = (N, U, V, s, t) => {
+    const x = N[0] + U[0] * s + V[0] * t, y = N[1] + U[1] * s + V[1] * t, z = N[2] + U[2] * s + V[2] * t;
+    const l = Math.hypot(x, y, z), k = 0.35 + 0.65 / l;
+    return { p: [c[0] + x * k * R[0], c[1] + y * k * R[1], c[2] + z * k * R[2]], n: [x / l, y / l, z / l] };
+  };
+  for (const [N, U, V] of faces)
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        const s0 = -1 + (2 * i) / n, s1 = -1 + (2 * (i + 1)) / n, t0 = -1 + (2 * j) / n, t1 = -1 + (2 * (j + 1)) / n;
+        const q = [P(N, U, V, s0, t0), P(N, U, V, s1, t0), P(N, U, V, s1, t1), P(N, U, V, s0, t1)];
+        b.poly(mat, q.map((v) => v.p), null, { ...o, nrm: q.map((v) => v.n) });
+      }
 }
 
 export function gateWidth(W) {
