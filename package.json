@@ -1,13 +1,16 @@
 {
-  "name": "gransn-1984",
+  "name": "gransn-taxi",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "1984 — open world z ~20 deformowalnych modułów (cage deformation + szum)",
+  "description": "Gransn Taxi — proceduralna wyspa (Townscaper-like grid + Voronoi + Parish & Müller), jazda taksówką z ok. 1900 r.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check": "node scripts/check-world.mjs",
+    "sim": "node scripts/sim-traffic.mjs",
+    "build-world": "node scripts/build-all.mjs"
   },
   "dependencies": {
     "three": "0.170.0"

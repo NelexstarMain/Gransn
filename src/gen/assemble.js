@@ -507,7 +507,9 @@ export function buildGroundTile(city, tx, tz) {
       const cl = T.clampToBank(x, z);
       side.push(cl ? cl[2] : 0);
       if (cl) { x = cl[0]; z = cl[1]; }
-      V.push([x, T.height(x, z), z]);
+      // podkład terenu leży 5 cm niżej i bez wybrzuszeń — jezdnie (+6 cm) i chodniki (+15 cm)
+      // zawsze są nad nim, więc trawa nigdy nie przebija przez miasto
+      V.push([x, T.height(x, z) - 0.05, z]);
     }
   for (let j = 0; j < nz; j++)
     for (let i = 0; i < nx; i++) {
@@ -519,7 +521,7 @@ export function buildGroundTile(city, tx, tz) {
       const y = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
       if (y < T.seaY - 3.5) continue; // dno morza pod wodą
       const mx = (q[0][0] + q[2][0]) / 2, mz = (q[0][2] + q[2][2]) / 2;
-      b.wpoly(T.isSand(mx, mz, y) ? 'sand' : 'grass', q, [0, 1, 0]);
+      b.wpoly(T.isSand(mx, mz, y) ? 'sand' : 'grass', q, [0, 1, 0], { flat: 1 });
     }
   return b.finish();
 }

@@ -77,17 +77,19 @@ export class Terrain {
   }
 
   hills(x, z) {
-    return 4 + 7 * noise3(x / 430 + 11.3, 0.37, z / 430 - 4.1) + 2.2 * noise3(x / 150, 2.1, z / 150);
+    return 6.5 + 5 * noise3(x / 430 + 11.3, 0.37, z / 430 - 4.1) + 1.8 * noise3(x / 150, 2.1, z / 150);
   }
 
   height(x, z) {
     let h = this.hills(x, z);
     const c = this.inland(x, z);
-    const land = sstep(-10, 110, c);
+    const land = sstep(-25, 75, c);
     const d = this.river(x, z).d;
     h = this.bankY + (h - this.bankY) * sstep(this.hw + 6, this.hw + 120, d);
     // plaża i dno morza
     h = this.seaY - 4 + (h - this.seaY + 4) * land;
+    // ląd nigdy nie schodzi pod wodę: od ~40 m od brzegu co najmniej 1 m nad morzem
+    h = Math.max(h, this.seaY - 6 + 7 * sstep(12, 40, c));
     const p = this.plaza;
     if (p) {
       const pd = Math.hypot(x - p.x, z - p.z);

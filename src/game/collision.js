@@ -4,8 +4,9 @@ import { pointInPoly } from '../city/layout.js';
 import { filled, quadGeom, raised } from '../city/grid.js';
 import { capsulePoly } from '../city/roadnet.js';
 
-export const ROAD = 0, WALK = 1, COURT = 2, PLAZA = 3, GATE = 4, BRIDGE = 5, SOLID = 255;
-const OFFSET = { [ROAD]: 0.06, [WALK]: 0.15, [COURT]: 0.05, [PLAZA]: 0.15, [GATE]: 0 };
+// GROUND = goły teren (podkład 5 cm niżej), ROAD = jezdnia (+6 cm), WALK = chodnik (+15 cm)
+export const GROUND = 0, WALK = 1, COURT = 2, PLAZA = 3, GATE = 4, BRIDGE = 5, ROAD = 6, SOLID = 255;
+const OFFSET = { [GROUND]: -0.05, [ROAD]: 0.06, [WALK]: 0.15, [COURT]: 0.05, [PLAZA]: 0.15, [GATE]: 0 };
 
 export class CollisionGrid {
   constructor(city, cell = 0.5) {
