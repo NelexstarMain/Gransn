@@ -26,11 +26,38 @@ export class Player {
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === dom; });
+    const look = (dx, dy, k = 0.0022) => {
+      this.yaw -= dx * k;
+      this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * k));
+    };
+    let drag = false;
+    dom.addEventListener('mousedown', () => { drag = true; });
+    addEventListener('mouseup', () => { drag = false; });
     document.addEventListener('mousemove', (e) => {
-      if (!this.locked) return;
-      this.yaw -= e.movementX * 0.0022;
-      this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - e.movementY * 0.0022));
+      if (this.locked || drag) look(e.movementX, e.movementY);
     });
+    // dotyk: lewa połowa ekranu = chodzenie (joystick), prawa = rozglądanie
+    this.touchMove = [0, 0];
+    const touches = new Map();
+    dom.addEventListener('touchstart', (e) => {
+      for (const t of e.changedTouches) touches.set(t.identifier, { x: t.clientX, y: t.clientY, x0: t.clientX, y0: t.clientY, left: t.clientX < innerWidth / 2 });
+      e.preventDefault();
+    }, { passive: false });
+    dom.addEventListener('touchmove', (e) => {
+      for (const t of e.changedTouches) {
+        const s = touches.get(t.identifier);
+        if (!s) continue;
+        if (s.left) this.touchMove = [Math.max(-1, Math.min(1, (t.clientX - s.x0) / 60)), Math.max(-1, Math.min(1, (s.y0 - t.clientY) / 60))];
+        else look(t.clientX - s.x, t.clientY - s.y, 0.004);
+        s.x = t.clientX; s.y = t.clientY;
+      }
+      e.preventDefault();
+    }, { passive: false });
+    const end = (e) => {
+      for (const t of e.changedTouches) { const s = touches.get(t.identifier); if (s?.left) this.touchMove = [0, 0]; touches.delete(t.identifier); }
+    };
+    dom.addEventListener('touchend', end);
+    dom.addEventListener('touchcancel', end);
   }
 
   spawn(x, z, yaw) {
@@ -52,9 +79,11 @@ export class Player {
     const k = this.keys;
     const f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
     const s = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
-    const run = k.has('ShiftLeft') || k.has('ShiftRight');
+    let fT = f, sT = s;
+    if (this.touchMove[0] || this.touchMove[1]) { sT = this.touchMove[0]; fT = this.touchMove[1]; }
+    const run = k.has('ShiftLeft') || k.has('ShiftRight') || Math.hypot(sT, fT) > 0.95;
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
-    let dx = -sin * f + cos * s, dz = -cos * f - sin * s;
+    let dx = -sin * fT + cos * sT, dz = -cos * fT - sin * sT;
     const l = Math.hypot(dx, dz);
     if (l > 0) { dx /= l; dz /= l; }
 

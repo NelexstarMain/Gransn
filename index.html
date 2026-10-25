@@ -6,7 +6,7 @@
     <title>1984 — Pas Startowy Jeden</title>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #9da39f; font-family: 'Courier New', monospace; color: #e8e3d4; }
-      #app canvas { display: block; filter: saturate(0.78) contrast(1.06); }
+      #app canvas { display: block; touch-action: none; filter: saturate(0.78) contrast(1.06); }
       #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(10,12,10,0.45) 100%); }
       #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(18, 20, 18, 0.82); cursor: pointer; text-align: center; }
       #overlay h1 { font-size: 64px; letter-spacing: 0.3em; margin: 0 0 6px; color: #d8d1bd; }
@@ -43,10 +43,10 @@
       <h2>PAS STARTOWY JEDEN</h2>
       <div class="keys">
         WASD — chodzenie &nbsp;·&nbsp; Mysz — rozglądanie &nbsp;·&nbsp; Shift — bieg &nbsp;·&nbsp; Spacja — skok<br />
-        F — tryb lotu (Spacja/C góra/dół) &nbsp;·&nbsp; H — ukryj HUD &nbsp;·&nbsp; Esc — pauza
+        F — tryb lotu (Spacja/C góra/dół) &nbsp;·&nbsp; H — ukryj HUD &nbsp;·&nbsp; Esc / P — pauza<br />Bez przechwycenia myszy: przeciągaj, żeby się rozglądać · Telefon: lewy kciuk chodzi, prawy się rozgląda
       </div>
       <div id="loader"><div id="track"><div id="bar"></div></div><div id="loadlabel">Ładowanie…</div></div>
-      <div class="go">[ KLIKNIJ, ABY WEJŚĆ ]</div>
+      <div class="go">[ KLIKNIJ / DOTKNIJ / ENTER, ABY WEJŚĆ ]</div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

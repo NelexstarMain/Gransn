@@ -50,7 +50,7 @@ async function start() {
   outer.receiveShadow = true;
   scene.add(outer);
 
-  const pool = new WorkerPool(Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1)));
+  const pool = new WorkerPool(params.has('local') ? 0 : Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1)), city);
   const streamer = new Streamer(scene, city, pool, M);
   const player = new Player(camera, grid, renderer.domElement);
   player.spawn(city.spawn.x, city.spawn.z, city.spawn.yaw);
@@ -99,9 +99,26 @@ async function start() {
   document.body.classList.add('ready');
 
   const overlay = $('overlay');
-  overlay.addEventListener('click', () => renderer.domElement.requestPointerLock());
+  // Wejście do gry nie zależy od Pointer Lock (w ramce / na telefonie bywa zablokowany)
+  let playing = false, hadLock = false;
+  const enter = () => {
+    playing = true;
+    overlay.style.display = 'none';
+    try {
+      const r = renderer.domElement.requestPointerLock?.();
+      if (r && r.catch) r.catch(() => {});
+    } catch { /* bez przechwycenia myszy: rozglądanie przeciąganiem */ }
+  };
+  const pause = () => { playing = false; overlay.style.display = 'flex'; };
+  overlay.addEventListener('click', enter);
+  overlay.addEventListener('touchend', (e) => { e.preventDefault(); enter(); });
+  addEventListener('keydown', (e) => {
+    if (!playing && (e.code === 'Enter' || e.code === 'Space')) enter();
+    else if (playing && e.code === 'KeyP') pause();
+  });
   document.addEventListener('pointerlockchange', () => {
-    overlay.style.display = document.pointerLockElement ? 'none' : 'flex';
+    if (document.pointerLockElement) hadLock = true;
+    else if (hadLock && playing) { hadLock = false; pause(); } // Esc
   });
   addEventListener('keydown', (e) => {
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
