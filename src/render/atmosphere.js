@@ -20,7 +20,8 @@ export function createAtmosphere(scene, renderer) {
   // niższe, cieplejsze słońce popołudniowe — dłuższe cienie, złote światło na fasadach
   const sun = new THREE.DirectionalLight(LIGHTS.sun, LIGHTS.sunIntensity);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  let shadowRes = 2048;
+  sun.shadow.mapSize.set(shadowRes, shadowRes);
   const sc = sun.shadow.camera;
   sc.left = -80; sc.right = 80; sc.top = 80; sc.bottom = -80;
   sc.near = 1; sc.far = 400;
@@ -81,10 +82,17 @@ export function createAtmosphere(scene, renderer) {
   return {
     sun,
     sky,
+    setShadowRes(n) {
+      if (n === shadowRes) return;
+      shadowRes = n;
+      sun.shadow.mapSize.set(n, n);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+    },
     update(camPos) {
       sky.position.copy(camPos);
       // cienie podążają za graczem, przyciągnięte do siatki tekseli (bez migotania)
-      const step = 160 / 2048;
+      const step = 160 / shadowRes;
       const tx = Math.round(camPos.x / step) * step, tz = Math.round(camPos.z / step) * step;
       sun.target.position.set(tx, 0, tz);
       sun.position.set(tx + sunDir.x * 200, sunDir.y * 200, tz + sunDir.z * 200);
