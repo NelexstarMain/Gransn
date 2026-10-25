@@ -445,7 +445,21 @@ export function buildRiver(city) {
       }
     }
   }
+  // most autostrady idzie za jej łamaną (odcinek po odcinku), a nie po prostej:
+  // każdy odcinek nad korytem dostaje własne przęsło pod samą jezdnią
+  for (const st of city.streets) {
+    if (st.type !== 'H' || !st.bridge) continue;
+    const L = dist(st.a, st.b);
+    if (L < 1) continue;
+    let near = false;
+    for (let t = 0; t <= 1.0001; t += 0.1) if (T.river(st.a[0] + (st.b[0] - st.a[0]) * t, st.a[1] + (st.b[1] - st.a[1]) * t).d < T.hw + 1) near = true;
+    if (!near) continue;
+    const u = [(st.b[0] - st.a[0]) / L, (st.b[1] - st.a[1]) / L], n = [-u[1], u[0]], hw = st.rw + 2.5;
+    const pts = [[st.a[0] - n[0] * hw, st.a[1] - n[1] * hw], [st.b[0] - n[0] * hw, st.b[1] - n[1] * hw], [st.a[0] + n[0] * hw, st.a[1] + n[1] * hw], [st.b[0] + n[0] * hw, st.b[1] + n[1] * hw]];
+    place(b, 'bridge', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), L, T.bankY - yb, 2 * hw, { end0: T.river(st.a[0], st.a[1]).d >= T.hw, end1: T.river(st.b[0], st.b[1]).d >= T.hw });
+  }
   for (const br of city.bridges) {
+    if (br.highway) continue;
     const spans = 3, hw = br.width / 2;
     const E = (t) => lerp2(br.e0, br.e1, t);
     const Hb = T.bankY - yb;

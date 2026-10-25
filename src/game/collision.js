@@ -42,6 +42,7 @@ export class CollisionGrid {
     }
     for (const bb of city.billboards) if (!bb.noPosts) for (const k of [-0.3, 0.3]) this.disc(bb.p[0] + bb.e[0] * bb.size[0] * k, bb.p[1] + bb.e[1] * bb.size[0] * k, 0.3);
     for (const br of city.bridges) {
+      if (br.highway) continue; // most autostrady = jezdnia (BRIDGE wypełniane niżej po odcinkach)
       const hw = br.width / 2 - 0.5, e = 0.5;
       const P = (pt, s) => [pt[0] + br.perp[0] * s, pt[1] + br.perp[1] * s];
       const e0 = [br.e0[0] - br.axis[0] * e, br.e0[1] - br.axis[1] * e], e1 = [br.e1[0] + br.axis[0] * e, br.e1[1] + br.axis[1] * e];

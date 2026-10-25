@@ -50,7 +50,9 @@ export function makeRoutes(seed, T) {
   const highway = { pts: hw, width: 11 }; // na ziemi (nie estakada)
   // kolej: łuk po drugiej stronie, przy ziemi; kończy się na plażach
   const rw = catmull(arc(T, a0 + Math.PI - 0.2, a0 + Math.PI + 2.0, 0.48, -25, rng), 6);
-  const ry = smoothY(rw.map(([x, z]) => Math.max(T.height(x, z), T.seaY + 1)), 4);
+  // tor leży tuż przy terenie (±0,2 m): bez wiszących nasypów i bez zakopania
+  const rh = rw.map(([x, z]) => Math.max(T.height(x, z), T.seaY + 1));
+  const ry = smoothY(rh, 1).map((y, i) => Math.max(rh[i] - 0.2, Math.min(rh[i] + 0.2, y)));
   const rail = { pts: rw, y: ry, width: 5 };
   rail.station = Math.floor(rw.length * 0.5);
   return { highway, rail };
