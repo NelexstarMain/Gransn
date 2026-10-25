@@ -75,7 +75,7 @@ export class WorkerPool {
   }
 
   reprioritize(fn) {
-    for (const q of this.queue) q.priority = fn(q.msg);
+    for (const q of this.queue) q.priority = fn(q.msg, q.priority);
   }
 
   get busy() {

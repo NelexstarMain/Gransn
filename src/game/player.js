@@ -68,6 +68,8 @@ export class Player {
   blocked(x, z) {
     const g = this.grid;
     if (g.solid(x, z)) return true;
+    const T = g.T;
+    if (T && g.type(x, z) !== 5 && T.height(x, z) < T.seaY + 0.4) return true; // morze
     for (let a = 0; a < 8; a++) {
       const ang = (a / 8) * Math.PI * 2;
       if (g.solid(x + Math.cos(ang) * RADIUS, z + Math.sin(ang) * RADIUS)) return true;

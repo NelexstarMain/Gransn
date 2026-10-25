@@ -3,7 +3,7 @@
 // "migotaniu" na granicy zasięgu.
 import * as THREE from 'three';
 
-export const DETAIL_IN = 170;  // m od krawędzi kwartału
+export const DETAIL_IN = 170;  // m od krawędzi fragmentu
 export const DETAIL_OUT = 230;
 
 export function buildMeshes(mats, M, { shadows = true } = {}) {
@@ -32,7 +32,9 @@ export function disposeGroup(group) {
 }
 
 export class Streamer {
-  constructor(scene, city, pool, M) {
+  constructor(scene, city, pool, M, low = false) {
+    this.din = low ? 90 : DETAIL_IN;
+    this.dout = low ? 130 : DETAIL_OUT;
     this.scene = scene;
     this.city = city;
     this.pool = pool;
@@ -41,17 +43,16 @@ export class Streamer {
     this.tris = 0;
   }
 
-  async loadLOD(onProgress) {
-    let done = 0;
-    await Promise.all(
-      this.city.chunks.map(async (blk, id) => {
-        const mats = await this.pool.run({ seed: this.city.seed, kind: 'lod', id }, 1e6);
+  // LOD całego miasta w tle — dalekie fragmenty na końcu kolejki
+  loadLOD() {
+    this.city.chunks.forEach((ch, id) => {
+      this.pool.run({ seed: this.city.seed, kind: 'lod', id }, 1000 + Math.hypot(ch.center[0], ch.center[1])).then((mats) => {
         const g = buildMeshes(mats, this.M, { shadows: false });
         this.state[id].lod = g;
+        g.visible = !this.state[id].detail;
         this.scene.add(g);
-        onProgress?.(++done / this.city.chunks.length);
-      }),
-    );
+      });
+    });
   }
 
   distance(id, p) {
@@ -63,12 +64,12 @@ export class Streamer {
     this.city.chunks.forEach((blk, id) => {
       const st = this.state[id];
       const d = this.distance(id, p);
-      if (d < DETAIL_IN) st.want = true;
-      else if (d > DETAIL_OUT) st.want = false;
+      if (d < this.din) st.want = true;
+      else if (d > this.dout) st.want = false;
       if (st.want && !st.detail && !st.pending) this.request(id, d);
       if (!st.want && st.detail) this.unload(id);
     });
-    this.pool.reprioritize((msg) => (msg.kind === 'block' ? this.distance(msg.id, p) : 1e6));
+    this.pool.reprioritize((msg, old) => (msg.kind === 'block' ? this.distance(msg.id, p) : msg.kind === 'lod' ? 1000 + this.distance(msg.id, p) : old));
   }
 
   request(id, d) {
