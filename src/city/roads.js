@@ -19,6 +19,8 @@ import { noise3 } from '../core/noise.js';
 
 // rw = połowa szerokości jezdni (m); przejazd zawsze ≥ 6 m
 const HIGHWAY = { len: 30, rw: 4.0 }, STREET = { len: 19, rw: 3.0 };
+// środek rynku zostaje wolny od jezdni — tam stoi ratusz
+export const PLAZA_FREE = 21;
 
 function segInter(a, b, c, d) {
   const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]];
@@ -152,6 +154,7 @@ export function growRoads(seed, T, bridges, center, base = []) {
       }
     }
     s.rw = s.type === 'h' ? HIGHWAY.rw : STREET.rw;
+    s.gen = true;
     return s;
   };
 
@@ -188,5 +191,11 @@ export function growRoads(seed, T, bridges, center, base = []) {
     insert(ok);
     for (const n of globalGoals(ok)) push(n);
   }
-  return segs.map((s) => ({ a: s.a, b: s.b, rw: s.rw, type: s.type, bridge: !!s.bridge, s0: s.s0 || 0 }));
+  // środek rynku zostaje wolny od jezdni (stoi tam ratusz). Usuwamy dopiero po wzroście sieci,
+  // więc reszta miasta wychodzi dokładnie taka sama jak bez tego filtra.
+  const nearCenter = (s) => {
+    const pc = projT(center, s.a, s.b);
+    return (pc.t <= 0 ? Math.hypot(s.a[0] - center[0], s.a[1] - center[1]) : pc.t >= 1 ? Math.hypot(s.b[0] - center[0], s.b[1] - center[1]) : pc.d) < PLAZA_FREE;
+  };
+  return segs.filter((s) => !s.gen || s.bridge || !nearCenter(s)).map((s) => ({ a: s.a, b: s.b, rw: s.rw, type: s.type, bridge: !!s.bridge, s0: s.s0 || 0 }));
 }

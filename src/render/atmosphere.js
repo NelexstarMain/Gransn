@@ -1,17 +1,24 @@
 // Słoneczne popołudnie nad wyspą; lekka mgiełka ukrywa granicę LOD-ów.
 import * as THREE from 'three';
 
-export const FOG_COLOR = new THREE.Color(0xc4d2d8);
+// Wspólne liczby światła — używa ich też aparat do zdjęć (scripts/photo.mjs).
+export const LIGHTS = {
+  fog: 0xc4d2d8, fogDensity: 0.0026,
+  hemiSky: 0xd6e6f4, hemiGround: 0x6a5a44, hemiIntensity: 1.05,
+  sun: 0xffe0b8, sunIntensity: 2.9, sunDir: [-0.55, 0.5, 0.42],
+  skyTop: 0x5f93c4, envGround: 0x4a4740, envIntensity: 0.6, exposure: 1.05,
+};
+export const FOG_COLOR = new THREE.Color(LIGHTS.fog);
 
 export function createAtmosphere(scene, renderer) {
   scene.background = FOG_COLOR.clone();
-  scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0026);
+  scene.fog = new THREE.FogExp2(FOG_COLOR, LIGHTS.fogDensity);
 
-  const hemi = new THREE.HemisphereLight(0xd6e6f4, 0x6a5a44, 1.05);
+  const hemi = new THREE.HemisphereLight(LIGHTS.hemiSky, LIGHTS.hemiGround, LIGHTS.hemiIntensity);
   scene.add(hemi);
 
   // niższe, cieplejsze słońce popołudniowe — dłuższe cienie, złote światło na fasadach
-  const sun = new THREE.DirectionalLight(0xffe0b8, 2.9);
+  const sun = new THREE.DirectionalLight(LIGHTS.sun, LIGHTS.sunIntensity);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
@@ -21,7 +28,7 @@ export function createAtmosphere(scene, renderer) {
   sun.shadow.normalBias = 0.05;
   sun.shadow.radius = 3;
   scene.add(sun, sun.target);
-  const sunDir = new THREE.Vector3(-0.55, 0.5, 0.42).normalize();
+  const sunDir = new THREE.Vector3(...LIGHTS.sunDir).normalize();
 
   // kopuła nieba z gradientem (bez mgły)
   const sky = new THREE.Mesh(
@@ -30,7 +37,7 @@ export function createAtmosphere(scene, renderer) {
       side: THREE.BackSide,
       depthWrite: false,
       fog: false,
-      uniforms: { top: { value: new THREE.Color(0x5f93c4) }, horizon: { value: FOG_COLOR.clone() }, sunDir: { value: sunDir } },
+      uniforms: { top: { value: new THREE.Color(LIGHTS.skyTop) }, horizon: { value: FOG_COLOR.clone() }, sunDir: { value: sunDir } },
       vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;
         void main(){ float h = clamp(vDir.y, 0.0, 1.0);
@@ -51,7 +58,7 @@ export function createAtmosphere(scene, renderer) {
   const envSky = sky.clone();
   envSky.material = sky.material.clone();
   envScene.add(envSky);
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(1500, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x4a4740 }));
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(1500, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIGHTS.envGround }));
   ground.position.y = -20;
   envScene.add(ground);
   // sylwetka miasta na horyzoncie — w szybach odbijają się "domy", nie tylko niebo
@@ -69,7 +76,7 @@ export function createAtmosphere(scene, renderer) {
   sunDisc.position.copy(sunDir).multiplyScalar(1200);
   envScene.add(sunDisc);
   scene.environment = pmrem.fromScene(envScene, 0.015).texture;
-  scene.environmentIntensity = 0.6;
+  scene.environmentIntensity = LIGHTS.envIntensity;
 
   return {
     sun,

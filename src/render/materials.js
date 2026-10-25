@@ -35,7 +35,7 @@ export async function createMaterials() {
     asphalt: std({ map: T.asphalt.map, normalMap: T.asphalt.normalMap, roughness: 0.8 }),
     paint: std({ roughness: 0.28, metalness: 0.3, envMapIntensity: 1.3 }),
     tile: std({ ...tex(T.tile, 1.2, 0.9), roughness: 0.75, normalScale: new THREE.Vector2(1.4, 1.4) }),
-    wood: std({ roughness: 0.65 }),
+    wood: std({ ...tex(T.wood, 0.5, 0.5), roughness: 0.65 }),
     metal: std({ roughness: 0.5, metalness: 0.45 }),
     // szkło: lustrzane odbicia otoczenia (niebo, słońce, sylwetka miasta) — bez kosztu w klatce
     glass: std({ roughness: 0.035, metalness: 0.9, envMapIntensity: 2.4 }),

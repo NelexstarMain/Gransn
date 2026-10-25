@@ -15,16 +15,17 @@ npm run build          # dist/
 npm run check          # reguły świata (obiekty poza jezdnią, brak nakładań, ściany poza jezdnią)
 npm run sim            # symulacja ruchu ulicznego bez grafiki (korki, zakleszczenia)
 npm run build-world    # buduje CAŁY świat w Node: wyjątki, NaN, ląd pod wodą
+npm run photo          # „aparat”: zdjęcia PNG świata i każdego elementu, bez przeglądarki (katalog zdjecia/)
 ```
 
 ## Jak pracować z tym użytkownikiem (WAŻNE)
 
 - **Język:** pisze po polsku, często dyktując głosem, z literówkami („wieksze”, „zrub”). Odpowiadaj po polsku, zwięźle, bez żargonu. Gdy coś jest niejasne, interpretuj w duchu wcześniejszych próśb (patrz Historia).
-- **NIE uruchamiaj testów w przeglądarce** (Playwright/Chromium). Użytkownik wprost tego zabronił i przerywa takie procesy (kod 137). Weryfikuj wyłącznie przez `npm run check`, `npm run sim`, `npm run build-world` i `npx vite build`. W raporcie uczciwie pisz, czego nie dało się sprawdzić wizualnie.
+- **NIE uruchamiaj testów w przeglądarce** (Playwright/Chromium). Użytkownik wprost tego zabronił i przerywa takie procesy (kod 137). Weryfikuj przez `npm run check`, `npm run sim`, `npm run build-world` i `npx vite build`. Wygląd sprawdzaj `npm run photo` (programowy renderer w Node, patrz niżej) i oglądaj PNG-i narzędziem Read. To przybliżenie GPU (światło, cień, tekstury, mgła, ACES), nie kopia piksel w piksel. W raporcie uczciwie pisz, czego nie dało się sprawdzić.
 - **Robi przerwy i wraca z nową listą.** Często powtarza wcześniejszą wiadomość w całości, zanim doda nowe punkty. Najpierw upewnij się, że stare punkty są zrobione.
 - **Po każdej zmianie:**
-  1. Commit na gałęzi `ccr-f37277ad-qchwz7`, z opisem po polsku i trailerami z system-reminder.
-  2. `git push -u origin ccr-f37277ad-qchwz7`.
+  1. Commit na gałęzi przydzielonej w poleceniu sesji (dawniej `ccr-f37277ad-qchwz7`, ostatnio `ccr-82241717-wn3zfe`), z opisem po polsku i trailerami z system-reminder.
+  2. `git push -u origin <ta gałąź>`.
   3. Ponowna publikacja gry pod tym samym linkiem (procedura niżej). Użytkownik gra **wyłącznie przez link** i nie uruchamia `npm`.
 - **Zdjęcia w `public/posters/brat1.jpg` i `brat2.jpg`** to twarz samego użytkownika. Potwierdził to i chce ich używać (reklamy „TAXI GRANSN”, pomniki w parkach, billboard na rynku). Nie usuwaj ich i nie podmieniaj.
 
@@ -74,6 +75,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 | `game/player.js`, `game/hud.js` | chodzenie/lot, mysz/dotyk; minimapa, panel kursu, strzałka |
 | `render/*` | tekstury proceduralne, materiały PBR, atlas plakatów, atmosfera (słońce, niebo, mapa otoczenia z sylwetką miasta) |
 | `main.js` | start (ładowanie w tle, wejście zawsze możliwe), pętla gry |
+| `scripts/photo.mjs`, `scripts/photo/raster.mjs` | „aparat”: te same moduły, tekstury, materiały i światło (`LIGHTS` z `render/atmosphere.js`) rysowane programowo w Node. Ujęcia miasta + plansze studyjne (`--only kamienice,elementy,przyroda,nawierzchnie,wieza`, `--fast` = mały kadr). Canvas z `@napi-rs/canvas`. |
 
 ### Kluczowe zasady i liczby (nie psuj ich)
 
@@ -99,9 +101,13 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 
 | narzędzie | wynik |
 |---|---|
-| `npm run check` | ~3400 obiektów, 0 na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 364 budynki |
+| `npm run check` | ~3480 obiektów, 0 na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 364 budynki |
 | `npm run sim` | 34 auta, ~18 km/h średnio, ~1/3 w korkach, najdłuższe czekanie ~12 s, 0 NaN |
-| `npm run build-world` | 144 fragmenty, ok. 3,0 mln trójkątów, 0 błędów, 0 punktów lądu pod wodą |
+| `npm run build-world` | 144 fragmenty, ok. 3,2 mln trójkątów, 0 błędów, 0 punktów lądu pod wodą |
+
+8. Przegląd wyglądu zdjęciami: chodniki z płyt wchodziły na jezdnię (teraz ćwiartki przy jezdni są dzielone i docinane po kawałku), rynek nie miał ratusza (jezdnie wygenerowane przez L-system są usuwane z 21 m od środka, wieża z zegarami i miedzianym hełmem to `M.townhall`, `extras` typu `townhall`), puste pola płyt zamieniają się w trawniki z drzewami (`lawn()` w `grid.js`), nowe tekstury (tynk bez łat, cegła z paletą i jasną zaprawą, trawa ze stokrotkami, drewno), nowe drzewa (topola kolumnowa, gęsta korona dębu), pasażer z twarzą, budka, kiosk, przystanek, kosz.
+
+**Pułapka przy detalach tuż przed ścianą:** szum materiału (`wob`) liczy się w wierzchołkach. Jeden duży prostokąt ściany i detal 1 cm przed nim rozchodzą się o kilka cm i detal „tonie” w ścianie. Dużą ścianę dziel siatką ~0,8 m (`b.grid`) albo odsuń detal o ≥ 3 cm.
 
 ## Znane braki i pomysły na dalej
 
