@@ -514,6 +514,8 @@ export function decorate(city) {
       const room = Math.min(roads.clearance(p[0], p[1]) + 1.5, bldDist(p[0], p[1]) + 0.5);
       const crownR = (species === 'poplar' ? 2 : species === 'pine' ? 2.5 : 3.5) * sc;
       if (room < 1.2 || roads.clearance(p[0], p[1]) < 1.0) continue; // pień zawsze poza jezdnią
+      // żadnych drzew w rzece ani pod wodą (punkty przy brzegu mają typ „ulica”, choć leżą w korycie)
+      if (city.terrain.river(p[0], p[1]).d < city.terrain.hw + 2 || city.terrain.height(p[0], p[1]) < city.terrain.seaY + 0.3) continue;
       if (crownR > room) sc *= room / crownR;
       if (!free(p, 1.0)) continue;
       trees.push({ p, s: sc, species, seed: hash(seed, v, 15), y });

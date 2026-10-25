@@ -452,6 +452,15 @@ function studioShots() {
   }
 }
 
+// wolne ujęcie: --cam x,y,z --look x,y,z [--name plik] [--fov 60]; y kamery względem terenu
+if (arg('--cam', '')) {
+  city = generateCity(SEED);
+  const c = arg('--cam').split(',').map(Number), l = arg('--look').split(',').map(Number), T = city.terrain;
+  const cam = [c[0], T.height(c[0], c[2]) + c[1], c[2]], tgt = [l[0], T.height(l[0], l[2]) + l[1], l[2]];
+  cityShot(arg('--name', '99_wolne'), cam, tgt, { fov: Number(arg('--fov', 60)), shadowHalf: 60 });
+  process.exit(0);
+}
+
 const t0 = performance.now();
 if (!ONLY || ONLY.some((n) => /^\d\d_/.test(n))) cityShots();
 studioShots();
