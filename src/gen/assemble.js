@@ -7,11 +7,14 @@ import { Builder } from './builder.js';
 import { Cage } from './cage.js';
 import { M } from './modules.js';
 import { SHOP_SIGNS, POSTERS } from './atlas.js';
+import { PROPS, moduleOf } from '../city/props.js';
 import { Rng, hash } from '../core/rng.js';
 import { HALF } from '../city/layout.js';
 import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
 import { polyDist } from '../city/routes.js';
+import { SEG, bridgeSegments, onBridge } from '../city/bridges.js';
+import { SURFACE, SURF_Y } from '../render/layers.js';
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -61,10 +64,49 @@ function placeTree(b, T, t, r) {
 }
 
 const CAR_COLORS = [[0.12, 0.13, 0.15], [0.55, 0.12, 0.1], [0.2, 0.32, 0.24], [0.82, 0.8, 0.72], [0.25, 0.35, 0.55], [0.6, 0.6, 0.62], [0.45, 0.32, 0.2]];
-const PROP_SIZE = { car: [3.6, 2.2, 1.7], kiosk: [2.4, 3.2, 2.0], booth: [1.0, 2.5, 1.0], busstop: [3.2, 3.1, 1.4], bin: [0.7, 1, 0.7] };
+const AWNINGS_ = [[[0.8, 0.2, 0.18], [0.95, 0.93, 0.86]], [[0.2, 0.45, 0.3], [0.95, 0.93, 0.86]], [[0.2, 0.3, 0.6], [0.95, 0.93, 0.86]], [[0.9, 0.7, 0.2], [0.95, 0.93, 0.86]]];
+const FLOWERS_ = [[0.9, 0.2, 0.3], [0.95, 0.85, 0.3], [0.8, 0.5, 0.9], [0.98, 0.98, 0.95], [0.95, 0.55, 0.2]];
+const WOODS_ = [[0.52, 0.38, 0.24], [0.42, 0.3, 0.2], [0.6, 0.46, 0.3]];
+
+// parametry wyglądu rekwizytu (kolory, napisy) z jego własnego seeda — stałe dla danego miejsca
+const VARIANT = {
+  car: (r) => ({ color: r.pick(CAR_COLORS), seat: r.pick([[0.4, 0.12, 0.1], [0.2, 0.15, 0.1], [0.15, 0.2, 0.3]]) }),
+  kiosk: (r) => ({ sign: r.pick(['gin', 'milk', 'bread', 'tobacco']), color: r.pick([[0.3, 0.45, 0.35], [0.55, 0.2, 0.15], [0.25, 0.35, 0.5]]) }),
+  hydrant: (r) => ({ color: r.pick([[0.85, 0.14, 0.1], [0.85, 0.14, 0.1], [0.22, 0.5, 0.32], [0.95, 0.78, 0.15]]) }),
+  postbox: (r) => ({ color: r.pick([[0.85, 0.14, 0.12], [0.85, 0.14, 0.12], [0.2, 0.36, 0.72], [0.95, 0.78, 0.15]]) }),
+  bollard: (r) => ({ color: r.pick([[0.13, 0.14, 0.14], [0.55, 0.53, 0.5]]) }),
+  adcolumn: (r) => ({ posters: Array.from({ length: 8 }, () => r.pick(POSTERS)) }),
+  planter: (r) => ({ flowers: r.pick(FLOWERS_), stone: r.pick([[0.74, 0.7, 0.64], [0.66, 0.64, 0.6], [0.8, 0.74, 0.62]]) }),
+  sandwich: (r) => ({ sign: r.pick(SHOP_SIGNS) }),
+  cafeset: (r) => { const a = r.pick(AWNINGS_); return { c1: a[0], c2: a[1] }; },
+  stall: (r) => { const a = r.pick(AWNINGS_); return { c1: a[0], c2: a[1] }; },
+  fruitstall: (r) => ({ c1: r.pick(AWNINGS_)[0] }),
+  flowerstand: (r) => ({ c1: r.pick(AWNINGS_)[0], cols: [r.pick(FLOWERS_), r.pick(FLOWERS_), r.pick(FLOWERS_), r.pick(FLOWERS_)] }),
+  handcart: (r) => ({ sack: r.pick([[0.78, 0.68, 0.5], [0.7, 0.62, 0.45]]) }),
+  crates: (r) => ({ tint: r.pick(WOODS_) }),
+  barrels: (r) => ({ tint: r.pick(WOODS_) }),
+  wagon: (r) => ({ tint: r.pick([[0.45, 0.3, 0.2], [0.3, 0.4, 0.5], [0.5, 0.25, 0.2]]) }),
+  statue: (r) => ({ bronze: r.pick([[0.5, 0.72, 0.62], [0.5, 0.42, 0.32], [0.7, 0.6, 0.4]]) }),
+  gazebo: (r) => ({ tint: r.pick([[0.9, 0.88, 0.82], [0.85, 0.9, 0.88]]), roof: r.pick([[0.28, 0.5, 0.42], [0.55, 0.22, 0.18]]) }),
+  well: (r) => ({ roof: r.pick([[0.62, 0.3, 0.2], [0.36, 0.3, 0.26]]) }),
+  pergola: (r) => ({ tint: r.pick([[0.9, 0.88, 0.82], [0.5, 0.36, 0.24]]) }),
+  flowerbed: (r) => ({ cols: [r.pick(FLOWERS_), r.pick(FLOWERS_), r.pick(FLOWERS_), r.pick(FLOWERS_)] }),
+  shed: (r) => ({ tint: r.pick(WOODS_), roof: r.pick([[0.35, 0.3, 0.28], [0.45, 0.2, 0.15]]) }),
+  haystack: (r) => ({ tint: r.pick([[0.9, 0.78, 0.38], [0.82, 0.7, 0.34]]) }),
+  coop: (r) => ({ tint: r.pick(WOODS_) }),
+  rock: (r) => ({ tint: r.pick([[0.6, 0.6, 0.57], [0.5, 0.48, 0.44], [0.66, 0.62, 0.55]]) }),
+  windmill: (r) => ({ tint: r.pick([[0.9, 0.86, 0.78], [0.85, 0.78, 0.66]]), roof: r.pick([[0.3, 0.2, 0.15], [0.4, 0.22, 0.16]]) }),
+  rowboat: (r) => ({ hull: r.pick([[0.25, 0.4, 0.55], [0.6, 0.2, 0.18], [0.85, 0.82, 0.72], [0.2, 0.42, 0.3]]) }),
+  deckchair: (r) => { const a = r.pick(AWNINGS_); return { c1: a[0], c2: a[1] }; },
+};
+
+// parametry wyglądu rekwizytu o danym rodzaju i seedzie (też dla zdjęć studyjnych)
+export function propParams(kind, seed = 1) {
+  return VARIANT[kind] ? VARIANT[kind](new Rng(seed)) : {};
+}
 
 function placeProp(b, T, pr, seed) {
-  const r = new Rng(hash(seed, Math.round(pr.p[0] * 10), Math.round(pr.p[1] * 10)));
+  const r = new Rng(pr.seed ?? hash(seed, Math.round(pr.p[0] * 10), Math.round(pr.p[1] * 10)));
   if (pr.kind === 'bush') {
     const s = pr.s;
     place(b, 'bush', cage4(T, null, boxPts(pr.p, [1, 0], [0, 1], 2.2 * s, 2.2 * s), NONE, (pr.y || 0) - 0.1, (pr.y || 0) + 1.6 * s), 2.2 * s, 1.7 * s, 2.2 * s, { leaf: r.pick(LEAF_BY.oak), flowers: r.chance(0.3) ? r.pick([[0.9, 0.2, 0.3], [0.95, 0.85, 0.3], [0.8, 0.5, 0.9]]) : null, seed: r.int(1, 99999) });
@@ -78,10 +120,12 @@ function placeProp(b, T, pr, seed) {
     b.cyl('stone', 0.5, 0.5, pr.h - 0.4, pr.h + 0.2, 0.3, 0.45, 10, { tint: [0.82, 0.8, 0.74] }, 'Y');
     return;
   }
-  const [W, H, D] = PROP_SIZE[pr.kind];
+  const [W, H, D] = PROPS[pr.kind].size;
   const y0 = pr.y ?? 0.15;
-  const p = pr.kind === 'car' ? { color: r.pick(CAR_COLORS), seat: r.pick([[0.4, 0.12, 0.1], [0.2, 0.15, 0.1], [0.15, 0.2, 0.3]]) } : pr.kind === 'kiosk' ? { sign: r.pick(['gin', 'milk', 'bread', 'tobacco']), color: r.pick([[0.3, 0.45, 0.35], [0.55, 0.2, 0.15], [0.25, 0.35, 0.5]]) } : {};
-  place(b, pr.kind === 'car' ? 'oldcar' : pr.kind, cage4(T, null, boxPts(pr.p, pr.e, pr.n, W, D), NONE, y0, y0 + H), W, H, D, p);
+  const p = VARIANT[pr.kind] ? VARIANT[pr.kind](r) : {};
+  b.aoK = 0.45; // niskie rekwizyty nie giną w cieniu przy ziemi
+  place(b, moduleOf(pr.kind), cage4(T, null, boxPts(pr.p, pr.e, pr.n, W, D), NONE, y0, y0 + H), W, H, D, p);
+  b.aoK = 1;
 }
 
 // cage z wysokościami w 4 narożnikach (trasy: tory, estakada)
@@ -103,6 +147,7 @@ function buildRail(b, city, i) {
   const W = Math.hypot(c[0] - a[0], c[1] - a[1]);
   const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
   if (T.inland(mid[0], mid[1]) < 2) return;
+  if (city.routes.rail.bridge && onBridge(city.routes.rail.bridge, mid[0], mid[1], 0)) return; // tor leży na segmentach mostu
   const bridge = T.river(mid[0], mid[1]).d < T.hw + 3;
   // przejazd przez jezdnię: szyny równo z drogą, bez podsypki
   const crossing = !bridge && city.roads.clearance(mid[0], mid[1]) < 2.5;
@@ -333,8 +378,8 @@ function groundQuarter(b, city, G, i, q) {
   const clampAll = sidewalkClamp(city, G, i);
   if (!clampAll) return;
   const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
-  const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES) || lawn(city, a) ? 'grass'
-    : ty === T_COURT || ty === T_PLAZA ? 'cobble' : 'slab';
+  const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES) || lawn(city, a) ? 'lawn'
+    : ty === T_COURT || ty === T_PLAZA ? 'cobblep' : 'slab';
   const lay = (pts, minArea) => {
     if (quadArea(pts) < minArea) return; // zjedzone przez jezdnię
     // narożniki rzucone na przeciwne brzegi rzeki → pas nad wodą; pomijamy
@@ -383,7 +428,7 @@ function buildRoad(b, city, s) {
   const u = [dx / L, dz / L], n = [-u[1], u[0]], rw = s.rw;
   const mat = s.mat === 'dirt' ? 'gravel' : s.mat === 'asphalt' ? 'asphalt' : 'cobble';
   const o = { tint: ROAD_TINT[s.mat], flat: 1 };
-  const yOff = s.mat === 'asphalt' ? 0.07 : s.mat === 'cobble' ? 0.06 : 0.05;
+  const yOff = s.mat === 'asphalt' ? SURF_Y.asphalt : s.mat === 'cobble' ? SURF_Y.cobble : SURF_Y.dirt;
   const Y = (x, z) => (s.bridge ? T.bankY : T.height(x, z)) + yOff;
   // ulica kończąca się przy nabrzeżu: wierzchołki z koryta wracają na brzeg (bez "balkonu" nad wodą)
   const own = s.bridge ? 0 : T.bankSide((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2);
@@ -486,31 +531,17 @@ export function buildRiver(city) {
       }
     }
   }
-  // most autostrady idzie za jej łamaną (odcinek po odcinku), a nie po prostej:
-  // każdy odcinek nad korytem dostaje własne przęsło pod samą jezdnią
-  for (const st of city.streets) {
-    if (st.type !== 'H' || !st.bridge) continue;
-    const L = dist(st.a, st.b);
-    if (L < 1) continue;
-    let near = false;
-    for (let t = 0; t <= 1.0001; t += 0.1) if (T.river(st.a[0] + (st.b[0] - st.a[0]) * t, st.a[1] + (st.b[1] - st.a[1]) * t).d < T.hw + 1) near = true;
-    if (!near) continue;
-    const u = [(st.b[0] - st.a[0]) / L, (st.b[1] - st.a[1]) / L], n = [-u[1], u[0]], hw = st.rw + 2.5;
-    const pts = [[st.a[0] - n[0] * hw, st.a[1] - n[1] * hw], [st.b[0] - n[0] * hw, st.b[1] - n[1] * hw], [st.a[0] + n[0] * hw, st.a[1] + n[1] * hw], [st.b[0] + n[0] * hw, st.b[1] + n[1] * hw]];
-    place(b, 'bridge', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), L, T.bankY - yb, 2 * hw, { end0: T.river(st.a[0], st.a[1]).d >= T.hw, end1: T.river(st.b[0], st.b[1]).d >= T.hw });
-  }
+  // mosty: łańcuch prostych segmentów po 5 m (bridges.js), każdy dokładnie tam, gdzie kończy się poprzedni
   for (const br of city.bridges) {
-    if (br.highway) continue;
-    const spans = 3, hw = br.width / 2;
-    const E = (t) => lerp2(br.e0, br.e1, t);
-    const Hb = T.bankY - yb;
-    for (let s = 0; s < spans; s++) {
-      const a = E(s / spans), c = E((s + 1) / spans);
-      const pts = [[a[0] - br.perp[0] * hw, a[1] - br.perp[1] * hw], [c[0] - br.perp[0] * hw, c[1] - br.perp[1] * hw], [a[0] + br.perp[0] * hw, a[1] + br.perp[1] * hw], [c[0] + br.perp[0] * hw, c[1] + br.perp[1] * hw]];
-      place(b, 'bridge', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), dist(a, c), Hb, br.width, { end0: s === 0, end1: s === spans - 1 });
+    const hw = br.width / 2, Hb = T.bankY - yb;
+    for (const sg of bridgeSegments(br)) {
+      const pts = [[sg.a[0] - br.perp[0] * hw, sg.a[1] - br.perp[1] * hw], [sg.c[0] - br.perp[0] * hw, sg.c[1] - br.perp[1] * hw], [sg.a[0] + br.perp[0] * hw, sg.a[1] + br.perp[1] * hw], [sg.c[0] + br.perp[0] * hw, sg.c[1] + br.perp[1] * hw]];
+      place(b, 'bridgeseg', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), SEG, Hb, br.width, { solid: sg.solid, first: sg.first, last: sg.last, sw: (br.width - 2 * (br.highway ? 5.5 : 3.5)) / 2, rail: br.rail });
     }
-    for (const sd of [-1, 1]) {
-      const p = [br.p[0] + br.perp[0] * sd * (hw - 0.9), br.p[1] + br.perp[1] * sd * (hw - 0.9)];
+    // latarnie po obu stronach, na styku segmentów (co 2 segmenty od środka)
+    if (!br.rail) for (const k of [-2, 2]) for (const sd of [-1, 1]) {
+      const c = [br.p[0] + br.axis[0] * SEG * k, br.p[1] + br.axis[1] * SEG * k];
+      const p = [c[0] + br.perp[0] * sd * (hw - 0.7), c[1] + br.perp[1] * sd * (hw - 0.7)];
       const nn = [br.perp[0] * sd, br.perp[1] * sd];
       place(b, 'lamp', Cage.oriented(p, br.axis, nn, 1, 1, T.bankY + 0.15, T.bankY + 6.15), 1, 6, 1, { metalTint: [0.17, 0.22, 0.19] });
     }
@@ -532,7 +563,7 @@ export function buildChunkLOD(city, id) {
           const cl = sidewalkClamp(city, G, i);
           if (!cl) continue;
           const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map(cl);
-          b.wpoly('slab', q4.map((p) => [p[0], T.height(p[0], p[1]) + 0.1, p[1]]), [0, 1, 0], { flat: 1 });
+          b.wpoly('lodwalk', q4.map((p) => [p[0], T.height(p[0], p[1]) + SURFACE.lodwalk.y, p[1]]), [0, 1, 0], { flat: 1 });
         }
         continue;
       }

@@ -16,6 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
+import { tidyStreets } from './tidy.js';
 
 // rw = połowa szerokości jezdni (m); przejazd zawsze ≥ 6 m
 const HIGHWAY = { len: 30, rw: 4.0 }, STREET = { len: 19, rw: 3.0 };
@@ -87,28 +88,12 @@ export function growRoads(seed, T, bridges, center, base = []) {
   // wypuszcza prostopadłe uliczki do wnętrza kwartałów
   for (const e of base) {
     if (Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 6) continue;
-    // krawędź może być łamaną (łagodnie wygiętą ulicą) — każdy odcinek wchodzi do sieci osobno
-    const pts = e.pts || [e.a, e.b];
-    const lens = [];
-    let L = 0;
-    for (let k = 0; k < pts.length - 1; k++) {
-      const a = pts[k], b = pts[k + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      lens.push(l); L += l;
-      insert({ a, b, ang: Math.atan2(b[1] - a[1], b[0] - a[0]), type: e.type || 'v', rw: e.rw, s0: e.s0 });
-    }
-    const at = (d) => {
-      let acc = 0;
-      for (let k = 0; k < lens.length; k++) {
-        if (d <= acc + lens[k] || k === lens.length - 1) {
-          const t = Math.min(1, Math.max(0, (d - acc) / (lens[k] || 1))), a = pts[k], b = pts[k + 1];
-          return { p: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
-        }
-        acc += lens[k];
-      }
-    };
+    const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+    insert({ a: e.a, b: e.b, ang, type: e.type || 'v', rw: e.rw, s0: e.s0 });
+    const L = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
     for (let d = 26 + rng.float(0, 14); d < L - 22; d += rng.float(40, 58)) {
-      const { p, ang } = at(d);
-      for (const sd of [-1, 1]) if (rng.chance(0.4)) push(mk(p, ang + sd * (Math.PI / 2 + rng.float(-0.15, 0.15)), 's', 3 + rng.float(0, 4)));
+      const p = [e.a[0] + Math.cos(ang) * d, e.a[1] + Math.sin(ang) * d];
+      for (const sd of [-1, 1]) if (rng.chance(0.4)) push(mk(p, ang + sd * (Math.PI / 2), 's', 3 + rng.float(0, 4)));
     }
   }
   const r0 = rng.float(0, Math.PI * 2);
@@ -187,12 +172,12 @@ export function growRoads(seed, T, bridges, center, base = []) {
         if (p > bestP) { bestP = p; bestA = a; }
       }
       if (bestP > 0.05) out.push(mk(end, bestA, 'h', s.t + 1));
-      if (rng.chance(0.06)) out.push(mk(end, s.ang + (rng.chance(0.5) ? 1 : -1) * (Math.PI / 2 + rng.float(-0.15, 0.15)), 'h', s.t + 1));
-      for (const sd of [-1, 1]) if (rng.chance(0.3)) out.push(mk(end, s.ang + sd * (Math.PI / 2 + rng.float(-0.12, 0.12)), 's', s.t + 6));
+      if (rng.chance(0.06)) out.push(mk(end, s.ang + (rng.chance(0.5) ? 1 : -1) * (Math.PI / 2), 'h', s.t + 1));
+      for (const sd of [-1, 1]) if (rng.chance(0.3)) out.push(mk(end, s.ang + sd * (Math.PI / 2), 's', s.t + 6));
     } else {
       const p = pop(end[0], end[1]);
-      if (p > 0.24) out.push(mk(end, s.ang + rng.float(-0.18, 0.18), 's', s.t + 1));
-      for (const sd of [-1, 1]) if (p > 0.38 && rng.chance(0.26)) out.push(mk(end, s.ang + sd * (Math.PI / 2 + rng.float(-0.2, 0.2)), 's', s.t + 2 + rng.int(0, 2)));
+      if (p > 0.24) out.push(mk(end, s.ang, 's', s.t + 1));
+      for (const sd of [-1, 1]) if (p > 0.38 && rng.chance(0.26)) out.push(mk(end, s.ang + sd * (Math.PI / 2), 's', s.t + 2 + rng.int(0, 2)));
     }
     return out;
   };
@@ -213,5 +198,6 @@ export function growRoads(seed, T, bridges, center, base = []) {
     const pc = projT(center, s.a, s.b);
     return (pc.t <= 0 ? Math.hypot(s.a[0] - center[0], s.a[1] - center[1]) : pc.t >= 1 ? Math.hypot(s.b[0] - center[0], s.b[1] - center[1]) : pc.d) < PLAZA_FREE;
   };
-  return segs.filter((s) => !s.gen || s.bridge || !nearCenter(s)).map((s) => ({ a: s.a, b: s.b, rw: s.rw, type: s.type, bridge: !!s.bridge, s0: s.s0 || 0 }));
+  const out = segs.filter((s) => !s.gen || s.bridge || !nearCenter(s)).map((s) => ({ a: s.a, b: s.b, rw: s.rw, type: s.type, bridge: !!s.bridge, s0: s.s0 || 0, gen: !!s.gen }));
+  return tidyStreets(out);
 }

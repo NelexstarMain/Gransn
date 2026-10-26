@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { atlasUV, atlasAspect } from './atlas.js';
 import { Rng } from '../core/rng.js';
+import { installProps } from './propmods.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
@@ -473,12 +474,14 @@ function posterQuad(b, x0, y0, x1, y1, z, uv) {
 
 // ── miasteczko: mosty, nabrzeża, zieleń ─────────────────────────────────────
 Object.assign(M, {
-  // 22. Przęsło kamiennego mostu — łuk eliptyczny, sklepienie, filary,
-  //     jezdnia z brukiem, chodniki i balustrady. x = wzdłuż mostu, z = w poprzek.
-  bridge(b, W, H, D, p) {
-    const so = { tint: [0.72, 0.7, 0.66] };
-    const x0 = W * 0.13, x1 = W * 0.87, cx = W / 2, rx = (x1 - x0) / 2;
-    const ys = H * 0.2, ry = H * 0.62, N = 12;
+  // 22. Segment mostu 5 m (x = wzdłuż mostu, z = w poprzek). Każdy segment ma własny łuk
+  //     z półfilarami po 0,5 m przy krawędziach, więc dwa segmenty stykają się w pełnym
+  //     filarze; ciągła jezdnia, chodniki, gzyms, balustrada z pilastrami na styku.
+  //     p.solid = oparcie na lądzie (bez łuku), p.first/p.last = słupy końcowe,
+  //     p.sw = szerokość chodnika (m).
+  bridgeseg(b, W, H, D, p) {
+    const so = { tint: [0.72, 0.7, 0.66] }, ao = { tint: [0.62, 0.6, 0.56] };
+    const cx = W / 2, rx = Math.min(2.0, W / 2 - 0.5), ys = H * 0.2, ry = Math.min(H * 0.62, 2.35), N = 10;
     const arc = [];
     for (let i = 0; i <= N; i++) {
       const a = Math.PI - (i / N) * Math.PI;
@@ -486,48 +489,77 @@ Object.assign(M, {
     }
     for (const [z, f] of [[0, -1], [D, 1]]) {
       const h = [0, 0, f];
-      b.poly('stone', [[0, 0, z], [x0, 0, z], [x0, H, z], [0, H, z]], h, so);
-      b.poly('stone', [[x1, 0, z], [W, 0, z], [W, H, z], [x1, H, z]], h, so);
+      if (p.solid) {
+        const ny = Math.max(1, Math.round(H / 1.2));
+        for (let j = 0; j < ny; j++) (f < 0 ? b.rect : b.rectBack).call(b, 'stone', 0, (H * j) / ny, W, (H * (j + 1)) / ny, z, so);
+        continue;
+      }
+      b.poly('stone', [[0, 0, z], [cx - rx, 0, z], [cx - rx, H, z], [0, H, z]], h, so);
+      b.poly('stone', [[cx + rx, 0, z], [W, 0, z], [W, H, z], [cx + rx, H, z]], h, so);
       for (let i = 0; i < N; i++) {
         const a = arc[i], c = arc[i + 1];
         b.poly('stone', [[a[0], a[1], z], [c[0], c[1], z], [c[0], H, z], [a[0], H, z]], h, so);
       }
-      // archiwolta
+      // archiwolta z klińcami
       for (let i = 0; i < N; i++) {
         const a0 = Math.PI - (i / N) * Math.PI, a1 = Math.PI - ((i + 1) / N) * Math.PI;
         const P = (a, k) => [cx + Math.cos(a) * rx * k, ys + Math.sin(a) * ry * k];
-        const p0 = P(a0, 1), p1 = P(a1, 1), q1 = P(a1, 1.12), q0 = P(a0, 1.12), zz = z + f * 0.08;
-        b.poly('stone', [[p0[0], p0[1], zz], [p1[0], p1[1], zz], [q1[0], q1[1], zz], [q0[0], q0[1], zz]], h, { tint: [0.62, 0.6, 0.56] });
+        const p0 = P(a0, 1), p1 = P(a1, 1), q1 = P(a1, 1.14), q0 = P(a0, 1.14), zz = z + f * 0.08;
+        b.poly('stone', [[p0[0], p0[1], zz], [p1[0], p1[1], zz], [q1[0], q1[1], zz], [q0[0], q0[1], zz]], h, { tint: i % 2 ? [0.6, 0.58, 0.54] : [0.66, 0.64, 0.6] });
       }
-      // gzyms pod balustradą
-      b.box('stone', 0, H - 0.35, z - (f < 0 ? 0.25 : 0), W, H - 0.1, z + (f > 0 ? 0.25 : 0), f < 0 ? 'yYz' : 'yYZ', so);
     }
-    b.rectX('stone', x0, 0, 0, D, ys, 1, { ...so, shade: 0.5 });
-    b.rectX('stone', x1, 0, 0, D, ys, -1, { ...so, shade: 0.5 });
-    for (let i = 0; i < N; i++) {
-      const a = arc[i], c = arc[i + 1], mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2;
-      b.poly('stone', [[a[0], a[1], 0], [c[0], c[1], 0], [c[0], c[1], D], [a[0], a[1], D]], [cx - mx, ys - my, 0], { ...so, shade: 0.4 });
+    // gzyms pod balustradą (ciągły, przez cały segment)
+    b.box('stone', 0, H - 0.35, -0.25, W, H - 0.1, 0, 'yYz', so);
+    b.box('stone', 0, H - 0.35, D, W, H - 0.1, D + 0.25, 'yYZ', so);
+    if (!p.solid) {
+      b.rectX('stone', cx - rx, 0, 0, D, ys, 1, { ...so, shade: 0.5 });
+      b.rectX('stone', cx + rx, 0, 0, D, ys, -1, { ...so, shade: 0.5 });
+      for (let i = 0; i < N; i++) {
+        const a = arc[i], c = arc[i + 1], mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2;
+        b.poly('stone', [[a[0], a[1], 0], [c[0], c[1], 0], [c[0], c[1], D], [a[0], a[1], D]], [cx - mx, ys - my, 0], { ...so, shade: 0.4 });
+      }
     }
-    // nawierzchnia
-    const sw = Math.min(2.5, D * 0.22), pw = 0.45;
-    b.gridY('cobble', H, 0, sw, W, D - sw, Math.max(1, Math.round(W / 3)), 2, { flat: 1 });
+    if (p.rail) {
+      // most kolejowy: podsypka, podkłady, szyny na poziomie toru (jak moduł rail) i dźwigary z blachy
+      const c = D / 2, gv = { tint: [0.62, 0.6, 0.58] }, tie = { tint: [0.32, 0.25, 0.2] }, steel = { tint: [0.3, 0.32, 0.31] };
+      b.box('stone', 0, H - 0.12, 0, W, H, D, 'yY', so);
+      b.poly('gravel', [[0, H + 0.35, c - 1.5], [W, H + 0.35, c - 1.5], [W, H + 0.35, c + 1.5], [0, H + 0.35, c + 1.5]], [0, 1, 0], gv);
+      b.poly('gravel', [[0, H, c - 2.1], [W, H, c - 2.1], [W, H + 0.35, c - 1.5], [0, H + 0.35, c - 1.5]], [0, 1, -1], gv);
+      b.poly('gravel', [[W, H, c + 2.1], [0, H, c + 2.1], [0, H + 0.35, c + 1.5], [W, H + 0.35, c + 1.5]], [0, 1, 1], gv);
+      const nt = Math.max(1, Math.round(W / 0.65));
+      for (let i = 0; i < nt; i++) { const x = ((i + 0.5) * W) / nt; b.box('wood', x - 0.12, H + 0.35, c - 1.25, x + 0.12, H + 0.5, c + 1.25, 'xXYzZ', tie); }
+      for (const z of [c - 0.72, c + 0.72]) b.box('metal', 0, H + 0.5, z - 0.035, W, H + 0.66, z + 0.035, 'YzZ', { tint: [0.55, 0.52, 0.5] });
+      for (const [za, zb, f] of [[0, 0.22, -1], [D - 0.22, D, 1]]) {
+        b.box('metal', 0, H - 0.3, za, W, H + 1.1, zb, 'xXYzZ', steel);
+        b.box('metal', 0, H + 1.1, za - 0.08, W, H + 1.2, zb + 0.08, 'xXyYzZ', steel);
+        for (let i = 0; i < 6; i++) { const x = ((i + 0.5) * W) / 6; b.rect('dark', x - 0.18, H + 0.15, x + 0.18, H + 0.85, f < 0 ? za - 0.01 : zb + 0.01, { shade: 0.5 }); }
+        if (p.first) b.box('metal', 0, H - 0.3, za - 0.04, 0.3, H + 1.3, zb + 0.04, 'xXYzZ', steel);
+        if (p.last) b.box('metal', W - 0.3, H - 0.3, za - 0.04, W, H + 1.3, zb + 0.04, 'xXYzZ', steel);
+      }
+      return;
+    }
+    // nawierzchnia: jezdnia z brukiem, chodniki z krawężnikiem
+    const sw = p.sw ?? Math.min(2.5, D * 0.22), pw = 0.45;
+    b.gridY('cobble', H, 0, sw, W, D - sw, 2, Math.max(1, Math.round((D - 2 * sw) / 2.5)), { flat: 1 });
     for (const [za, zb, fz] of [[pw, sw, 1], [D - sw, D - pw, -1]]) {
-      b.rectY('slab', H + 0.15, 0, za, W, zb, 1);
+      b.rectY('slab', H + 0.15, 0, za, W, zb, 1, { flat: 1 });
       const zc = fz > 0 ? zb : za;
       b.rectX('curb', 0, zc, H, zc, H + 0.15, 1);
       b.poly('curb', [[0, H, zc], [W, H, zc], [W, H + 0.15, zc], [0, H + 0.15, zc]], [0, 0, fz]);
     }
-    // balustrady: cokół, tralki, pochwyt
+    // balustrady: cokół, tralki, pochwyt, pilastry na styku segmentów, słupy na końcach
     for (const [za, zb] of [[0, pw], [D - pw, D]]) {
       b.box('stone', 0, H, za, W, H + 0.3, zb, 'yYzZ', so);
       b.box('stone', 0, H + 0.95, za - 0.04, W, H + 1.12, zb + 0.04, 'yYzZ', so);
-      const nb = Math.max(2, Math.round(W / 0.32));
+      const nb = 16;
       for (let i = 0; i < nb; i++) {
         const x = ((i + 0.5) * W) / nb;
+        if (x < 0.34 || x > W - 0.34) continue;
         b.cyl('stone', x, (za + zb) / 2, H + 0.3, H + 0.95, 0.09, 0.07, 6, so);
       }
-      if (p.end0) b.box('stone', 0, H, za - 0.05, 0.5, H + 1.35, zb + 0.05, 'xXYzZ', so);
-      if (p.end1) b.box('stone', W - 0.5, H, za - 0.05, W, H + 1.35, zb + 0.05, 'xXYzZ', so);
+      for (const [x0, x1] of [[0, 0.28], [W - 0.28, W]]) b.box('stone', x0, H, za - 0.07, x1, H + 1.22, zb + 0.07, 'xXYzZ', so);
+      if (p.first) b.box('stone', 0, H, za - 0.1, 0.6, H + 1.42, zb + 0.1, 'xXYzZ', so);
+      if (p.last) b.box('stone', W - 0.6, H, za - 0.1, W, H + 1.42, zb + 0.1, 'xXYzZ', so);
     }
   },
 
@@ -1218,6 +1250,8 @@ function cubeSphere(b, mat, c, R, n, o) {
         b.poly(mat, q.map((v) => v.p), null, { ...o, nrm: q.map((v) => v.n) });
       }
 }
+
+installProps(M, { cubeSphere }); // ~40 nowych rekwizytów (propmods.js)
 
 export function gateWidth(W) {
   return clamp(W * 0.8, 2.6, 3.3);

@@ -3,6 +3,7 @@
 import { pointInPoly } from '../city/layout.js';
 import { filled, quadGeom, raised } from '../city/grid.js';
 import { capsulePoly } from '../city/roadnet.js';
+import { PROPS } from '../city/props.js';
 
 // GROUND = goły teren (podkład 5 cm niżej), ROAD = jezdnia (+6 cm), WALK = chodnik (+15 cm)
 export const GROUND = 0, WALK = 1, COURT = 2, PLAZA = 3, GATE = 4, BRIDGE = 5, ROAD = 6, SOLID = 255;
@@ -29,9 +30,8 @@ export class CollisionGrid {
     for (const l of city.lamps) this.disc(l.p[0], l.p[1], 0.2);
     for (const t of city.trees) this.disc(t.p[0], t.p[1], 0.3);
     for (const b of city.benches) this.disc(b.p[0], b.p[1], 0.5);
-    const SZ = { car: [1.8, 0.85], kiosk: [1.2, 1.0], booth: [0.5, 0.5], busstop: [1.6, 0.7], bin: [0.3, 0.3], column: [0.35, 0.35] };
     for (const pr of city.props) {
-      const sz = SZ[pr.kind];
+      const sz = PROPS[pr.kind]?.solid;
       if (!sz) continue;
       const [a, c] = sz, e = pr.e, n = pr.n, P = (u, w) => [pr.p[0] + e[0] * u + n[0] * w, pr.p[1] + e[1] * u + n[1] * w];
       this.fill([P(-a, -c), P(a, -c), P(a, c), P(-a, c)], SOLID);
@@ -42,7 +42,7 @@ export class CollisionGrid {
     }
     for (const bb of city.billboards) if (!bb.noPosts) for (const k of [-0.3, 0.3]) this.disc(bb.p[0] + bb.e[0] * bb.size[0] * k, bb.p[1] + bb.e[1] * bb.size[0] * k, 0.3);
     for (const br of city.bridges) {
-      if (br.highway) continue; // most autostrady = jezdnia (BRIDGE wypełniane niżej po odcinkach)
+      if (br.rail) continue; // most kolejowy: nie do przejechania
       const hw = br.width / 2 - 0.5, e = 0.5;
       const P = (pt, s) => [pt[0] + br.perp[0] * s, pt[1] + br.perp[1] * s];
       const e0 = [br.e0[0] - br.axis[0] * e, br.e0[1] - br.axis[1] * e], e1 = [br.e1[0] + br.axis[0] * e, br.e1[1] + br.axis[1] * e];
@@ -65,7 +65,7 @@ export class CollisionGrid {
     // mosty na końcu: ostatnie słowo ma pokład (inaczej koniec ulicy przy brzegu albo koryto
     // zasypywały jego komórki i z mostu nie dało się zjechać)
     for (const br of city.bridges) {
-      if (br.highway) continue;
+      if (br.rail) continue; // most kolejowy: nie do przejechania
       const hw = br.width / 2 - 0.5, e = 0.5;
       const P = (pt, s) => [pt[0] + br.perp[0] * s, pt[1] + br.perp[1] * s];
       const e0 = [br.e0[0] - br.axis[0] * e, br.e0[1] - br.axis[1] * e], e1 = [br.e1[0] + br.axis[0] * e, br.e1[1] + br.axis[1] * e];

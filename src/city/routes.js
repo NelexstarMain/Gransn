@@ -2,6 +2,7 @@
 // i autostrada na poziomie gruntu. Krzywe Catmull-Rom przez losowe punkty na łuku.
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
+import { crossings, riverProximity, straightenCrossing, makeBridge } from './bridges.js';
 
 function catmull(pts, step) {
   const out = [];
@@ -42,18 +43,52 @@ function smoothY(ys, w) {
   });
 }
 
-export function makeRoutes(seed, T) {
+// Wybiera z kilkunastu łuków ten, który przecina rzekę dokładnie raz (najlepiej pod dużym kątem)
+// i nie biegnie wzdłuż koryta; potem prostuje przecięcie: prosty odcinek prostopadły do rzeki.
+function bestRoute(T, bridges, tries, build, wantCross) {
+  let best = null;
+  for (let k = 0; k < tries; k++) {
+    const pts = build(k);
+    const cr = crossings(T, pts);
+    let score = riverProximity(T, pts) * 2;
+    if (cr.length === 0) score += wantCross ? 260 : 0;
+    else {
+      score += (cr.length - 1) * 400 + (1 - Math.sin(cr[0].angle)) * 60 + (wantCross ? 0 : 260);
+      if (bridges.some((b) => Math.hypot(b.p[0] - cr[0].p[0], b.p[1] - cr[0].p[1]) < 100)) score += 80;
+    }
+    if (!best || score < best.score) best = { score, pts, cr };
+  }
+  return best;
+}
+
+export function makeRoutes(seed, T, bridges = []) {
   const rng = new Rng(hash(seed, 2024));
   const a0 = rng.float(0, Math.PI * 2);
-  // autostrada: szeroki łuk po jednej stronie wyspy, na estakadzie
-  const hw = catmull(arc(T, a0, a0 + 2.4, 0.66, 30, rng), 8);
-  const highway = { pts: hw, width: 11 }; // na ziemi (nie estakada)
+  // czy trasa ma przechodzić przez rzekę (losowo wg ziarna: raz tak, raz nie)
+  const hwCross = rng.chance(0.6), railCross = rng.chance(0.5);
+  const resample = (step) => (ctrl) => catmull(ctrl, step);
+  // autostrada: szeroki łuk po jednej stronie wyspy, na poziomie gruntu
+  const H = bestRoute(T, bridges, 24, (k) => catmull(arc(T, a0 + (k / 24) * Math.PI * 2, a0 + (k / 24) * Math.PI * 2 + 2.4, 0.66, 30, new Rng(hash(seed, 2024, k))), 8), hwCross);
+  let hw = H.pts, hwBridge = null;
+  if (H.cr.length) {
+    const st = straightenCrossing(T, hw, H.cr[0], resample(8));
+    hw = st.pts;
+    hwBridge = makeBridge(T, st.site, { cols: 3, highway: true, hint: st.dir });
+  }
+  const highway = { pts: hw, width: 11, bridge: hwBridge };
   // kolej: łuk po drugiej stronie, przy ziemi; kończy się na plażach
-  const rw = catmull(arc(T, a0 + Math.PI - 0.2, a0 + Math.PI + 2.0, 0.48, -25, rng), 6);
+  const ra = a0 + Math.PI - 0.2;
+  const R = bestRoute(T, bridges, 16, (k) => catmull(arc(T, ra + (k / 16 - 0.5) * 2.2, ra + (k / 16 - 0.5) * 2.2 + 2.2, 0.48, -25, new Rng(hash(seed, 2025, k))), 6), railCross);
+  let rw = R.pts, railBridge = null;
+  if (R.cr.length) {
+    const st = straightenCrossing(T, rw, R.cr[0], resample(6));
+    rw = st.pts;
+    railBridge = makeBridge(T, st.site, { cols: 1, rail: true, hint: st.dir });
+  }
   // tor leży tuż przy terenie (±0,2 m): bez wiszących nasypów i bez zakopania
   const rh = rw.map(([x, z]) => Math.max(T.height(x, z), T.seaY + 1));
   const ry = smoothY(rh, 1).map((y, i) => Math.max(rh[i] - 0.2, Math.min(rh[i] + 0.2, y)));
-  const rail = { pts: rw, y: ry, width: 5 };
+  const rail = { pts: rw, y: ry, width: 5, bridge: railBridge };
   rail.station = Math.floor(rw.length * 0.5);
   return { highway, rail };
 }

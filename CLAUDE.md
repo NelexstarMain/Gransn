@@ -17,6 +17,7 @@ npm run sim            # symulacja ruchu ulicznego bez grafiki (korki, zakleszcz
 npm run build-world    # buduje CAŁY świat w Node: wyjątki, NaN, ląd pod wodą
 npm run photo          # „aparat”: zdjęcia PNG świata i każdego elementu, bez przeglądarki (katalog zdjecia/)
 node scripts/seeds.mjs 1 60 [--build]   # sprawdza wiele ziaren naraz (jezdnie, ściany, ląd pod wodą, NaN)
+node scripts/map.mjs 1984 [--props]     # plan miasta z góry (PNG): drogi, budynki, rzeka, mosty, tory
 ```
 
 ## Jak pracować z tym użytkownikiem (WAŻNE)
@@ -70,10 +71,15 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 | `city/layout.js` | `generateCity(seed)`: mosty → ziarna Poisson + Lloyd → Voronoi (strefy + krawędzie = szkielet ulic) → trasy → drogi P&M → `RoadNet` → siatka → klasyfikacja → dekoracje → fragmenty. `HALF = 520`. |
 | `city/roads.js` | L-system Parish & Müller: cele globalne (gęstość) i ograniczenia lokalne (przecięcie, przyciągnięcie, przedłużenie, woda). Wejście: mosty i krawędzie Voronoi/autostrady jako gotowe odcinki. |
 | `city/roadnet.js` | `RoadNet`: drogi jako **kapsuły** (odcinek + `rw`). `clearance`, `nearest`, `clamp` (docinanie chodników), `capsulePoly` (kolizje) |
-| `city/routes.js` | kolej (z dworcem) i autostrada (krzywe Catmull-Rom) |
+| `city/routes.js` | kolej (z dworcem) i autostrada (krzywe Catmull-Rom). `bestRoute` wybiera łuk wg ziarna: przechodzi przez rzekę raz albo wcale, i prostuje przecięcie prostopadle do rzeki |
+| `city/bridges.js` | MOSTY z segmentów 5 m (`SEG`): `makeBridge`, `bridgeSegments`, `onBridge`. Most jest prosty, prostopadły do rzeki, segmenty stykają się krawędź w krawędź. Miejski 2 segmenty szerokości, autostrada 3, kolejowy 1 (`br.rail`). Moduł `bridgeseg`. |
+| `city/tidy.js` | porządkowanie sieci ulic po L-systemie: łączy współliniowe odcinki, usuwa krótkie ślepe uliczki |
+| `city/props.js` | REJESTR REKWIZYTÓW (rozmiar, odcisk `r`, kolizja `solid`, priorytet, orientacja, limit) i tabele stref `ZONES`. Dodajesz rekwizyt: wpis tu + moduł w `gen/propmods.js` + (opcjonalnie) wariant w `VARIANT` w `assemble.js` |
+| `render/layers.js` | KOLEJNOŚĆ WARSTW nawierzchni (wysokość, renderOrder, polygonOffset z jednej tabeli `SURFACE`) |
 | `city/grid.js` | nieregularna siatka czworokątów (Stålberg), `buildingInfo` (gramatyka brył + palety HSL), `classifyGrid`, `raised`, `wallPlan`, `decorate` (1 obiekt na punkt), `makeChunks` |
 | `gen/cage.js` | trójliniowa deformacja kostki (FFD) + poprawne normalne |
 | `gen/builder.js` | budowa geometrii: szum zależny od pozycji w świecie, pochylenie, AO, UV w metrach. `MATDEF` (stała `W`: **jeden szum dla wszystkich materiałów budynków**, inaczej plakaty i ramy „chowają się” w ścianie) |
+| `gen/propmods.js` | ~45 nowych modułów rekwizytów (hydrant, słup ogłoszeniowy, stragany, altana, wiatrak, łódź…), dopinane do `M` przez `installProps` |
 | `gen/modules.js` | ~45 modułów: ściany, okna (`windowCore`, `glassFrame`), drzwi, witryny, gzymsy, dachy, mosty, nabrzeża, drzewa (rekurencyjne, 4 gatunki), auta (`oldcar`), kioski, budki, przystanki, fontanna, tory, latarnia morska, molo… |
 | `gen/assemble.js` | składanie fragmentu: `buildQuad` (ściany, dachy `roofSpec`, ćwiartki gruntu), `buildRoad` (wstęga, zaokrąglone końce, krawężniki maskowane), rekwizyty, `buildRiver`, `buildChunkLOD`, `buildGroundTile` |
 | `gen/worker.js`, `gen/pool.js` | generacja w Web Workerach. Pula przełącza się na wątek główny, gdy workery nie działają (`?local` wymusza ten tryb). |
@@ -117,6 +123,10 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 
 15. Przegląd wyglądu zdjęciami: chodniki z płyt wchodziły na jezdnię (teraz ćwiartki przy jezdni są dzielone i docinane po kawałku), rynek nie miał ratusza (jezdnie wygenerowane przez L-system są usuwane z 21 m od środka, wieża z zegarami i miedzianym hełmem to `M.townhall`, `extras` typu `townhall`), puste pola płyt zamieniają się w trawniki z drzewami (`lawn()` w `grid.js`), nowe tekstury (tynk bez łat, cegła z paletą i jasną zaprawą, trawa ze stokrotkami, drewno), nowe drzewa (topola kolumnowa, gęsta korona dębu), pasażer z twarzą, budka, kiosk, przystanek, kosz.
 
+13. **Mosty z segmentów 5 m** (`city/bridges.js`): miejskie, autostrada i kolejowy. Trasy (autostrada, tory) są prostowane na przecięciu rzeki (`straightenCrossing`). Segment `solid` na końcach (oparcie), reszta z łukiem. Zdjęcia: `--seed 4 --cam … --look …`.
+14. **Układ dróg:** krawędzie Voronoi są proste (wyginanie usunięte, bo wyglądało brzydko), odgałęzienia L-systemu dokładnie prostopadłe, `tidyStreets` łączy odcinki i usuwa ślepe uliczki < 30 m.
+15. **Warstwy nawierzchni** (`render/layers.js`): każda nawierzchnia ma warstwę; wyższa wygrywa test głębi (polygonOffset) i rysuje się później (renderOrder). Nowa nawierzchnia = wpis w `SURFACE` + materiał o tej samej nazwie.
+16. **Rekwizyty:** `decorate` ustawia kandydatów wg priorytetu (punkty orientacyjne → budowle → wysokie słupy → drzewa → meble → drobiazgi → rośliny) i sprawdza prawdziwy odcisk (jezdnia, ściany z zapasem dla wysokich, rzeka, mosty, tory, autostrada, korony drzew). `check-world` liczy odciski z rejestru. 53 rodzaje, ~44 nowe.
 9. **Nowa mapa przy każdym wejściu:** `main.js` losuje ziarno (`crypto.getRandomValues`), numer wyspy jest w rogu ekranu i na ekranie startowym razem z przyciskiem „Nowa wyspa” (też Shift+N). `?seed=N` albo `#N` w linku odtwarza tę samą wyspę. Losowanie jest tylko w `main.js`, generator nadal jest deterministyczny. Przed oddaniem zmian w generatorze odpal `node scripts/seeds.mjs 1 60 --build`, bo 1984 to jedno ziarno z wielu.
 10. Naturalniejsze miasto: ulice z krawędzi Voronoi są łagodnie wyginane (`bendEdge`), kolory ścian z palety historycznych barw zależnej od dzielnicy (szum), wysokość kamienic maleje od rynku, wieże rzadsze, mocniejsze wzgórza na obrzeżach, drzewa przy ulicach. Punkt siatki, którego ćwiartka (nie tylko narożnik) sięga jezdni, przestaje być budynkiem.
 11. Gałąź `ccr-ecc3ed84-ivhb3i` (inna sesja: ustawienia `settings.js`, większe miasto, asfalt bez pasów, most autostrady jako `city.bridges[].highway`) jest scalona z tą gałęzią. Przed publikacją gry zawsze zrób `Artifact read` i sprawdź, czy ktoś inny nie wrzucił nowszej wersji. Ruch uliczny po scaleniu jest o kilka km/h wolniejszy niż na tamtej gałęzi (ulice kręte).

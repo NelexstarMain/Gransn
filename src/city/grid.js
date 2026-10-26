@@ -16,6 +16,8 @@
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
 import { polyDist } from './routes.js';
+import { PROPS, PRIO, pickKind } from './props.js';
+import { onBridge } from './bridges.js';
 
 export const LEVEL0 = 3.8, LEVEL = 3.2;
 export const levelY = (L) => (L <= 0 ? 0 : LEVEL0 + (L - 1) * LEVEL);
@@ -443,32 +445,38 @@ export function wallPlan(city, a, b, q, side, L) {
   return { mod: null, balcony: h < 0.08 && L <= 2 };
 }
 
-// ── rekwizyty: JEDEN obiekt na punkt siatki (kafelek ~5×5 m) ───────────────
-//  Każdy kandydat musi zmieścić się w swoim kafelku: odstęp od jezdni,
-//  od ścian budynków i od innych obiektów — nic się nie nakłada.
-const PROP_R = { lamp: 0.35, bin: 0.4, bench: 1.0, booth: 0.7, kiosk: 1.6, busstop: 1.7, bush: 1.1, car: 1.9, column: 0.4 };
+// ── rekwizyty ────────────────────────────────────────────────────────────────
+//  Jeden kandydat na punkt siatki (wybór rodzaju wg strefy, props.js). Potem KOLEJNOŚĆ
+//  STAWIANIA: kandydaci idą wg priorytetu (punkty orientacyjne, budowle, wysokie słupy,
+//  drzewa, meble, drobiazgi, rośliny), więc to, co ważne i duże, zajmuje miejsce pierwsze,
+//  a drobiazgi wypełniają resztę. Każdy sprawdza prawdziwy odcisk: jezdnię, ściany
+//  (wysokie z zapasem na markizy i balkony), rzekę, mosty, tory, autostradę i wszystko,
+//  co już stoi; wysokie rzeczy nie stają pod koroną drzewa.
+const ROAD_GAP = { lamp: 0.35, lampdouble: 0.35, telegraph: 0.6 };
 
 export function decorate(city) {
-  const g = city.grid, { X, Z, TY, H } = g, seed = city.seed, roads = city.roads;
+  const g = city.grid, { X, Z, TY } = g, seed = city.seed, roads = city.roads, T = city.terrain;
   const lamps = [], trees = [], benches = [], props = [];
-  const used = new Uint8Array(g.N);
-  const taken = [];
-  const takenAt = new Map();
-  const tkey = (x, z) => Math.floor(x / 8) * 100003 + Math.floor(z / 8);
-  const free = (p, r) => {
+  const placed = new Map(); // siatka 8 m → [{ p, r, air, tall }]
+  const cellOf = (x, z) => Math.floor(x / 8) * 100003 + Math.floor(z / 8);
+  const put = (p, r, air = 0, tall = false) => {
+    const k = cellOf(p[0], p[1]);
+    if (!placed.has(k)) placed.set(k, []);
+    placed.get(k).push({ p, r, air, tall });
+  };
+  // kolizja odcisków: przy ziemi (r) oraz wysoki rekwizyt kontra korona drzewa (air)
+  const conflict = (p, r, air, tall) => {
     for (let i = -1; i <= 1; i++)
       for (let j = -1; j <= 1; j++)
-        for (const t of takenAt.get((Math.floor(p[0] / 8) + i) * 100003 + Math.floor(p[1] / 8) + j) || [])
-          if (Math.hypot(t.p[0] - p[0], t.p[1] - p[1]) < t.r + r + 0.4) return false;
-    return true;
+        for (const t of placed.get((Math.floor(p[0] / 8) + i) * 100003 + Math.floor(p[1] / 8) + j) || []) {
+          const d = Math.hypot(t.p[0] - p[0], t.p[1] - p[1]);
+          if (d < t.r + r + 0.3) return true;
+          if (tall && t.air && d < t.air * 0.85 + r) return true;
+          if (t.tall && air && d < air * 0.85 + t.r) return true;
+        }
+    return false;
   };
-  const take = (p, r) => {
-    const k = tkey(p[0], p[1]);
-    if (!takenAt.has(k)) takenAt.set(k, []);
-    takenAt.get(k).push({ p, r });
-    taken.push({ p, r });
-  };
-  // odległość od najbliższego punktu budynku (ściany są ~2,7 m od niego)
+  // odległość od najbliższego punktu budynku minus 3 m (ściany są ~2,7 m od punktu siatki)
   const bldDist = (x, z) => {
     let d = 1e9;
     for (let i = -1; i <= 1; i++)
@@ -476,26 +484,34 @@ export function decorate(city) {
         for (const v of g.vAt(x + i * 16, z + j * 16)) if (TY[v] === T_BLD && !(g.ARCH[v] === 2)) d = Math.min(d, Math.hypot(X[v] - x, Z[v] - z));
     return d - 3.0;
   };
-  const fits = (p, r, roadGap = 0.5) => roads.clearance(p[0], p[1]) >= r + roadGap && bldDist(p[0], p[1]) >= r && free(p, r) && city.terrain.river(p[0], p[1]).d > city.terrain.hw + 2;
+  const hwBridge = city.routes.highway.bridge;
+  const onRoute = (p, r) => polyDist(city.routes.rail, p[0], p[1]) < r + 3.2 || polyDist(city.routes.highway, p[0], p[1]) < r + 6.8
+    || city.bridges.some((br) => onBridge(br, p[0], p[1], r + 1.5)) || (hwBridge && onBridge(hwBridge, p[0], p[1], r + 2));
+  const dry = (p) => T.river(p[0], p[1]).d > T.hw + 2 && T.height(p[0], p[1]) > T.seaY + 0.3;
+  const fits = (p, r, { roadGap = 0.5, tall = false, air = 0 } = {}) =>
+    roads.clearance(p[0], p[1]) >= r + roadGap && bldDist(p[0], p[1]) >= r + (tall ? 0.5 : 0.15) && dry(p) && !onRoute(p, r) && !conflict(p, r, air, tall);
 
   // pomniki, fontanny, billboardy, obiekty specjalne mają pierwszeństwo
   city.monuments = city.monuments.filter((m) => {
     const r = m.kind === 'fountain' ? 4.6 : 2.6;
-    if (!fits(m.p, r, 0.8)) return false;
-    take(m.p, r);
+    if (!fits(m.p, r, { roadGap: 0.8 })) return false;
+    put(m.p, r);
     return true;
   });
   city.billboards = city.billboards.filter((bb) => {
     const r = bb.size[0] / 2 + 0.3;
-    if (!fits(bb.p, r, 0.8)) return false;
-    take(bb.p, r);
+    if (!fits(bb.p, r, { roadGap: 0.8 })) return false;
+    put(bb.p, r);
     return true;
   });
-  for (const ex of city.extras) take(ex.p, Math.min(ex.clear, 10));
+  for (const ex of city.extras) put(ex.p, Math.min(ex.clear, 10));
 
   // kolumny podcieni (prześwity typu "arcade")
-  for (let v = 0; v < g.N; v++) if (TY[v] === T_BLD && g.ARCH[v] === 2) { const p = [X[v], Z[v]]; props.push({ kind: 'column', p, e: [1, 0], n: [0, 1], h: levelY(1), y: 0.15 }); take(p, 0.4); used[v] = 1; }
+  const used = new Uint8Array(g.N);
+  for (let v = 0; v < g.N; v++) if (TY[v] === T_BLD && g.ARCH[v] === 2) { const p = [X[v], Z[v]]; props.push({ kind: 'column', p, e: [1, 0], n: [0, 1], h: levelY(1), y: 0.15 }); put(p, 0.4); used[v] = 1; }
 
+  // ── faza 1: kandydaci (po jednym na punkt siatki) ───────────────────────────
+  const cand = [];
   for (let v = 0; v < g.N; v++) {
     const t = TY[v];
     if (used[v] || t === T_BLD || t === T_WATER || t === T_RAIL) continue;
@@ -504,35 +520,38 @@ export function decorate(city) {
     const hv = hash(seed, v, 9) / 4294967296;
     const near = roads.nearest(p[0], p[1]);
     const cl = near ? near.c : 1e9;
-    let n = [0, 1];
-    if (near) { const dx = p[0] - near.qx, dz = p[1] - near.qz, l = Math.hypot(dx, dz) || 1; n = [dx / l, dz / l]; }
-    const e = [-n[1], n[0]];
     const wild = g.ZN[v] === Z_NATURE || t === T_BEACH;
     const town = !wild;
+    let zone = null;
+    if (t === T_STREET && town && g.nearBld[v] && cl < 4) zone = 'walk';
+    else if (t === T_PLAZA) zone = 'plaza';
+    else if (t === T_PARK && town) zone = 'park';
+    else if (wild && t !== T_BEACH) zone = cl > 1.4 && cl < 4.5 && hv < 0.35 ? 'edge' : 'wild';
+    else if (t === T_BEACH) zone = 'beach';
+    else if (t === T_COURT) zone = 'court';
+    else if (t === T_GARDEN) zone = 'garden';
+    else if (t === T_STREET && town && lawn(city, v)) zone = 'lawn';
+    else if (t === T_STREET && town && cl > 2.5) zone = 'lawn';
+    if (!zone) continue;
+    // w strefie „edge” hv przeskalowane, żeby pełny zakres tabeli był dostępny
+    const kind = pickKind(zone, zone === 'edge' ? hv / 0.35 : hv);
+    if (!kind) continue;
+    cand.push({ v, p, kind, hv, cl, near, zone, wild, key: hash(seed, v, 33) });
+  }
+  const prioOf = (k) => (k === 'tree' ? PRIO.tree : PROPS[k].prio);
+  cand.sort((a, b) => prioOf(a.kind) - prioOf(b.kind) || a.key - b.key);
+
+  // ── faza 2: stawianie w kolejności priorytetu ───────────────────────────────
+  const count = {};
+  for (const c of cand) {
+    const { v, p, kind, hv, cl, near, zone, wild } = c;
+    if (used[v]) continue;
+    const t = TY[v];
     const y = raised(city, v) ? 0.15 : 0;
-    let choice = null;
-    if (t === T_STREET && town && g.nearBld[v] && cl < 4) {
-      // chodnik przy ulicy: latarnie, kosze, ławki, budki, kioski, przystanki
-      choice = hv < 0.16 ? 'lamp' : hv < 0.21 ? 'bin' : hv < 0.25 ? 'bench' : hv < 0.27 ? 'booth' : hv < 0.29 ? 'kiosk' : hv < 0.31 ? 'busstop' : hv < 0.34 ? 'bush' : hv < 0.4 && cl > 1.3 ? 'tree' : null; // drzewa przyuliczne
-    } else if (t === T_PLAZA) {
-      choice = hv < 0.08 ? 'lamp' : hv < 0.14 ? 'bench' : hv < 0.2 ? 'tree' : null;
-    } else if (t === T_PARK && town) {
-      choice = hv < 0.34 ? 'tree' : hv < 0.42 ? 'bench' : hv < 0.54 ? 'bush' : hv < 0.57 ? 'lamp' : null;
-    } else if (wild && t !== T_BEACH) {
-      choice = hv < 0.45 ? 'tree' : hv < 0.62 ? 'bush' : null;
-    } else if (t === T_BEACH) {
-      choice = hv < 0.04 ? 'tree' : hv < 0.06 ? 'bench' : null;
-    } else if (t === T_COURT) {
-      choice = hv < 0.12 ? 'tree' : hv < 0.2 ? 'bush' : hv < 0.24 ? 'bench' : hv < 0.27 ? 'car' : null;
-    } else if (t === T_GARDEN) {
-      choice = hv < 0.36 ? 'tree' : hv < 0.58 ? 'bush' : hv < 0.62 ? 'car' : null;
-    } else if (t === T_STREET && town && lawn(city, v)) {
-      choice = hv < 0.12 ? 'tree' : hv < 0.19 ? 'bush' : hv < 0.21 ? 'bench' : hv < 0.23 && cl < 3 ? 'lamp' : null;
-    } else if (t === T_STREET && town && cl > 2.5) {
-      choice = hv < 0.08 ? 'tree' : hv < 0.12 ? 'bush' : null;
-    }
-    if (!choice) continue;
-    if (choice === 'tree') {
+    let n = [0, 1];
+    if (near) { const dx = p[0] - near.qx, dz = p[1] - near.qz, l = Math.hypot(dx, dz) || 1; n = [dx / l, dz / l]; }
+    let e = [-n[1], n[0]];
+    if (kind === 'tree') {
       const sp = hash(seed, v, 13) / 4294967296;
       const species = t === T_BEACH || (wild && sp < 0.45) ? 'pine' : sp < 0.6 ? 'oak' : sp < 0.8 ? 'birch' : 'poplar';
       let sc = 0.75 + (hash(seed, v, 10) / 4294967296) * (wild ? 0.6 : 0.4);
@@ -540,25 +559,33 @@ export function decorate(city) {
       const room = Math.min(roads.clearance(p[0], p[1]) + 1.5, bldDist(p[0], p[1]) + 0.5);
       const crownR = (species === 'poplar' ? 2 : species === 'pine' ? 2.5 : 3.5) * sc;
       if (room < 1.2 || roads.clearance(p[0], p[1]) < 1.0) continue; // pień zawsze poza jezdnią
-      // żadnych drzew w rzece ani pod wodą (punkty przy brzegu mają typ „ulica”, choć leżą w korycie)
-      if (city.terrain.river(p[0], p[1]).d < city.terrain.hw + 2 || city.terrain.height(p[0], p[1]) < city.terrain.seaY + 0.3) continue;
+      if (!dry(p) || onRoute(p, 1.0)) continue;
       if (crownR > room) sc *= room / crownR;
-      if (!free(p, 1.0)) continue;
+      const air = crownR * Math.min(1, room / crownR);
+      if (conflict(p, 0.55, air, false)) continue;
       trees.push({ p, s: sc, species, seed: hash(seed, v, 15), y });
-      take(p, 1.0);
+      put(p, 0.55, air, false);
       used[v] = 1;
       continue;
     }
-    const r = PROP_R[choice];
-    const gap = choice === 'lamp' ? 0.35 : 0.6;
-    if (!fits(p, r, gap)) continue;
+    const R = PROPS[kind];
+    if (R.max != null && (count[kind] || 0) >= R.max) continue;
+    // warunki miejsca dla wybranych rodzajów
+    if (kind === 'windmill' && (T.height(p[0], p[1]) < 4.5 || T.inland(p[0], p[1]) < 60)) continue;
+    if (kind === 'rowboat' || kind === 'deckchair') { if (T.inland(p[0], p[1]) > 34) continue; }
+    if (R.orient === 'random') { const a = ((hash(seed, v, 41) / 4294967296) * Math.PI * 2); e = [Math.cos(a), Math.sin(a)]; n = [-Math.sin(a), Math.cos(a)]; }
+    const roadGap = ROAD_GAP[kind] ?? 0.6;
+    if (!fits(p, R.r, { roadGap, tall: R.tall })) continue;
     used[v] = 1;
-    take(p, r);
-    if (choice === 'lamp') lamps.push({ p, n, e, y });
-    else if (choice === 'bench') benches.push({ p, e, n, y });
-    else if (choice === 'bush') props.push({ kind: 'bush', p, s: 0.6 + (hash(seed, v, 16) / 4294967296) * 0.5, n: [0, 1], e: [1, 0], y });
-    else if (choice === 'car') { const a = hv * 40; props.push({ kind: 'car', p, e: [Math.cos(a), Math.sin(a)], n: [-Math.sin(a), Math.cos(a)], y }); }
-    else props.push({ kind: choice, p, n, e, y });
+    count[kind] = (count[kind] || 0) + 1;
+    put(p, R.r, 0, R.tall);
+    const item = { p, n, e, y, kind, seed: hash(seed, v, 77) };
+    if (kind === 'lamp') lamps.push({ p, n, e, y });
+    else if (kind === 'bench') benches.push({ p, e, n, y });
+    else if (kind === 'bush') props.push({ ...item, n: [0, 1], e: [1, 0], s: 0.6 + (hash(seed, v, 16) / 4294967296) * 0.5 });
+    else if (kind === 'car') { const a = hv * 40; props.push({ ...item, e: [Math.cos(a), Math.sin(a)], n: [-Math.sin(a), Math.cos(a)] }); }
+    else props.push(item);
+    void zone; void cl;
   }
   Object.assign(city, { lamps, trees, benches, screens: [], props });
 }

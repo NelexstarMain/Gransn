@@ -33,7 +33,8 @@ const THREE = await import('three');
 const { createMaterials } = await import('../src/render/materials.js');
 const { LIGHTS } = await import('../src/render/atmosphere.js');
 const { generateCity } = await import('../src/city/layout.js');
-const { buildChunk, buildChunkLOD, buildRiver, buildGroundTile, GROUND_TILES } = await import('../src/gen/assemble.js');
+const { buildChunk, buildChunkLOD, buildRiver, buildGroundTile, GROUND_TILES, propParams } = await import('../src/gen/assemble.js');
+const { PROPS, moduleOf, NEW_KINDS } = await import('../src/city/props.js');
 const { Builder } = await import('../src/gen/builder.js');
 const { Cage } = await import('../src/gen/cage.js');
 const { M: MOD } = await import('../src/gen/modules.js');
@@ -66,7 +67,7 @@ for (const [name, m] of Object.entries(M)) {
     normalScale: m.normalScale ? [m.normalScale.x, m.normalScale.y] : [1, 1],
     roughness: m.roughness ?? 1, metalness: m.metalness ?? 0, envInt: m.envMapIntensity ?? 1,
     emissive: em && (em[0] + em[1] + em[2] > 0) ? em : null, emissiveMap: texOf(m.emissiveMap, true),
-    double: m.side === THREE.DoubleSide, bias: m.polygonOffset ? 3e-5 : 0,
+    double: m.side === THREE.DoubleSide, bias: m.polygonOffset ? 3e-5 + (-(m.polygonOffsetUnits || 0)) * 1.5e-5 : 0,
   };
 }
 
@@ -167,8 +168,9 @@ function cityMeshes(camPos) {
   return out;
 }
 
-function moduleAt(name, W, H, D, p, pos, yaw, y = 0) {
+function moduleAt(name, W, H, D, p, pos, yaw, y = 0, aoK = 1) {
   const b = new Builder();
+  b.aoK = aoK;
   const c = Math.cos(yaw), s = Math.sin(yaw);
   const P = (x, z) => [pos[0] + c * x - s * z, pos[2] + s * x + c * z];
   b.cell(Cage.quad(P(-W / 2, -D / 2), P(W / 2, -D / 2), P(-W / 2, D / 2), P(W / 2, D / 2), y, y + H), W, H, D);
@@ -432,6 +434,19 @@ function studioShots() {
     add('molo', at('pier', 16, 2.2, 4, {}), { ground: 'sand' });
     add('tory', at('rail', 12, 1, 5, {}), { ground: 'grass' });
     sheet('22_przyroda_i_trasy.png', tiles.splice(0), 4, 'Drzewa, wybrzeże, tory');
+  }
+  // wszystkie nowe rekwizyty, po 8 na planszę (2 × 4), dopasowany kadr do wysokości
+  if (!ONLY || ONLY.some((x) => x === 'nowe' || x.startsWith('nowe:'))) {
+    const kinds = ONLY && ONLY.find((x) => x.startsWith('nowe:')) ? ONLY.find((x) => x.startsWith('nowe:')).slice(5).split('+') : NEW_KINDS;
+    const per = 8;
+    for (let k = 0; k * per < kinds.length; k++) {
+      for (const kind of kinds.slice(k * per, (k + 1) * per)) {
+        const [W, H, D] = PROPS[kind].size;
+        const ground = ['gazebo', 'flowerbed', 'sandbox', 'hedge', 'haystack', 'pergola', 'swing', 'well', 'statue', 'sundial', 'shrine', 'roadcross'].includes(kind) ? 'grass' : ['rock', 'stump', 'rowboat', 'deckchair', 'windmill', 'milestone', 'telegraph'].includes(kind) ? 'sand' : 'slab';
+        add(kind, moduleAt(moduleOf(kind), W, H, D, propParams(kind, 11 + k), [0, 0, 0], 0, 0, 0.45), { ground, az: -2.2, el: 0.28, size: [520, 420] });
+      }
+      sheet(`25_nowe_elementy_${k + 1}.png`, tiles.splice(0), 4, `Nowe elementy miasta (${k + 1})`);
+    }
   }
   if (ONLY && ONLY.includes('wieza')) {
     const tw = at('townhall', 7, 17, 7, { hide: 0.01 });

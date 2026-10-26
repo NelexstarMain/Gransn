@@ -2,6 +2,7 @@
 // (budowane w workerach), dalej tanie bryły LOD. Histereza zapobiega
 // "migotaniu" na granicy zasięgu.
 import * as THREE from 'three';
+import { isSurface, surfaceOrder, SURFACE } from '../render/layers.js';
 
 export const DETAIL_IN = 170;  // m od krawędzi fragmentu
 export const DETAIL_OUT = 230;
@@ -17,7 +18,8 @@ export function buildMeshes(mats, M, { shadows = true } = {}) {
     g.setIndex(new THREE.BufferAttribute(buf.i, 1));
     g.computeBoundingSphere();
     const mesh = new THREE.Mesh(g, M[name]);
-    const ground = name === 'cobble' || name === 'slab' || name === 'curb' || name === 'asphalt' || name === 'gravel';
+    const ground = isSurface(name) && SURFACE[name].layer > 0; // nawierzchnie nie rzucają cienia
+    mesh.renderOrder = surfaceOrder(name); // niższe warstwy nawierzchni rysują się pierwsze
     mesh.castShadow = shadows && !ground && name !== 'light';
     mesh.receiveShadow = shadows;
     mesh.matrixAutoUpdate = false;
