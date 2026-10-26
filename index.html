@@ -19,6 +19,8 @@
       #track { height: 4px; background: #333; } #bar { height: 100%; width: 0; background: #f2c200; transition: width 0.2s; }
       #loadlabel { font-size: 13px; margin-top: 10px; color: #aaa; }
       @keyframes pulse { 50% { opacity: 0.4; } }
+      #filmbtn { margin-top: 18px; padding: 10px 22px; font: inherit; font-size: 16px; border-radius: 8px; border: 1px solid #f2c200; background: rgba(16,28,36,0.6); color: #f2c200; cursor: pointer; letter-spacing: 0.1em; }
+      #filmbtn:hover, #filmbtn:focus-visible { background: #f2c200; color: #1a1a1a; outline: none; }
       #mapbar { margin-top: 22px; display: flex; gap: 14px; align-items: center; font-size: 13px; color: #bdb7a6; letter-spacing: 0.08em; }
       #newmap { font: inherit; letter-spacing: 0.12em; text-transform: uppercase; color: #f2c200; background: transparent; border: 1px solid #f2c200; padding: 6px 12px; cursor: pointer; }
       #newmap:hover, #newmap:focus-visible { background: #f2c200; color: #1a1a1a; outline: none; }
@@ -54,9 +56,10 @@
       <div class="keys">
         Jeździsz taksówką po wyspie: podjedź do pasażera w żółtym kółku, zatrzymaj się, zawieź go do zielonego celu. Uważaj na ruch uliczny i korki.<br />
         W/S — gaz/hamulec &nbsp;·&nbsp; A/D — skręt &nbsp;·&nbsp; Spacja — ręczny &nbsp;·&nbsp; Mysz — kamera &nbsp;·&nbsp; E — wysiądź/wsiądź<br />
-        Pieszo: WASD, Shift bieg, F lot &nbsp;·&nbsp; H — ukryj HUD &nbsp;·&nbsp; Shift+N — nowa wyspa &nbsp;·&nbsp; Esc / P — pauza &nbsp;·&nbsp; Telefon: lewy kciuk jedzie, prawy obraca kamerę
+        Pieszo: WASD, Shift bieg, F lot &nbsp;·&nbsp; H — ukryj HUD &nbsp;·&nbsp; C — tryb filmowy (V — zmiana kamery) &nbsp;·&nbsp; Shift+N — nowa wyspa &nbsp;·&nbsp; Esc / P — pauza &nbsp;·&nbsp; Telefon: lewy kciuk jedzie, prawy obraca kamerę
       </div>
       <div id="loader"><div id="track"><div id="bar"></div></div><div id="loadlabel">Ładowanie…</div></div>
+      <button id="filmbtn" type="button">▶ TRYB FILMOWY (2 min)</button>
       <button id="setbtn">⚙ USTAWIENIA</button>
       <div class="go">[ KLIKNIJ / DOTKNIJ / ENTER, ABY JECHAĆ ]</div>
       <div id="mapbar"><span id="mapno"></span><button id="newmap" type="button">Nowa wyspa</button></div>

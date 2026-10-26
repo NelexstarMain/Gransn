@@ -171,7 +171,9 @@ export function organicStreets(streets, T, seed) {
     const P = [ch.startP, ...ch.pts];
     const total = P.slice(1).reduce((s, p, i) => s + dist(P[i], p), 0);
     const straight = () => { for (const j of ch.idx) out[j] = [{ ...streets[j] }]; };
-    if (bridgeNode.has(ch.startKey) || bridgeNode.has(ch.endKey) || total < 20) { straight(); continue; }
+    // rynek (ratusz) zostaje regularny: łuk nie może zabrać miejsca budynkom wokół placu
+    const pl = T.plaza ? Math.min(...P.map((p) => Math.hypot(p[0] - T.plaza.x, p[1] - T.plaza.z))) < T.plaza.r + 40 : false;
+    if (pl || bridgeNode.has(ch.startKey) || bridgeNode.has(ch.endKey) || total < 20) { straight(); continue; }
     // kształt: ścięte narożniki + łuk dla prostych odcinków
     let Q = chaikin(P, 2);
     if (P.length === 2) {

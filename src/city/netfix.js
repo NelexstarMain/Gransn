@@ -239,6 +239,7 @@ function clearPath(T, a, b) {
   const L = dist(a, b), k = Math.max(2, Math.ceil(L / 4));
   for (let i = 0; i <= k; i++) {
     const x = a[0] + ((b[0] - a[0]) * i) / k, z = a[1] + ((b[1] - a[1]) * i) / k;
+    if (T.plaza && Math.hypot(x - T.plaza.x, z - T.plaza.z) < 25) return false; // środek rynku zostaje wolny (ratusz)
     if (T.river(x, z).d < T.hw + 3 || T.inland(x, z) < 16 || Math.abs(x) > T.half - 10 || Math.abs(z) > T.half - 10) return false;
   }
   return true;
@@ -338,12 +339,50 @@ function healDeadEnds(net, T) {
   return n;
 }
 
+// ── 0. ulice nie wchodzą w koryto rzeki ──────────────────────────────────────
+// Krawędzie Voronoi potrafią biec dokładnie po linii brzegu (jezdnia do połowy w wodzie). Każdy
+// węzeł bliżej brzegu niż szerokość jezdni + 1 m przesuwa się wzdłuż normalnej od rzeki; długie
+// odcinki, które tylko w środku zahaczają o koryto (zakręt rzeki), najpierw dzielą się na pół.
+function keepOffRiver(net, T) {
+  const want = (rw) => T.hw + rw + 1.2;
+  const rwOf = (n) => net.live(n).reduce((m, e) => Math.max(m, e.m.rw || 3), 0);
+  for (let pass = 0; pass < 2; pass++) {
+    for (const e of net.edges()) {
+      if (e.m.bridge || e.m.type === 'H') continue;
+      const A = net.pos(e.a), B = net.pos(e.b), L = dist(A, B);
+      if (L < 12) continue;
+      let worst = null;
+      for (let k = 1; k < Math.ceil(L / 5); k++) {
+        const t = k / Math.ceil(L / 5), x = A[0] + (B[0] - A[0]) * t, z = A[1] + (B[1] - A[1]) * t;
+        const d = T.river(x, z).d - want(e.m.rw || 3);
+        if (d < 0 && (!worst || d < worst.d)) worst = { d, x, z, t };
+      }
+      if (!worst) continue;
+      const id = net.N.length;
+      net.N.push({ x: worst.x, z: worst.z, fixed: false, e: [] });
+      e.alive = false;
+      net.add(e.a, id, { ...e.m });
+      net.add(id, e.b, { ...e.m, s0: (e.m.s0 || 0) + worst.t * L });
+    }
+  }
+  let moved = 0;
+  net.N.forEach((nd, i) => {
+    if (nd.fixed || !net.deg(i)) return;
+    const rv = T.river(nd.x, nd.z), need = want(rwOf(i));
+    if (rv.d >= need) return;
+    nd.x = rv.px + rv.nx * need; nd.z = rv.pz + rv.nz * need;
+    moved++;
+  });
+  return moved;
+}
+
 // ── całość ──────────────────────────────────────────────────────────────────
 export function finalizeNetwork(streets, T) {
   let segs = planarize(streets.map((s) => ({ ...s })));
   for (let it = 0; it < 6; it++) {
     const net = new Net(segs);
     let changed = 0;
+    changed += keepOffRiver(net, T);
     changed += dropParallel(net);
     changed += collapseShort(net);
     changed += fixSharp(net);

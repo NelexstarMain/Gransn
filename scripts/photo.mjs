@@ -471,9 +471,20 @@ function studioShots() {
 // wolne ujęcie: --cam x,y,z --look x,y,z [--name plik] [--fov 60]; y kamery względem terenu
 if (arg('--cam', '')) {
   city = generateCity(SEED);
-  const c = arg('--cam').split(',').map(Number), l = arg('--look').split(',').map(Number), T = city.terrain;
+  const c = arg('--cam').split(',').map(Number), l = arg('--look').split(',').map(Number), T = city.terrain, H0 = (x, z) => T.height(x, z);
   const cam = [c[0], T.height(c[0], c[2]) + c[1], c[2]], tgt = [l[0], T.height(l[0], l[2]) + l[1], l[2]];
-  cityShot(arg('--name', '99_wolne'), cam, tgt, { fov: Number(arg('--fov', 60)), shadowHalf: 60 });
+  // --car x,z,kierunek [--mount kierowca|zderzak]: taksówka na ulicy i kamera przymocowana jak w trybie filmowym
+  let extra = [];
+  let camA = cam, tgtA = tgt;
+  if (arg('--car', '')) {
+    const [cx, cz, hd] = arg('--car').split(',').map(Number), y = H0(cx, cz) + 0.07;
+    extra = moduleAt('oldcar', 3.6, 2.2, 1.7, { color: [0.95, 0.76, 0.12], seat: [0.3, 0.12, 0.08], taxi: true }, [cx, y, cz], hd, y);
+    const M = arg('--mount', 'kierowca') === 'zderzak' ? { u: 2.15, y: 0.78, pitch: -0.03 } : { u: 1.12, y: 1.42, pitch: -0.06 };
+    const f = [Math.cos(hd), Math.sin(hd)];
+    camA = [cx + f[0] * M.u, y + M.y, cz + f[1] * M.u];
+    tgtA = [camA[0] + f[0] * 30, camA[1] + Math.tan(M.pitch) * 30, camA[2] + f[1] * 30];
+  }
+  cityShot(arg('--name', '99_wolne'), camA, tgtA, { fov: Number(arg('--fov', 60)), shadowHalf: 60, extra });
   process.exit(0);
 }
 

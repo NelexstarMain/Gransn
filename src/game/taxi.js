@@ -90,10 +90,11 @@ export class TaxiJob {
       w.mesh.rotation.y = Math.atan2(cp[0] - w.p[0], cp[1] - w.p[1]);
       w.mesh.position.y = grid.height(w.p[0], w.p[1]) + Math.abs(Math.sin(this.t * 3 + w.phase)) * 0.08;
       w.ring.scale.setScalar(1 + Math.sin(this.t * 4 + w.phase) * 0.08);
+      w.ring.visible = !this.film; // w trybie filmowym bez żółtych kółek
     }
     const slow = Math.abs(car.v) < 2.5;
     if (!this.fare) {
-      if (!slow || !car.active) return;
+      if (!slow || !car.active || this.film) return; // w trybie filmowym nie zabieramy pasażerów
       const i = this.waiting.findIndex((w) => Math.hypot(w.p[0] - cp[0], w.p[1] - cp[1]) < 7);
       if (i < 0) return;
       const w = this.waiting.splice(i, 1)[0];

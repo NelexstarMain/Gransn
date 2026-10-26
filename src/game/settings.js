@@ -77,6 +77,14 @@ export class Settings {
     this.sync();
   }
 
+  // przywraca zapisany zestaw ustawień (po trybie filmowym)
+  restore(v) {
+    this.v = { ...v };
+    this.applyAll();
+    this.save();
+    this.sync();
+  }
+
   applyAll() {
     for (const k of ['res', 'shadow', 'detail', 'fov', 'sens', 'dark', 'bright', 'fog']) this.apply(k);
   }

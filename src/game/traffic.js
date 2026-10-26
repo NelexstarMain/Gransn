@@ -82,7 +82,7 @@ export function buildRoadGraph(streets) {
 }
 
 // A* po grafie dróg
-function astar(G, from, to) {
+export function astar(G, from, to) {
   const N = G.nodes.length, gs = new Float64Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), open = [from];
   const h = (i) => Math.hypot(G.nodes[i].x - G.nodes[to].x, G.nodes[i].z - G.nodes[to].z);
   const f = new Float64Array(N).fill(Infinity);
@@ -200,6 +200,15 @@ export class Traffic {
 
   edgeBetween(a, b) {
     return this.G.nodes[a].edges.find((e) => this.G.edges[e].a === b || this.G.edges[e].b === b);
+  }
+
+  // usuwa boty w promieniu r (np. zakleszczone z autem w trybie filmowym); ruch uzupełni się sam
+  removeNear(x, z, r) {
+    this.bots = this.bots.filter((b) => {
+      if (Math.hypot(b.x - x, b.z - z) > r) return true;
+      if (b.lock >= 0) this.G.nodes[b.lock].lock = -1;
+      return false;
+    });
   }
 
   update(dt, player, playerCar) {

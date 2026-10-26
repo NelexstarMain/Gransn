@@ -13,6 +13,7 @@ import { TaxiJob } from './game/taxi.js';
 import { Traffic } from './game/traffic.js';
 import { CarFX } from './game/fx.js';
 import { Settings } from './game/settings.js';
+import { FilmMode } from './game/film.js';
 
 const params = new URLSearchParams(location.search);
 // Każde wejście do gry to nowa wyspa. Numer mapy widać w rogu ekranu; ?seed=N albo #N (w linku
@@ -121,7 +122,7 @@ async function start() {
       if (r && r.catch) r.catch(() => {});
     } catch { /* bez przechwycenia myszy: rozglądanie przeciąganiem */ }
   };
-  const pause = () => { playing = false; overlay.style.display = 'flex'; };
+  const pause = () => { film?.stop(); playing = false; overlay.style.display = 'flex'; };
   // nowa wyspa: przeładowanie bez numeru mapy (przycisk w menu albo klawisz N)
   const newIsland = () => {
     const q = new URLSearchParams(location.search); q.delete('seed');
@@ -158,9 +159,11 @@ async function start() {
   car.active = true;
   car.place(city.spawn.x, city.spawn.z, Math.atan2(-Math.cos(city.spawn.yaw), -Math.sin(city.spawn.yaw)));
   const job = new TaxiJob(scene, city, M);
+  const film = new FilmMode({ city, grid, car, traffic: null, camera, settings, streamer, enterGame: () => { playing = true; overlay.style.display = 'none'; } });
   // boty-kierowcy (korki) i efekty auta
   const traffic = new Traffic(scene, city, grid, M, LOW ? 16 : 34);
   car.obstacles = (x, z) => traffic.near(x, z, 6);
+  film.traffic = traffic;
   const fx = new CarFX(scene, city);
   const carYaw = () => Math.atan2(-Math.cos(car.heading), -Math.sin(car.heading));
   player.yaw = carYaw();
@@ -179,12 +182,29 @@ async function start() {
   });
   job.say('W/S gaz i hamulec, A/D skręt. Zatrzymaj się przy pasażerze w żółtym kółku.', 7);
 
+  // tryb filmowy: przycisk w menu i klawisz C (V = zmiana kamery na aucie)
+  const startFilm = () => { car.active = true; player.fly = false; job.film = true; film.start(); };
+  const fb = $('filmbtn');
+  if (fb) {
+    fb.addEventListener('click', (e) => { e.stopPropagation(); startFilm(); });
+    fb.addEventListener('touchend', (e) => { e.stopPropagation(); e.preventDefault(); startFilm(); });
+  }
+  addEventListener('keydown', (e) => {
+    if (e.code === 'KeyC' && !e.ctrlKey && !e.metaKey && (car.active || !playing)) { film.active ? film.stop() : startFilm(); }
+    else if (e.code === 'KeyV' && film.active) film.cycleMount();
+  });
+
   const clock = new THREE.Clock();
   let fpsAcc = 0, fpsN = 0, fps = 0, streamAcc = 0;
   const tmp = new THREE.Vector3();
   function frame() {
     const dt = Math.min(0.05, clock.getDelta());
-    if (car.active) {
+    job.film = film.active;
+    if (film.active) {
+      film.update(dt);
+      if (playing) car.update(dt, player.keys, player.touchMove);
+      film.placeCamera(dt);
+    } else if (car.active) {
       if (playing) car.update(dt, player.keys, player.touchMove);
       // kamera zza auta; mysz obraca, po chwili wraca za taksówkę
       if (performance.now() - player.lookT > 1500) {

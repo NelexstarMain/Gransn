@@ -66,16 +66,19 @@ export class Vehicle {
   update(dt, keys, touch = [0, 0]) {
     const k = (c) => keys.has(c);
     const thr = Math.max(-1, Math.min(1, (k('KeyW') || k('ArrowUp') ? 1 : 0) - (k('KeyS') || k('ArrowDown') ? 1 : 0) + touch[1]));
-    const st = Math.max(-1, Math.min(1, (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0) + touch[0]));
+    // autopilot (tryb filmowy): auto = { steer: -1..1, v: prędkość docelowa m/s }
+    const auto = this.auto;
+    const st = auto ? Math.max(-1, Math.min(1, auto.steer)) : Math.max(-1, Math.min(1, (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0) + touch[0]));
     const hand = k('Space');
     // poza jezdnią (chodnik, trawa, plac): słabsze przyspieszenie i ok. 22 km/h maks.
     const ty = this.grid.type(this.pos.x, this.pos.z);
     this.offRoad = ty !== 5 && ty !== 6;
     const acc = this.offRoad ? 0.55 : 1;
-    if (thr > 0) this.v += (this.v < 0 ? 16 : 8.5 * acc) * dt;
+    if (auto) this.v += Math.max(-14, Math.min(5.5 * acc, (auto.v - this.v) * 1.8)) * dt;
+    else if (thr > 0) this.v += (this.v < 0 ? 16 : 8.5 * acc) * dt;
     else if (thr < 0) this.v -= (this.v > 0 ? 16 : 5) * dt;
     else this.v -= Math.sign(this.v) * Math.min(Math.abs(this.v), 2.2 * dt);
-    if (hand) this.v -= Math.sign(this.v) * Math.min(Math.abs(this.v), 20 * dt);
+    if (hand && !auto) this.v -= Math.sign(this.v) * Math.min(Math.abs(this.v), 20 * dt);
     this.v -= this.v * 0.18 * dt;
     if (this.offRoad && Math.abs(this.v) > 6) this.v -= Math.sign(this.v) * Math.min(Math.abs(this.v) - 6, (Math.abs(this.v) - 6) * 3 * dt + 1.5 * dt);
     this.v = Math.max(-5, Math.min(17, this.v)); // wóz z 1900 r.: ~60 km/h

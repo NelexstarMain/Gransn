@@ -95,7 +95,7 @@ export function auditStreets(streets, T = null) {
     for (const j of idx.near(nd.p, 3)) { const o = segs[j]; if (ends[j][0] === id || ends[j][1] === id) continue; if (projSeg(nd.p, o.a, o.b).d < 1.2) nd.e.push(j, j); }
   });
   nodes.forEach((nd) => {
-    const coast = T ? T.inland(nd.p[0], nd.p[1]) < 30 || T.river(nd.p[0], nd.p[1]).d < T.hw + 4 : false;
+    const coast = T ? T.inland(nd.p[0], nd.p[1]) < 30 || T.river(nd.p[0], nd.p[1]).d < T.hw + 8 : false;
     if (nd.e.length === 1 && !coast) {
       const s = segs[nd.e[0]];
       if (s.bridge) return;
