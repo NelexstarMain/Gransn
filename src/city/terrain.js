@@ -77,7 +77,12 @@ export class Terrain {
   }
 
   hills(x, z) {
-    return 6.5 + 5 * noise3(x / 430 + 11.3, 0.37, z / 430 - 4.1) + 1.8 * noise3(x / 150, 2.1, z / 150);
+    let h = 6.5 + 5 * noise3(x / 430 + 11.3, 0.37, z / 430 - 4.1) + 1.8 * noise3(x / 150, 2.1, z / 150);
+    // obrzeża wyspy falują mocniej niż centrum: grzbiety i doliny (lasy, wydmy, przedmieścia)
+    const dc = Math.hypot(x, z);
+    const rise = sstep(130, 360, dc);
+    if (rise > 0) h += rise * (10.5 * Math.max(0, noise3(x / 210 + 31.7, 1.1, z / 210 + 8.3) + 0.2) + 2.4 * noise3(x / 75 + 5.5, 3.3, z / 75));
+    return h;
   }
 
   height(x, z) {

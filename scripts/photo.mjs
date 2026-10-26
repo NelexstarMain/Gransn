@@ -179,7 +179,8 @@ function moduleAt(name, W, H, D, p, pos, yaw, y = 0) {
 function cityShot(name, camPos, target, { fov = 72, extra = [], shadowHalf = 80, title } = {}) {
   if (ONLY && !ONLY.includes(name)) return;
   const t0 = performance.now();
-  const meshes = [...cityMeshes(camPos), ...extra];
+  const hide = arg('--hide', '') ? arg('--hide').split(',') : [], only = arg('--mats', '') ? arg('--mats').split(',') : null;
+  const meshes = [...cityMeshes(camPos), ...extra].filter((m) => !hide.includes(m.mat) && (!only || only.includes(m.mat)));
   // cień jak w grze: 160 × 160 m wokół kamery, 2048 tekseli
   const shadow = { center: [camPos[0], city.terrain.height(camPos[0], camPos[2]), camPos[2]], half: shadowHalf, res: Math.round((2048 * shadowHalf) / 80), bias: 0.1 };
   const img = render(baseScene(meshes, shadow), { pos: camPos, target, fov }, { width: SIZE[0], height: SIZE[1], ss: SS });

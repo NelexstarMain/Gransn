@@ -87,11 +87,27 @@ export function growRoads(seed, T, bridges, center, base = []) {
   // wypuszcza prostopadłe uliczki do wnętrza kwartałów
   for (const e of base) {
     if (Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 6) continue;
-    const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
-    insert({ a: e.a, b: e.b, ang, type: e.type || 'v', rw: e.rw, s0: e.s0 });
-    const L = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
+    // krawędź może być łamaną (łagodnie wygiętą ulicą) — każdy odcinek wchodzi do sieci osobno
+    const pts = e.pts || [e.a, e.b];
+    const lens = [];
+    let L = 0;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[k], b = pts[k + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      lens.push(l); L += l;
+      insert({ a, b, ang: Math.atan2(b[1] - a[1], b[0] - a[0]), type: e.type || 'v', rw: e.rw, s0: e.s0 });
+    }
+    const at = (d) => {
+      let acc = 0;
+      for (let k = 0; k < lens.length; k++) {
+        if (d <= acc + lens[k] || k === lens.length - 1) {
+          const t = Math.min(1, Math.max(0, (d - acc) / (lens[k] || 1))), a = pts[k], b = pts[k + 1];
+          return { p: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+        }
+        acc += lens[k];
+      }
+    };
     for (let d = 22 + rng.float(0, 12); d < L - 18; d += rng.float(30, 46)) {
-      const p = [e.a[0] + Math.cos(ang) * d, e.a[1] + Math.sin(ang) * d];
+      const { p, ang } = at(d);
       for (const sd of [-1, 1]) if (rng.chance(0.55)) push(mk(p, ang + sd * (Math.PI / 2 + rng.float(-0.15, 0.15)), 's', 3 + rng.float(0, 4)));
     }
   }

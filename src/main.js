@@ -14,7 +14,14 @@ import { Traffic } from './game/traffic.js';
 import { CarFX } from './game/fx.js';
 
 const params = new URLSearchParams(location.search);
-const SEED = Number(params.get('seed')) || 1984;
+// Każde wejście do gry to nowa wyspa. Numer mapy widać w rogu ekranu; ?seed=N albo #N (w linku
+// do gry, gdzie zapytania nie dochodzą) odtwarza dokładnie tę samą wyspę. Losujemy tu, a nie w
+// generatorze: samo generowanie jest deterministyczne (te same dane w wątku głównym i workerach).
+const randomSeed = () => {
+  try { const a = new Uint32Array(1); crypto.getRandomValues(a); return 1 + (a[0] % 999999); } catch { return 1 + Math.floor(Math.random() * 999999); }
+};
+const fromHash = /^#(\d{1,9})$/.exec(location.hash);
+const SEED = Number(params.get('seed')) || (fromHash ? Number(fromHash[1]) : 0) || randomSeed();
 const TEST = params.has('test');
 // tryb lekki: telefony, słabe komputery albo ?low
 const LOW = params.has('low') || (!params.has('high') && (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4)); // tryb testowy: klatki renderowane na żądanie
@@ -113,6 +120,15 @@ async function start() {
     } catch { /* bez przechwycenia myszy: rozglądanie przeciąganiem */ }
   };
   const pause = () => { playing = false; overlay.style.display = 'flex'; };
+  // nowa wyspa: przeładowanie bez numeru mapy (przycisk w menu albo klawisz N)
+  const newIsland = () => {
+    const q = new URLSearchParams(location.search); q.delete('seed');
+    try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '')); } catch { /* ramka bez historii */ }
+    try { if (location.hash) location.hash = ''; location.reload(); } catch { /* ramka bez przeładowania: odśwież stronę ręcznie */ }
+  };
+  $('mapno').textContent = `wyspa nr ${SEED}`;
+  $('newmap').addEventListener('click', (e) => { e.stopPropagation(); newIsland(); });
+  $('newmap').addEventListener('touchend', (e) => { e.stopPropagation(); e.preventDefault(); newIsland(); });
   overlay.addEventListener('click', enter);
   overlay.addEventListener('touchend', (e) => { e.preventDefault(); enter(); });
   addEventListener('keydown', (e) => {
@@ -125,6 +141,7 @@ async function start() {
   });
   addEventListener('keydown', (e) => {
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
+    if (e.code === 'KeyN' && e.shiftKey) newIsland();
   });
 
   // taksówka — główna mechanika: jeździsz po wyspie i wozisz pasażerów

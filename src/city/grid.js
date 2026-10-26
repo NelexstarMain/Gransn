@@ -164,44 +164,58 @@ function bucketize(items, size, bbox) {
   return (x, z) => m.get(Math.floor(x / size) * 10000 + Math.floor(z / size)) || [];
 }
 
-// ── kolory: losowe palety HSL zamiast kilku stałych kolorów ────────────────
+// ── kolory: paleta historycznych barw elewacji, spójna w obrębie dzielnicy ──────
 function hsl(h, s, l) {
   const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
   const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
   return [f(0), f(8), f(4)];
 }
-const ROOFS = [[0.66, 0.3, 0.2], [0.55, 0.24, 0.18], [0.3, 0.32, 0.36], [0.28, 0.48, 0.4], [0.36, 0.26, 0.2], [0.36, 0.42, 0.52], [0.16, 0.16, 0.18], [0.72, 0.42, 0.24]];
+// Barwy ułożone wg odcienia: sąsiednie wpisy są do siebie podobne, więc dzielnica o danej
+// „pozycji” w palecie ma spójny charakter (ciepłe żółcienie, różowe ceglaste, chłodne szarości).
+const WALLS = [
+  [40, 0.1, 0.9], [44, 0.38, 0.84], [48, 0.55, 0.76], [38, 0.5, 0.66], [32, 0.32, 0.64], [16, 0.48, 0.66], [12, 0.42, 0.78],
+  [350, 0.25, 0.76], [95, 0.2, 0.7], [150, 0.16, 0.74], [180, 0.22, 0.74], [205, 0.28, 0.76], [215, 0.22, 0.62], [260, 0.12, 0.74],
+];
+const ROOFS = [[[0.66, 0.3, 0.2], 3], [[0.55, 0.24, 0.18], 2], [[0.3, 0.32, 0.36], 1.5], [[0.28, 0.48, 0.4], 0.4], [[0.36, 0.26, 0.2], 1], [[0.36, 0.42, 0.52], 1], [[0.16, 0.16, 0.18], 0.7], [[0.72, 0.42, 0.24], 1]];
 const BRICKS = [[0.98, 0.92, 0.88], [1, 0.88, 0.78], [0.82, 0.72, 0.68], [1, 0.97, 0.8], [0.9, 0.84, 0.82]];
-const FRAMES = [[0.94, 0.92, 0.86], [0.92, 0.88, 0.76], [0.2, 0.32, 0.24], [0.45, 0.14, 0.12], [0.18, 0.22, 0.36], [0.32, 0.22, 0.14]];
+const FRAMES = [[[0.94, 0.92, 0.86], 4], [[0.92, 0.88, 0.76], 1.5], [[0.2, 0.32, 0.24], 1], [[0.4, 0.15, 0.13], 0.8], [[0.2, 0.24, 0.34], 0.8], [[0.32, 0.22, 0.14], 1.2]];
+const DOORS = [[140, 0.35, 0.22], [25, 0.45, 0.2], [355, 0.45, 0.25], [215, 0.4, 0.25], [30, 0.5, 0.3], [160, 0.3, 0.2]];
+const SHUTTERS = [[130, 0.25, 0.38], [25, 0.35, 0.3], [210, 0.35, 0.38], [5, 0.4, 0.35], [45, 0.1, 0.85], [150, 0.3, 0.3]];
+const AWNINGS = [[140, 0.45, 0.28], [355, 0.5, 0.3], [215, 0.45, 0.3], [42, 0.6, 0.45], [20, 0.5, 0.35]];
+
+// środek działki (siatka 11 m, patrz classifyGrid) z identyfikatora działki
+const LS = 11;
+export const lotCenter = (bid) => [(Math.floor(bid / 4096) - 2048 + 0.5) * LS, ((bid % 4096) - 2048 + 0.5) * LS];
 
 // ── generator budynku: typ bryły (gramatyka kształtu) + kolory + detale ─────
 export function buildingInfo(seed, bid, zone) {
   const r = new Rng(hash(seed, bid, 717));
   if (zone === Z_MINISTRY) return { zone, style: 'ornate', shape: 'block', tint: [0.86, 0.74, 0.56], trim: [0.95, 0.92, 0.84], wallMat: 'plaster', groundMat: 'stone', roofTint: [0.32, 0.5, 0.42], frameTint: [0.92, 0.9, 0.85], doorTint: [0.36, 0.24, 0.14], ce: 0.5, ridge: 3.2, garden: false, variant: 0, winW: 0.42, winH: 0.55, roofMat: 'roof', curtain: [0.6, 0.15, 0.12], r };
   const tenement = zone === Z_TENEMENT;
-  // kolor ściany: pastelowy / ziemisty / mocny
-  const fam = r.weighted([['pastel', tenement ? 3 : 5], ['earth', 3], ['bold', tenement ? 1 : 2], ['white', 1.5]]);
-  const hue = fam === 'earth' ? r.float(18, 48) : r.float(0, 360);
-  const tint = fam === 'pastel' ? hsl(hue, r.float(0.25, 0.5), r.float(0.72, 0.84))
-    : fam === 'earth' ? hsl(hue, r.float(0.25, 0.45), r.float(0.5, 0.68))
-    : fam === 'bold' ? hsl(hue, r.float(0.45, 0.65), r.float(0.48, 0.6))
-    : hsl(hue, 0.08, r.float(0.86, 0.93));
-  const trimL = r.chance(0.6) ? 0.9 : 0.35;
-  const trim = hsl(hue, 0.12, trimL);
+  const [cx, cz] = lotCenter(bid), dc = Math.hypot(cx, cz);
+  // dzielnica: wolnozmienny szum → pozycja w palecie; budynek odchyla się od niej o ±2 wpisy
+  const dn = Math.max(0, Math.min(1, 0.5 + 0.75 * noise3(cx / 170 + 7.7, 0.5, cz / 170 - 3.1) + 0.3 * noise3(cx / 60, 1.5, cz / 60)));
+  const pos = dn * (WALLS.length - 1) + r.float(-2.1, 2.1);
+  const [wh, ws, wl] = WALLS[Math.max(0, Math.min(WALLS.length - 1, Math.round(pos)))];
+  const hue = (wh + r.float(-5, 5) + 360) % 360;
+  const tint = hsl(hue, Math.max(0.04, ws + r.float(-0.05, 0.05)), Math.min(0.94, wl + r.float(-0.04, 0.04)));
+  const trim = hsl(hue, 0.14, r.chance(0.8) ? 0.88 : 0.42);
   const style = tenement
-    ? r.weighted([['classic', 4], ['ornate', 3], ['plain', 3], ['brick', 2], ['modern', 0.8]])
+    ? r.weighted([['classic', 4], ['ornate', 3], ['plain', 3], ['brick', 2], ['modern', 0.6]])
     : r.weighted([['house', 6], ['ornate', 1.2], ['brick', 1.2]]);
   const shape = tenement
-    ? r.weighted([['block', 3], ['stepped', 2], ['tower', 1.6], ['crenel', 1.6], ['arcade', 1.2]])
-    : r.weighted([['block', 3], ['villa', 2], ['tower', 1.2], ['L', 2]]);
-  const roofTint = r.pick(ROOFS).map((c) => Math.min(1, c * r.float(0.85, 1.15)));
+    ? r.weighted([['block', 3.4], ['stepped', 1.8], ['tower', 0.45], ['crenel', 1.4], ['arcade', 1]])
+    : r.weighted([['block', 3], ['villa', 2], ['tower', 0.4], ['L', 2]]);
+  const roofTint = r.weighted(ROOFS).map((c) => Math.min(1, c * r.float(0.88, 1.12)));
+  // wysokość maleje od rynku ku obrzeżom, sąsiednie działki różnią się najwyżej o jedno piętro
+  const base = 6.3 - 3.3 * Math.min(1, dc / 320);
   return {
     zone, style, shape, tint, trim, roofTint,
-    levels: tenement ? r.int(3, 6) : r.weighted([[1, 2], [2, 5], [3, 2]]),
+    levels: tenement ? Math.max(3, Math.min(7, Math.round(base + r.float(-1.1, 1.1)))) : r.weighted([[1, 2], [2, 5], [3, 2]]),
     wallMat: style === 'brick' ? 'brick' : 'plaster',
     groundMat: style === 'brick' ? 'brick' : tenement && r.chance(0.5) ? 'stone' : 'plaster',
-    frameTint: r.pick(FRAMES), doorTint: hsl(r.float(0, 360), r.float(0.3, 0.6), r.float(0.22, 0.4)),
-    shutters: !tenement && r.chance(0.7), shutterTint: hsl(r.float(0, 360), r.float(0.3, 0.55), r.float(0.25, 0.5)),
+    frameTint: r.weighted(FRAMES), doorTint: hsl(...r.pick(DOORS)),
+    shutters: !tenement && r.chance(0.7), shutterTint: hsl(...r.pick(SHUTTERS)),
     flowers: r.chance(tenement ? 0.15 : 0.55) ? hsl(r.pick([0, 30, 50, 300, 340]), 0.75, 0.55) : null,
     ce: 0.5,
     ridge: style === 'modern' ? 0 : tenement ? r.float(1.8, 3.4) : r.float(2.4, 4.4),
@@ -209,9 +223,9 @@ export function buildingInfo(seed, bid, zone) {
     bars: tenement && r.chance(0.3), shops: tenement ? r.chance(0.6) : r.chance(0.08),
     garden: !tenement && r.chance(0.24), variant: r.int(0, 1),
     roofMat: !tenement || r.chance(0.45) ? 'tile' : 'roof',
-    curtain: hsl(r.float(0, 360), r.float(0.3, 0.6), r.float(0.3, 0.6)),
-    awning: r.chance(0.7) ? hsl(r.pick([0, 120, 210, 30, 350]), 0.55, 0.42) : null,
-    towerExtra: r.int(2, 4), stepDir: r.chance(0.5) ? 1 : -1, ang: r.float(0, Math.PI * 2), r,
+    curtain: hsl(r.float(0, 360), r.float(0.25, 0.5), r.float(0.35, 0.6)),
+    awning: r.chance(0.7) ? hsl(...r.pick(AWNINGS)) : null,
+    towerExtra: r.int(1, 2), stepDir: r.chance(0.5) ? 1 : -1, ang: r.float(0, Math.PI * 2), r,
     // odcień cegły: czerwona, pomarańczowa, brunatna, żółtawa (osobny hasz — nie rusza reszty losowań)
     brickTint: BRICKS[hash(seed, bid, 41) % BRICKS.length],
   };
@@ -225,7 +239,6 @@ export function classifyGrid(city) {
   const seedAt = bucketize(city.seedList, 70, (s) => [s.x - 140, s.z - 140, s.x + 140, s.z + 140]);
   const plaza = city.blocks.find((b) => b.kind === 'plaza');
   const tiers = plaza.ministry.tiers;
-  const LS = 11;
   const lots = new Map();
   for (let v = 0; v < N; v++) {
     const x = X[v], z = Z[v];
@@ -316,6 +329,17 @@ export function classifyGrid(city) {
         const px = m[0] + (d[0] / l) * t, pz = m[1] + (d[1] / l) * t;
         for (const v of vAt(px, pz)) if (TY[v] === T_BLD && segDist(X[v], Z[v], s) < 3.2) { if (H[v] >= 2) ARCH[v] = 1; else TY[v] = T_STREET, H[v] = 0; }
       }
+    }
+  }
+  // Margines 5,2 m sprawdza tylko punkt siatki, a ćwiartka sięga dalej (środek czworokąta
+  // bywa o kilka metrów od narożnika): ściana nie może stanąć na jezdni, więc taki punkt
+  // przestaje być budynkiem. Usuwanie punktów nie tworzy nowych ścian, jeden przebieg wystarcza.
+  for (let q = 0; q < quads.length / 4; q++) {
+    const G = quadGeom({ X, Z, quads }, q);
+    for (let i = 0; i < 4; i++) {
+      const a = G.v[i];
+      if (TY[a] !== T_BLD || H[a] < 1) continue;
+      for (const p of [G.m[i], G.c, G.m[(i + 3) % 4]]) if (roads.clearance(p[0], p[1]) < 0.5) { TY[a] = T_STREET; H[a] = 0; break; }
     }
   }
   grid.H = H; grid.TY = TY; grid.ZN = ZN; grid.BID = BID; grid.ARCH = ARCH; grid.CL = CL;
@@ -487,7 +511,7 @@ export function decorate(city) {
     let choice = null;
     if (t === T_STREET && town && g.nearBld[v] && cl < 4) {
       // chodnik przy ulicy: latarnie, kosze, ławki, budki, kioski, przystanki
-      choice = hv < 0.16 ? 'lamp' : hv < 0.21 ? 'bin' : hv < 0.25 ? 'bench' : hv < 0.27 ? 'booth' : hv < 0.29 ? 'kiosk' : hv < 0.31 ? 'busstop' : hv < 0.34 ? 'bush' : null;
+      choice = hv < 0.16 ? 'lamp' : hv < 0.21 ? 'bin' : hv < 0.25 ? 'bench' : hv < 0.27 ? 'booth' : hv < 0.29 ? 'kiosk' : hv < 0.31 ? 'busstop' : hv < 0.34 ? 'bush' : hv < 0.4 && cl > 1.3 ? 'tree' : null; // drzewa przyuliczne
     } else if (t === T_PLAZA) {
       choice = hv < 0.08 ? 'lamp' : hv < 0.14 ? 'bench' : hv < 0.2 ? 'tree' : null;
     } else if (t === T_PARK && town) {

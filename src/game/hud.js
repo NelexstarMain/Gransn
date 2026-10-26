@@ -128,7 +128,7 @@ export class Hud {
 
     const here = this.city.blocks.find((b) => pointInPoly(b.poly, view.pos.x, view.pos.z));
     const name = this.city.terrain.inRiver(view.pos.x, view.pos.z, 2) ? 'Most' : here ? { plaza: 'Rynek', park: 'Park', houses: 'Przedmieście', tenement: 'Śródmieście', nature: 'Las i wydmy' }[here.kind] : 'Wybrzeże';
-    this.clock.textContent = `Gransn · ${name}`;
+    this.clock.textContent = `Gransn · ${name} · wyspa nr ${this.city.seed}`;
     if (info) this.stats.textContent = info;
   }
 }

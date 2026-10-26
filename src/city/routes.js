@@ -67,3 +67,16 @@ export function polyDist(route, x, z) {
   }
   return best;
 }
+
+// Odcinek trasy, który przechodzi nad rzeką: indeksy punktów [i0, i1] (z jednym punktem zapasu
+// po obu stronach, żeby most zaczynał się i kończył na lądzie). Ten sam wynik używa układ
+// miasta (oznacza jezdnię jako most) i geometria (buduje przęsła).
+export function riverRun(T, route, margin = 3.5) {
+  const P = route.pts;
+  let i0 = -1, i1 = -1;
+  for (let i = 0; i < P.length; i++) {
+    if (T.river(P[i][0], P[i][1]).d < T.hw + margin) { if (i0 < 0) i0 = i; i1 = i; }
+  }
+  if (i0 < 0) return null;
+  return { i0: Math.max(0, i0 - 1), i1: Math.min(P.length - 1, i1 + 1) };
+}

@@ -11,6 +11,7 @@ import { Rng, hash } from '../core/rng.js';
 import { HALF } from '../city/layout.js';
 import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
+import { polyDist, riverRun } from '../city/routes.js';
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -205,7 +206,10 @@ function buildQuad(b, city, q) {
           const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
           if (filled(g, nb, L)) continue;
           const f0 = side === 0 ? Qi.mA : Qi.mB, back1 = side === 0 ? Qi.mB : Qi.mA;
-          wallSegment(b, city, info, a, nb, q, side, L, [f0, Qi.c, Qi.v, back1], top);
+          // co jest dalej za końcem ściany w środku czworokąta: prosto, wypukły/wklęsły narożnik czy „szachownica”
+          const other = filled(g, V[side === 0 ? (i + 3) % 4 : (i + 1) % 4], L), opp = filled(g, V[(i + 2) % 4], L);
+          const ek = { kind: other ? (opp ? 'concave' : 'straight') : (opp ? 'saddle' : 'convex'), owner: side === 0 };
+          wallSegment(b, city, info, a, nb, q, side, L, [f0, Qi.c, Qi.v, back1], top, ek);
         }
         if (L > 0 && !filled(g, a, L - 1)) {
           const y = levelY(L);
@@ -237,7 +241,7 @@ function setTints(b, info) {
 
 const GLASS = [[0.52, 0.58, 0.64], [0.48, 0.55, 0.62], [0.56, 0.6, 0.62], [0.62, 0.6, 0.55], [0.44, 0.42, 0.38], [0.36, 0.4, 0.45]];
 
-function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
+function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
   const T = city.terrain, g = city.grid;
   const [f0, f1, b0, b1] = pts;
   const W = dist(f0, f1), D = (dist(f0, b0) + dist(f1, b1)) / 2;
@@ -252,6 +256,7 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
     shopGlass: [0.3, 0.32, 0.33], variant: info.variant, bars: info.bars, glassTint: GLASS[hh % GLASS.length],
     shutters: info.shutters, shutterTint: info.shutterTint, flowers: L > 0 ? info.flowers : null,
     simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4], winW: info.winW, winH: info.winH, curtain: info.curtain, awning: info.awning,
+    endKind: ek.kind, cornerOwner: ek.owner,
   };
   let mod;
   if (W < 1.25) mod = 'wall';
@@ -270,8 +275,8 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
   if (L === top - 1) {
     const ce = info.ce;
     const cg = cage4(T, null, pts, NONE, y1, y1 + ce);
-    if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint });
-    else place(b, 'cornice', cg, W, ce, D, { style: info.style === 'modern' ? 'modern' : info.style, consoles: info.style === 'ornate' });
+    if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint, endKind: ek.kind, cornerOwner: ek.owner });
+    else place(b, 'cornice', cg, W, ce, D, { style: info.style === 'modern' ? 'modern' : info.style, consoles: info.style === 'ornate', endKind: ek.kind, cornerOwner: ek.owner });
   }
 }
 
@@ -345,7 +350,8 @@ function groundQuarter(b, city, G, i, q) {
   for (const [s0, s1, nb] of [[G.m[i], G.c, G.v[(i + 1) % 4]], [G.c, G.m[(i + 3) % 4], G.v[(i + 3) % 4]]]) {
     if (raised(city, nb) || g.TY[nb] === T_BLD || g.TY[nb] === T_WATER) continue;
     const c0 = clampAll(s0), c1 = clampAll(s1);
-    if (dist(c0, c1) < 0.2) continue;
+    // docięcie do brzegu może rzucić końce na PRZECIWNE brzegi rzeki — wtedy krawężnik przecinałby wodę
+    if (dist(c0, c1) < 0.2 || dist(c0, c1) > dist(s0, s1) * 2 + 1.5) continue;
     const inn = G.p[i];
     const k0 = Math.min(0.3, dist(c0, inn) * 0.5) / (dist(c0, inn) || 1), k1 = Math.min(0.3, dist(c1, inn) * 0.5) / (dist(c1, inn) || 1);
     place(b, 'curb', cage4(T, null, [c0, c1, lerp2(c0, inn, k0), lerp2(c1, inn, k1)], NONE, 0, 0.16), dist(c0, c1), 0.16, 0.3, {});
@@ -428,6 +434,8 @@ export function buildRiver(city) {
     const dx = p[0] - br.p[0], dz = p[1] - br.p[1];
     return Math.abs(dx * br.perp[0] + dz * br.perp[1]) < br.width / 2 + 0.6 && Math.abs(dx * br.axis[0] + dz * br.axis[1]) < br.L + 3;
   });
+  // poręcz nabrzeża stoi tylko tam, gdzie nie ma jezdni, mostu, torów ani autostrady
+  const free = (x, z) => !nearBridge([x, z]) && city.roads.clearance(x, z) > 0.9 && polyDist(city.routes.rail, x, z) > 4.5 && polyDist(city.routes.highway, x, z) > 9.5;
   for (const bank of [T.left, T.right]) {
     for (let i = 0; i < bank.length - 1; i++) {
       const a = bank[i], c = bank[i + 1], L = dist(a, c), m = Math.max(1, Math.round(L / 6));
@@ -438,9 +446,31 @@ export function buildRiver(city) {
         const qa = [pa[0] + out[0], pa[1] + out[1]], qc = [pc[0] + out[0], pc[1] + out[1]];
         const pm = lerp2(pa, pc, 0.5);
         if (T.inland(pm[0], pm[1]) < 12) continue;
-        const rail = !nearBridge(pm) && !nearBridge(pa) && !nearBridge(pc) && city.roads.clearance(pm[0], pm[1]) > 1;
-        place(b, 'quay', Cage.quad(pa, pc, qa, qc, yb, T.bankY), dist(pa, pc), H, 1, { rail });
+        place(b, 'quay', Cage.quad(pa, pc, qa, qc, yb, T.bankY), dist(pa, pc), H, 1, {});
+        const k = Math.max(1, Math.round(dist(pa, pc) / 2.2));
+        for (let u = 0; u < k; u++) {
+          const ra = lerp2(pa, pc, u / k), rc = lerp2(pa, pc, (u + 1) / k), rm = lerp2(ra, rc, 0.5);
+          if (!free(ra[0], ra[1]) || !free(rc[0], rc[1]) || !free(rm[0], rm[1])) continue;
+          place(b, 'quayrail', Cage.quad(ra, rc, [ra[0] + out[0], ra[1] + out[1]], [rc[0] + out[0], rc[1] + out[1]], T.bankY, T.bankY + 1.1), dist(ra, rc), 1.1, 1, {});
+        }
       }
+    }
+  }
+  // autostrada nad rzeką: przęsła z balustradami, jezdnia (asfalt) leży 7 cm nad bruk-podkładem
+  const run = riverRun(T, city.routes.highway);
+  if (run) {
+    const P = city.routes.highway.pts, hwHalf = 8;
+    const nodes = [run.i0];
+    let acc = 0;
+    for (let i = run.i0; i < run.i1; i++) {
+      acc += dist(P[i], P[i + 1]);
+      if (acc >= 11 || i === run.i1 - 1) { nodes.push(i + 1); acc = 0; }
+    }
+    if (nodes.length > 2 && dist(P[nodes[nodes.length - 2]], P[nodes[nodes.length - 1]]) < 5) nodes.splice(nodes.length - 2, 1);
+    for (let k = 0; k < nodes.length - 1; k++) {
+      const ia = nodes[k], ic = nodes[k + 1], A = P[ia], C = P[ic], na = routeNormal(P, ia), nc = routeNormal(P, ic);
+      const pts = [[A[0] - na[0] * hwHalf, A[1] - na[1] * hwHalf], [C[0] - nc[0] * hwHalf, C[1] - nc[1] * hwHalf], [A[0] + na[0] * hwHalf, A[1] + na[1] * hwHalf], [C[0] + nc[0] * hwHalf, C[1] + nc[1] * hwHalf]];
+      place(b, 'bridge', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), dist(A, C), H, 2 * hwHalf, { end0: k === 0, end1: k === nodes.length - 2 });
     }
   }
   for (const br of city.bridges) {

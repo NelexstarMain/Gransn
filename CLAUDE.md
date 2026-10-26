@@ -16,6 +16,7 @@ npm run check          # reguły świata (obiekty poza jezdnią, brak nakładań
 npm run sim            # symulacja ruchu ulicznego bez grafiki (korki, zakleszczenia)
 npm run build-world    # buduje CAŁY świat w Node: wyjątki, NaN, ląd pod wodą
 npm run photo          # „aparat”: zdjęcia PNG świata i każdego elementu, bez przeglądarki (katalog zdjecia/)
+node scripts/seeds.mjs 1 60 [--build]   # sprawdza wiele ziaren naraz (jezdnie, ściany, ląd pod wodą, NaN)
 ```
 
 ## Jak pracować z tym użytkownikiem (WAŻNE)
@@ -106,6 +107,10 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 | `npm run build-world` | 144 fragmenty, ok. 3,2 mln trójkątów, 0 błędów, 0 punktów lądu pod wodą |
 
 8. Przegląd wyglądu zdjęciami: chodniki z płyt wchodziły na jezdnię (teraz ćwiartki przy jezdni są dzielone i docinane po kawałku), rynek nie miał ratusza (jezdnie wygenerowane przez L-system są usuwane z 21 m od środka, wieża z zegarami i miedzianym hełmem to `M.townhall`, `extras` typu `townhall`), puste pola płyt zamieniają się w trawniki z drzewami (`lawn()` w `grid.js`), nowe tekstury (tynk bez łat, cegła z paletą i jasną zaprawą, trawa ze stokrotkami, drewno), nowe drzewa (topola kolumnowa, gęsta korona dębu), pasażer z twarzą, budka, kiosk, przystanek, kosz.
+
+9. **Nowa mapa przy każdym wejściu:** `main.js` losuje ziarno (`crypto.getRandomValues`), numer wyspy jest w rogu ekranu i na ekranie startowym razem z przyciskiem „Nowa wyspa” (też Shift+N). `?seed=N` albo `#N` w linku odtwarza tę samą wyspę. Losowanie jest tylko w `main.js`, generator nadal jest deterministyczny. Przed oddaniem zmian w generatorze odpal `node scripts/seeds.mjs 1 60 --build`, bo 1984 to jedno ziarno z wielu.
+10. Naturalniejsze miasto: ulice z krawędzi Voronoi są łagodnie wyginane (`bendEdge`), kolory ścian z palety historycznych barw zależnej od dzielnicy (szum), wysokość kamienic maleje od rynku, wieże rzadsze, mocniejsze wzgórza na obrzeżach, drzewa przy ulicach. Punkt siatki, którego ćwiartka (nie tylko narożnik) sięga jezdni, przestaje być budynkiem.
+11. Dachy: gzymsy (`cornice`, `string`) i okapy domów (`eave`) mają denka na końcach i element narożny w wypukłym rogu (parametry `endKind`, `cornerOwner` z `wallSegment`), wcześniej narożniki były dziurami. Mosty: poręcz nabrzeża to osobny moduł `quayrail` stawiany tylko tam, gdzie nie ma jezdni, mostu, torów ani autostrady; autostrada nad rzeką to most (`riverRun` w `routes.js`, `st.bridge` ustawiane w `layout.js`).
 
 **Pułapka przy detalach tuż przed ścianą:** szum materiału (`wob`) liczy się w wierzchołkach. Jeden duży prostokąt ściany i detal 1 cm przed nim rozchodzą się o kilka cm i detal „tonie” w ścianie. Dużą ścianę dziel siatką ~0,8 m (`b.grid`) albo odsuń detal o ≥ 3 cm.
 

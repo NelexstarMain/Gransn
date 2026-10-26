@@ -163,44 +163,48 @@ export function createTextures() {
     return [c, c * 0.97, c * 0.91, n * 0.5 + f * 0.3 + g * 0.2];
   }, 2);
 
-  // — bruk: kocie łby (Voronoi z kopułkami i ciemną fugą) —
-  const vor = voronoi(9, 77);
+  // — bruk: kamienie ~12 cm z własnym odcieniem, kopułkami oświetlonymi z lewej góry,
+  //   ciemną fugą z mchem i brudem, plamami zabrudzeń (bez równych, powtarzalnych oczek)
+  const vor = voronoi(10, 77, 0.8);
   T.cobble = bake(512, 512, (u, v) => {
-    const { d1, d2, id } = vor(u, v);
+    const { d1, d2, id, cx, cy } = vor(u, v);
     const edge = d2 - d1;
-    const n = nB(u, v, 64, 3);
-    const stoneM = smooth(0.04, 0.12, edge);
-    const dome = Math.max(0, 1 - d1 * 1.25);
-    const h = stoneM * (0.45 + dome * 0.55) + (n - 0.5) * 0.08;
-    const g = 0.38 + id * 0.26 + (n - 0.5) * 0.12;
-    const tintR = id > 0.75 ? 1.06 : id < 0.2 ? 0.95 : 1.0;
-    const sc = [g * tintR, g * 0.99, g * (id > 0.6 ? 0.92 : 1.02)];
-    const mc = [0.17, 0.16, 0.14];
-    const top = dome * 0.08;
+    const n = nB(u, v, 64, 3), g = nC(u, v, 256, 1), patch = nA(u + 0.21, v + 0.6, 4, 3), moss = nC(u + 0.5, v, 12, 3);
+    const stone = smooth(0.025, 0.14, edge);
+    const dome = Math.max(0, 1 - d1 * 1.15);
+    const fam = id < 0.4 ? [0.55, 0.53, 0.5] : id < 0.75 ? [0.58, 0.53, 0.46] : [0.48, 0.49, 0.5];
+    const vary = 0.85 + 0.32 * ((id * 17.37) % 1);
+    const light = 0.86 + 0.34 * dome + 0.22 * (cx + cy);
+    const soil = 1 - 0.28 * smooth(0.5, 0.8, patch);
+    const k = vary * light * soil * (0.92 + (g - 0.5) * 0.2 + (n - 0.5) * 0.18);
+    const greenJoint = smooth(0.55, 0.78, moss);
+    const jc = [0.12 + greenJoint * 0.04, 0.115 + greenJoint * 0.07, 0.1 + greenJoint * 0.0];
+    const h = stone * (0.35 + dome * 0.65) + (n - 0.5) * 0.06 + (g - 0.5) * 0.05;
     return [
-      mc[0] + (sc[0] + top - mc[0]) * stoneM,
-      mc[1] + (sc[1] + top - mc[1]) * stoneM,
-      mc[2] + (sc[2] + top - mc[2]) * stoneM,
+      jc[0] + (fam[0] * k - jc[0]) * stone,
+      jc[1] + (fam[1] * k - jc[1]) * stone,
+      jc[2] + (fam[2] * k - jc[2]) * stone,
       h,
     ];
   }, 6);
 
-  // — płyty chodnikowe 50×50 cm z pęknięciami —
+  // — płyty chodnikowe 50×50 cm: każda z innym odcieniem, ziarno, plamy, pęknięcia, mech w szczelinach
   const crack = tileNoise(91);
   T.slab = bake(512, 512, (u, v) => {
     const tx = u * 4, ty = v * 4, ix = Math.floor(tx), iy = Math.floor(ty);
     const fx = tx - ix, fy = ty - iy;
     const gap = Math.min(fx, 1 - fx, fy, 1 - fy);
-    const sid = ihash(ix + 40, iy + 70);
-    const n = nA(u, v, 16, 4), fine = nB(u, v, 128, 1);
+    const sid = ihash(ix + 40, iy + 70), sid2 = ihash(ix + 9, iy + 301);
+    const n = nA(u, v, 16, 4), fine = nB(u, v, 160, 1), stain = nC(u, v, 6, 3), moss = nA(u + 0.4, v + 0.1, 20, 2);
     const cr = Math.abs(crack(u, v, 6, 3) - 0.5);
-    const isCrack = sid > 0.7 && cr < 0.004;
-    let c = 0.62 + (sid - 0.5) * 0.1 + (n - 0.5) * 0.14 + (fine - 0.5) * 0.05;
-    let h = 0.7 + (fine - 0.5) * 0.15 + (fx - 0.5) * (sid - 0.5) * 0.15;
-    if (gap < 0.012) { c *= 0.45; h = 0.1; }
-    else if (gap < 0.03) { h -= (0.03 - gap) * 8; }
-    if (isCrack) { c *= 0.8; h -= 0.2; }
-    return [c, c * 0.985, c * 0.95, h];
+    const isCrack = sid > 0.72 && cr < 0.0035;
+    let c = 0.66 + (sid - 0.5) * 0.12 + (n - 0.5) * 0.12 + (fine - 0.5) * 0.09 - Math.max(0, stain - 0.6) * 0.25;
+    let h = 0.7 + (fine - 0.5) * 0.15 + (fx - 0.5) * (sid2 - 0.5) * 0.2;
+    let r = c * (1 + (sid2 - 0.5) * 0.06), g = c * (0.975 + (sid - 0.5) * 0.02), b = c * (0.93 - (sid2 - 0.5) * 0.04);
+    if (gap < 0.014) { const gm = smooth(0.55, 0.8, moss); r = 0.22 + gm * 0.0; g = 0.21 + gm * 0.08; b = 0.17; h = 0.1; }
+    else if (gap < 0.034) { h -= (0.034 - gap) * 7; const e = 1 - (gap - 0.014) / 0.02; r *= 1 - e * 0.18; g *= 1 - e * 0.18; b *= 1 - e * 0.18; }
+    if (isCrack) { r *= 0.6; g *= 0.6; b *= 0.6; h -= 0.25; }
+    return [r, g, b, h];
   }, 5);
 
   // — granit krawężnika —
@@ -231,18 +235,26 @@ export function createTextures() {
     return [(0.3 + dry * 0.14) * g, (0.46 + dry * 0.05) * g, 0.2 * g, f * 0.6 + bl * 0.25 + n * 0.15];
   }, 3);
 
-  // — dachówka karpiówka: rzędy łusek z przesunięciem, cieniowane krawędzie —
+  // — dachówka karpiówka: rzędy łusek z przesunięciem, własny odcień każdej dachówki,
+  //   cieniowane krawędzie, zacieki, nalot mchu i brud
   T.tile = bake(512, 512, (u, v) => {
     const rows = 6, row = Math.floor(v * rows), off = (row % 2) * 0.5;
     const cols = 8, xx = u * cols + off, ci = Math.floor(xx), fx = xx - ci, fy = v * rows - row;
-    // zaokrąglony dół łuski
     const dx = fx - 0.5, curve = 0.75 + Math.sqrt(Math.max(0, 0.25 - dx * dx)) * 0.5;
     const inTile = fy < curve;
-    const id = ihash(ci, row);
-    const n = nA(u, v, 16, 3);
-    const shade = inTile ? 0.75 + fy * 0.35 : 0.45;
-    const c = (0.85 + (id - 0.5) * 0.22 + (n - 0.5) * 0.15) * shade;
-    return [c, c * 0.92, c * 0.86, inTile ? 0.3 + fy * 0.6 : 0.05];
+    const id = ihash(ci, row), id2 = ihash(ci + 13, row + 29);
+    const n = nA(u, v, 16, 3), grain = nB(u, v, 192, 1), moss = nC(u, v, 5, 4), streak = nC(u, v, [24, 3], 2);
+    const shade = inTile ? 0.78 + fy * 0.32 : 0.4;
+    // kolor dachu przychodzi z wierzchołków (tint) — tekstura niesie jasność i lekki odcień
+    const base = id < 0.12 ? [0.78, 0.7, 0.66] : id < 0.3 ? [1.0, 0.94, 0.9] : [0.9 + id2 * 0.1, 0.86 + id2 * 0.08, 0.82 + id2 * 0.06];
+    const k = shade * (0.92 + (n - 0.5) * 0.2 + (grain - 0.5) * 0.12 - Math.max(0, streak - 0.6) * 0.25);
+    const m = smooth(0.62, 0.82, moss) * 0.5;
+    return [
+      (base[0] * (1 - m) + 0.55 * m) * k,
+      (base[1] * (1 - m) + 0.8 * m) * k,
+      (base[2] * (1 - m) + 0.4 * m) * k,
+      inTile ? 0.3 + fy * 0.6 + (grain - 0.5) * 0.1 : 0.05,
+    ];
   }, 5);
 
   // — kora: pionowe bruzdy + szum —
@@ -274,15 +286,20 @@ export function createTextures() {
     const c = (0.35 + id * 0.35) * (0.5 + 0.5 * e);
     return [c, c * 0.95, c * 0.9, e * (1 - d1)];
   }, 4);
-  // — asfalt z pasami (u = wzdłuż drogi, okres 12 m; v = w poprzek) —
+  // — asfalt z pasami (u = wzdłuż drogi, okres 12 m; v = w poprzek): kruszywo, koleiny, łaty,
+  //   pęknięcia, plamy oleju, wyblakłe i wytarte pasy
   T.asphalt = bake(256, 512, (u, v) => {
-    const n = nA(u, v, 16, 4), f = nB(u, v, 128, 1);
-    let c = 0.22 + (n - 0.5) * 0.06 + (f - 0.5) * 0.05;
+    const n = nA(u, v, 16, 4), f = nB(u, v, 128, 1), agg = nC(u, v, 200, 1), wear = nA(u, v, [3, 2], 3), cr = Math.abs(nB(u + 0.3, v + 0.2, [6, 3], 3) - 0.5);
+    const patch = ihash(Math.floor(u * 3) + 5, Math.floor(v * 6) + 11) > 0.84 ? 1 : 0;
+    const ruts = Math.exp(-Math.pow((v - 0.36) / 0.05, 2)) + Math.exp(-Math.pow((v - 0.64) / 0.05, 2));
+    let c = 0.23 + (n - 0.5) * 0.05 + (f - 0.5) * 0.045 + (agg > 0.82 ? 0.07 : agg < 0.12 ? -0.04 : 0) + ruts * 0.025 + patch * (-0.03 + (f - 0.5) * 0.02);
+    if (cr < 0.004) c -= 0.07;
     const line = (x, w) => Math.abs(v - x) < w;
-    if (line(0.04, 0.008) || line(0.96, 0.008)) c = 0.85;
-    else if (line(0.5, 0.012) && !line(0.5, 0.004)) c = 0.8;
-    else if ((line(0.27, 0.007) || line(0.73, 0.007)) && (u % 1) < 0.35) c = 0.82;
-    return [c, c, c * 1.02, 0.5 + (f - 0.5) * 0.2];
+    const worn = 0.55 + 0.45 * smooth(0.25, 0.7, wear);
+    if (line(0.04, 0.008) || line(0.96, 0.008)) c = c + (0.85 - c) * worn;
+    else if (line(0.5, 0.012) && !line(0.5, 0.004)) c = c + (0.8 - c) * worn;
+    else if ((line(0.27, 0.007) || line(0.73, 0.007)) && (u % 1) < 0.35) c = c + (0.82 - c) * worn;
+    return [c, c, c * 1.02, 0.5 + (f - 0.5) * 0.2 + (agg - 0.5) * 0.15 - (cr < 0.004 ? 0.2 : 0)];
   }, 1, { aniso: 8 });
 
   // — drewno: neutralne w kolorze (ramy, drzwi i okiennice mają kolor z wierzchołków),

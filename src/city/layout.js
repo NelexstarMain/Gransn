@@ -9,8 +9,9 @@
 //  5. Komórki Voronoi wyznaczają ulice i strefy (kamienice / domki / park /
 //     plac). Same budynki powstają na nieregularnej siatce czworokątów (grid.js).
 import { Rng, hash } from '../core/rng.js';
+import { noise3 } from '../core/noise.js';
 import { makeQuadGrid, classifyGrid, decorate, makeChunks } from './grid.js';
-import { makeRoutes } from './routes.js';
+import { makeRoutes, riverRun } from './routes.js';
 import { growRoads } from './roads.js';
 import { RoadNet } from './roadnet.js';
 import { Terrain } from './terrain.js';
@@ -284,6 +285,28 @@ function collapse(g, minLen) {
   }
 }
 
+// Krawędź Voronoi to prosta — ulica z niej wyglądałaby jak z linijki. Zamieniamy ją na łamaną
+// z łagodnym bocznym wygięciem (szum zależny od położenia, więc ta sama krawędź zawsze wychodzi
+// tak samo). Końce zostają na miejscu, bo to skrzyżowania wspólne z innymi ulicami; przy rzece
+// i przy brzegu ulice się prostują, żeby nie wchodzić w wodę.
+function bendEdge(a, b, terrain) {
+  const L = dist(a, b);
+  if (L < 38) return null;
+  const n = Math.min(5, Math.floor(L / 24)), ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L, nx = -uz, nz = ux;
+  const pts = [a];
+  for (let i = 1; i <= n; i++) {
+    const t = i / (n + 1) + 0.12 * Math.sin((a[0] + b[0]) * 0.37 + i * 5.1) / (n + 1);
+    const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
+    const env = Math.sin(Math.PI * t) ** 0.7;
+    const away = Math.min(1, Math.max(0, (terrain.river(x, z).d - terrain.hw - 14) / 26)) * Math.min(1, Math.max(0, (terrain.inland(x, z) - 40) / 50));
+    const amp = Math.min(7, L * 0.085) * env * away;
+    const off = amp * 1.5 * (noise3(x / 65 + 3.3, 0.7, z / 65 - 1.9) + 0.35 * noise3(x / 22, 2.2, z / 22));
+    pts.push([x + nx * off, z + nz * off]);
+  }
+  pts.push(b);
+  return pts;
+}
+
 // ── ulice ───────────────────────────────────────────────────────────────────
 const SPEC = {
   bank: { road: 0.35, walk: 4.5, bank: true },
@@ -351,7 +374,7 @@ export function generateCity(seed = 1984) {
       vSeen.add(key);
       const a = poly[k], b = poly[(k + 1) % n];
       if (terrain.inland(a[0], a[1]) < 30 || terrain.inland(b[0], b[1]) < 30) return;
-      vEdges.push({ a, b, rw: sp[k].road >= 5 ? 4.2 : 3.4 });
+      vEdges.push({ a, b, rw: sp[k].road >= 5 ? 4.2 : 3.4, pts: sp[k] === SPEC.bridge ? null : bendEdge(a, b, terrain) });
     });
     cell.ids.forEach((id, k) => {
       const nx = cell.ids[(k + 1) % n], key = id < nx ? `${id}_${nx}` : `${nx}_${id}`;
@@ -419,6 +442,15 @@ export function generateCity(seed = 1984) {
     const mx = (st.a[0] + st.b[0]) / 2, mz = (st.a[1] + st.b[1]) / 2;
     st.mat = st.type === 'H' ? 'asphalt' : kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'cobble';
     st.town = st.mat === 'cobble';
+  }
+  // autostrada nad rzeką to most: jezdnia leży płasko na poziomie bulwarów (balustrady i przęsła w buildRiver)
+  const run = riverRun(terrain, routes.highway);
+  if (run) {
+    const idx = new Map(HP.map((q, i) => [q, i]));
+    for (const st of streets) {
+      const i = idx.get(st.a);
+      if (st.type === 'H' && i !== undefined && i >= run.i0 && i < run.i1) st.bridge = true;
+    }
   }
   const roads = new RoadNet(streets);
   const extras = makeExtras(terrain, routes, rng);

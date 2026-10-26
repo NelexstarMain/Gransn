@@ -288,23 +288,41 @@ export const M = {
     plinth(b, [[0, x0], [x1, W]]);
   },
 
-  // 10. Gzyms międzykondygnacyjny (kordonowy)
+  // 10. Gzyms międzykondygnacyjny (kordonowy). Końce zamknięte denkami, początek lekko
+  //     wydłużony (zakrywa załamanie ściany w połowie krawędzi czworokąta), wypukły narożnik
+  //     dostaje klocek w rogu.
   string(b, W, H, D, p) {
-    b.box('stone', 0, 0, -0.13, W, 0.24, 0, 'yYz');
-    b.box('stone', 0, 0.24, -0.06, W, 0.32, 0, 'Yz');
+    const x0 = -0.25;
+    b.box('stone', x0, 0, -0.13, W, 0.24, 0, 'xXyYz');
+    b.box('stone', x0, 0.24, -0.06, W, 0.32, 0, 'xXYz');
+    if (p.endKind === 'convex' && p.cornerOwner) {
+      b.box('stone', W, 0, -0.13, W + 0.13, 0.24, 0, 'XyYz');
+      b.box('stone', W, 0.24, -0.06, W + 0.06, 0.32, 0, 'XYz');
+    }
   },
 
-  // 11. Gzyms wieńczący — schodkowy profil, opcjonalne kroksztyny
+  // 11. Gzyms wieńczący — schodkowy profil, opcjonalne kroksztyny. Denka na końcach i klocek
+  //     w wypukłym narożniku (wcześniej gzyms kończył się w powietrzu i było widać przez niego),
+  //     rynna skręca w narożniku zamiast urywać się.
   cornice(b, W, H, D, p) {
-    const m = p.mat || 'stone';
+    const m = p.mat || 'stone', x0 = -0.25, convex = p.endKind === 'convex' && p.cornerOwner;
     if (p.style === 'modern') {
-      b.box(m, 0, 0, -0.35, W, H, 0, 'yYz');
+      b.box(m, x0, 0, -0.35, W, H, 0, 'xXyYz');
+      if (convex) b.box(m, W, 0, -0.35, W + 0.35, H, 0, 'XyYz');
       return;
     }
-    b.box(m, 0, 0, -0.1, W, 0.2, 0, 'yz');
-    b.box(m, 0, 0.2, -0.26, W, 0.36, 0, 'yz');
-    b.box(m, 0, 0.36, -0.56, W, H, 0, 'yYz');
-    b.tube('metal', [0, H - 0.05, -0.62], [W, H - 0.05, -0.62], 0.07, 0.07, 6, { tint: [0.45, 0.47, 0.48] });
+    const layers = [[0.1, 0, 0.2], [0.26, 0.2, 0.36], [0.56, 0.36, H]];
+    for (const [d, y0, y1] of layers) {
+      b.box(m, x0, y0, -d, W, y1, 0, y1 === H ? 'xXyYz' : 'xXyz');
+      if (convex) b.box(m, W, y0, -d, W + d, y1, 0, y1 === H ? 'XyYz' : 'Xyz');
+    }
+    const g = { tint: [0.45, 0.47, 0.48] };
+    const tx1 = p.endKind === 'concave' ? W - 0.62 : W;
+    b.tube('metal', [x0, H - 0.05, -0.62], [tx1, H - 0.05, -0.62], 0.07, 0.07, 6, g);
+    if (convex) {
+      b.tube('metal', [W, H - 0.05, -0.62], [W + 0.62, H - 0.05, -0.62], 0.07, 0.07, 6, g);
+      b.tube('metal', [W + 0.62, H - 0.05, -0.62], [W + 0.62, H - 0.05, 0], 0.07, 0.07, 6, g);
+    }
     if (p.consoles) {
       const n = Math.max(2, Math.round(W / 0.7));
       for (let i = 0; i < n; i++) {
@@ -513,7 +531,7 @@ Object.assign(M, {
     }
   },
 
-  // 23. Nabrzeże — kamienny mur oporowy, kapinos, balustrada
+  // 23. Nabrzeże — kamienny mur oporowy, kapinos (poręcz to osobny moduł quayrail)
   quay(b, W, H, D, p) {
     const so = { tint: [0.6, 0.6, 0.57] };
     const rows = Math.max(3, Math.round(H / 0.6));
@@ -523,15 +541,23 @@ Object.assign(M, {
       b.rect('stone', 0, yb - 0.03, W, yb, 0.02, { ...so, shade: 0.45 });
     }
     b.box('stone', 0, H - 0.3, -0.3, W, H + 0.02, 0.6, 'yYz', so);
-    if (p.rail) {
-      const mo = { tint: [0.15, 0.17, 0.16] };
-      const n = Math.max(1, Math.round(W / 2.2));
-      for (let i = 0; i <= n; i++) {
-        const x = (i * W) / n;
-        b.box('metal', x - 0.04, H, 0.1, x + 0.04, H + 1.05, 0.18, 'xXzZ', mo);
-      }
-      b.box('metal', 0, H + 0.98, 0.08, W, H + 1.05, 0.2, 'yYzZ', mo);
-      b.box('metal', 0, H + 0.5, 0.12, W, H + 0.53, 0.16, 'yYzZ', mo);
+  },
+
+  // 23b. Poręcz nabrzeża: jeden przęsło ~2 m, słupki z nasadkami na obu końcach.
+  //      Stawiana tylko tam, gdzie nic nie stoi (jezdnia, most, tory) — wcześniej płot
+  //      przechodził przez jezdnię i wchodził w balustrady mostów.
+  quayrail(b, W, H, D, p) {
+    const mo = { tint: [0.15, 0.17, 0.16] };
+    for (const x of [0.05, W - 0.05]) {
+      b.box('metal', x - 0.045, 0, 0.1, x + 0.045, 1.05, 0.19, 'xXzZ', mo);
+      b.box('metal', x - 0.06, 1.05, 0.085, x + 0.06, 1.1, 0.205, 'xXyYzZ', mo);
+    }
+    b.box('metal', 0, 0.98, 0.08, W, 1.05, 0.2, 'yYzZ', mo);
+    b.box('metal', 0, 0.5, 0.12, W, 0.53, 0.16, 'yYzZ', mo);
+    const n = Math.max(2, Math.round(W / 0.22));
+    for (let i = 1; i < n; i++) {
+      const x = (i * W) / n;
+      b.box('metal', x - 0.012, 0.53, 0.125, x + 0.012, 0.98, 0.155, 'xXzZ', mo);
     }
   },
 
@@ -584,14 +610,31 @@ Object.assign(M, {
 });
 
 Object.assign(M, {
-  // 28. Okap domu — deska czołowa + wysunięty pas dachu
+  // 28. Okap domu — deska czołowa + wysunięty pas dachu. W wypukłym narożniku dwa pasy
+  //     schodzą się w „czapkę”: dwa trójkąty połaci, dwa podsufitki i narożny słupek deski
+  //     (wcześniej tam była dziura i było widać przez okap). Rynna skręca o 90°.
   eave(b, W, H, D, p) {
-    const ro = { tint: p.roofTint };
-    b.box('wood', 0, 0, -0.05, W, H, 0, 'yz', { tint: [0.85, 0.82, 0.76] });
-    b.poly('roof', [[0, H, 0.3], [W, H, 0.3], [W, H - 0.32, -0.55], [0, H - 0.32, -0.55]], [0, 1, -0.4], ro);
-    b.poly('wood', [[0, H - 0.34, -0.55], [W, H - 0.34, -0.55], [W, H - 0.02, 0.3], [0, H - 0.02, 0.3]], [0, -1, 0.4], { tint: [0.5, 0.4, 0.3], shade: 0.6 });
-    // rynna wzdłuż okapu
-    b.tube('metal', [0, H - 0.4, -0.62], [W, H - 0.4, -0.62], 0.075, 0.075, 6, { tint: [0.45, 0.47, 0.48] });
+    const ro = { tint: p.roofTint }, x0 = -0.25, wood = { tint: [0.5, 0.4, 0.3], shade: 0.6 };
+    const convex = p.endKind === 'convex' && p.cornerOwner;
+    b.box('wood', x0, 0, -0.05, W, H, 0, 'xXyz', { tint: [0.85, 0.82, 0.76] });
+    b.poly('roof', [[x0, H, 0.3], [W, H, 0.3], [W, H - 0.32, -0.55], [x0, H - 0.32, -0.55]], [0, 1, -0.4], ro);
+    b.poly('wood', [[x0, H - 0.34, -0.55], [W, H - 0.34, -0.55], [W, H - 0.02, 0.3], [x0, H - 0.02, 0.3]], [0, -1, 0.4], wood);
+    const g = { tint: [0.45, 0.47, 0.48] };
+    const tx1 = p.endKind === 'concave' ? W - 0.62 : W;
+    b.tube('metal', [x0, H - 0.4, -0.62], [tx1, H - 0.4, -0.62], 0.075, 0.075, 6, g);
+    if (convex) {
+      // połać: y = H − 0,3765·(0,3 − z) wzdłuż ściany A i y = H − 0,3765·(0,3 + x − W) wzdłuż B
+      const yw = H - 0.113, yo = H - 0.32;
+      const P0 = [W, yw, 0], P1 = [W + 0.55, yo, 0], P2 = [W + 0.55, yo, -0.55], P3 = [W, yo, -0.55];
+      b.poly('roof', [P0, P1, P2], [0.4, 1, 0], ro);
+      b.poly('roof', [P0, P2, P3], [0, 1, -0.4], ro);
+      const dn = (q) => [q[0], q[1] - 0.02, q[2]];
+      b.poly('wood', [dn(P0), dn(P1), dn(P2)], [0, -1, 0], wood);
+      b.poly('wood', [dn(P0), dn(P2), dn(P3)], [0, -1, 0], wood);
+      b.box('wood', W, 0, -0.05, W + 0.05, H, 0, 'XYz', { tint: [0.85, 0.82, 0.76] });
+      b.tube('metal', [W, H - 0.4, -0.62], [W + 0.62, H - 0.4, -0.62], 0.075, 0.075, 6, g);
+      b.tube('metal', [W + 0.62, H - 0.4, -0.62], [W + 0.62, H - 0.4, 0], 0.075, 0.075, 6, g);
+    }
   },
 
   // 29. Billboard Partii — rama, plakat z dwóch stron, słupy
