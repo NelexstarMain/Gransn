@@ -18,6 +18,7 @@ import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
 import { finalizeNetwork } from './netfix.js';
 import { auditStreets } from './audit.js';
+import { organicStreets } from './organic.js';
 
 // rw = połowa szerokości jezdni (m); przejazd zawsze ≥ 6 m
 const HIGHWAY = { len: 30, rw: 4.0 }, STREET = { len: 19, rw: 3.0 };
@@ -229,5 +230,5 @@ export function growRoads(seed, T, bridges, center, base = []) {
     const score = auditStreets(net, T).score;
     if (!best || score < best.score) best = { score, net };
   }
-  return best.net;
+  return organicStreets(best.net, T, seed);
 }
