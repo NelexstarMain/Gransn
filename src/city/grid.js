@@ -346,6 +346,15 @@ export function classifyGrid(city) {
       for (const p of [G.m[i], G.c, G.m[(i + 3) % 4]]) if (roads.clearance(p[0], p[1]) < 0.5) { TY[a] = T_STREET; H[a] = 0; break; }
     }
   }
+  // Prześwit (parter pusty) musi się na czymś opierać: punkt z pustym parterem, który nie ma
+  // ani jednego sąsiada z pełnym parterem, to wiszący dom. Taki punkt staje się zwykłym budynkiem.
+  {
+    const nb = Array.from({ length: N }, () => []);
+    for (let q = 0; q < quads.length / 4; q++)
+      for (let i = 0; i < 4; i++) { const a = quads[q * 4 + i]; nb[a].push(quads[q * 4 + ((i + 1) % 4)], quads[q * 4 + ((i + 3) % 4)]); }
+    for (let v = 0; v < N; v++)
+      if (TY[v] === T_BLD && ARCH[v] && !nb[v].some((n) => TY[n] === T_BLD && H[n] >= 1 && !ARCH[n])) ARCH[v] = 0;
+  }
   grid.H = H; grid.TY = TY; grid.ZN = ZN; grid.BID = BID; grid.ARCH = ARCH; grid.CL = CL;
   // ratusz: najwyższe punkty to wieża — dostaje hełm z zegarami (M.townhall)
   let hTop = 0;
@@ -484,8 +493,9 @@ export function decorate(city) {
         for (const v of g.vAt(x + i * 16, z + j * 16)) if (TY[v] === T_BLD && !(g.ARCH[v] === 2)) d = Math.min(d, Math.hypot(X[v] - x, Z[v] - z));
     return d - 3.0;
   };
+  const hwBridge = city.routes.highway.bridge;
   const onRoute = (p, r) => polyDist(city.routes.rail, p[0], p[1]) < r + 3.2 || polyDist(city.routes.highway, p[0], p[1]) < r + 6.8
-    || city.bridges.some((br) => onBridge(br, p[0], p[1], r + 1.5));
+    || city.bridges.some((br) => onBridge(br, p[0], p[1], r + 1.5)) || (hwBridge && onBridge(hwBridge, p[0], p[1], r + 2));
   const dry = (p) => T.river(p[0], p[1]).d > T.hw + 2 && T.height(p[0], p[1]) > T.seaY + 0.3;
   const fits = (p, r, { roadGap = 0.5, tall = false, air = 0 } = {}) =>
     roads.clearance(p[0], p[1]) >= r + roadGap && bldDist(p[0], p[1]) >= r + (tall ? 0.5 : 0.15) && dry(p) && !onRoute(p, r) && !conflict(p, r, air, tall);

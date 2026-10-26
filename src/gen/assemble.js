@@ -535,7 +535,7 @@ export function buildRiver(city) {
     const hw = br.width / 2, Hb = T.bankY - yb;
     for (const sg of bridgeSegments(br)) {
       const pts = [[sg.a[0] - br.perp[0] * hw, sg.a[1] - br.perp[1] * hw], [sg.c[0] - br.perp[0] * hw, sg.c[1] - br.perp[1] * hw], [sg.a[0] + br.perp[0] * hw, sg.a[1] + br.perp[1] * hw], [sg.c[0] + br.perp[0] * hw, sg.c[1] + br.perp[1] * hw]];
-      place(b, 'bridgeseg', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), SEG, Hb, br.width, { solid: sg.solid, first: sg.first, last: sg.last, sw: br.rail ? undefined : (br.width - 2 * 4.2) / 2, rail: br.rail });
+      place(b, 'bridgeseg', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), SEG, Hb, br.width, { solid: sg.solid, first: sg.first, last: sg.last, sw: (br.width - 2 * (br.highway ? 5.5 : 3.5)) / 2, rail: br.rail });
     }
     // latarnie po obu stronach, na styku segmentów (co 2 segmenty od środka)
     if (!br.rail) for (const k of [-2, 2]) for (const sd of [-1, 1]) {

@@ -538,10 +538,9 @@ Object.assign(M, {
       }
       return;
     }
-    // nawierzchnia: pod jezdnią kamienny pokład (sama jezdnia to wstęga ulicy z buildRoad, więc
-    // na moście i przed nim jest ta sama nawierzchnia), po bokach chodniki z krawężnikiem
+    // nawierzchnia: jezdnia z brukiem, po bokach chodniki z krawężnikiem
     const sw = p.sw ?? Math.min(2.5, D * 0.22), pw = 0.45;
-    b.gridY('stone', H, 0, sw, W, D - sw, 2, Math.max(1, Math.round((D - 2 * sw) / 2.5)), { flat: 1, tint: [0.5, 0.48, 0.45] });
+    b.gridY('cobble', H, 0, sw, W, D - sw, 2, Math.max(1, Math.round((D - 2 * sw) / 2.5)), { flat: 1 });
     for (const [za, zb, fz] of [[pw, sw, 1], [D - sw, D - pw, -1]]) {
       b.rectY('slab', H + 0.15, 0, za, W, zb, 1, { flat: 1 });
       const zc = fz > 0 ? zb : za;
