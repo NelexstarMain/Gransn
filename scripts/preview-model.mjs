@@ -40,7 +40,31 @@ const LOADERS = {
     const { Rng } = await import('../src/core/rng.js');
     const geo = rig.buildPartGeometries({ cloth: {} });
     for (const g of rig.previewFigure(Number(opt.seed) || 1, opt.pose || 'stand', Rng, geo)) parts.push(g);
-    focus = [0, opt.pose && opt.pose.includes('sit') ? 1.0 : 0.95, 0]; radius = 1.0;
+    focus = [0, opt.pose && opt.pose.includes('sit') ? 1.0 : (opt.fy ? Number(opt.fy) : 0.95), 0]; radius = 1.0;
+  },
+  // auto z kierowcą i pasażerem (sprawdzenie, czy ludzie pasują do siedzeń)
+  async carsit() {
+    await LOADERS.car();
+    const rig = await import('../src/game/rig.js');
+    const { Rng } = await import('../src/core/rng.js');
+    const { carAnchors } = await import('../src/gen/vehicles.js');
+    const a = carAnchors(opt.kind || 'taxi'), geo = rig.buildPartGeometries({ cloth: {} });
+    for (const [who, seed] of [['driver', 11], ['rider', 4]]) {
+      const [x, y, z] = a[who];
+      for (const g of rig.previewFigure(seed, 'm-sit', Rng, geo, { x, y: y - 0.12, z, yaw: 0, lap: who === 'rider' ? 1 : 0 })) parts.push(g);
+    }
+  },
+  // rząd losowych przechodniów (ocena różnorodności strojów, fryzur, nakryć głowy)
+  async crowd() {
+    const rig = await import('../src/game/rig.js');
+    const { Rng } = await import('../src/core/rng.js');
+    const geo = rig.buildPartGeometries({ cloth: {} });
+    const n = Number(opt.n) || 8, seed0 = Number(opt.seed) || 1;
+    for (let i = 0; i < n; i++) {
+      const mode = i % 3 === 0 ? 'walk' : i % 3 === 1 ? 'stand' : 'walk';
+      for (const g of rig.previewFigure(seed0 + i, mode, Rng, geo, { x: 0, z: (i - (n - 1) / 2) * 0.95, y: 0, yaw: 0 })) parts.push(g);
+    }
+    focus = [0, 0.95, 0]; radius = Math.max(1.2, n * 0.5);
   },
   async rifle() {
     const m = await import('../src/gen/weapons.js');

@@ -156,8 +156,11 @@ export function pose(h, emit) {
     let swing = (s > 0 ? sph : -sph) * aSw;
     let elbow = 0.18 + 0.32 * Math.min(gait, 2) * 0.5 + Math.max(0, swing) * 0.5;
     let spread = 0.07 + 0.04 * Math.sin(t * 1.3 + s) * (1 - Math.min(1, gait));
-    swing = lerp(swing, 1.0 + (h.steer || 0) * s * 0.12, sit);
-    elbow = lerp(elbow, 0.85, sit);
+    // siedzi: kierowca trzyma kierownicę, pasażer (lap) opiera dłonie na kolanach
+    const lap = h.lap || 0;
+    swing = lerp(swing, lerp(1.0 + (h.steer || 0) * s * 0.12, 0.38, lap), sit);
+    elbow = lerp(elbow, lerp(0.85, 1.15, lap), sit);
+    spread = lerp(spread, lerp(spread, 0.12, lap), sit);
     if (s > 0 && wave > 0) {
       swing = lerp(swing, 2.55, wave);
       spread = lerp(spread, 0.25, wave);
@@ -188,6 +191,7 @@ export function pose(h, emit) {
     const Th = joint(M_[5], ROOT, 0, pelvisY, s * DIM.hipZ, -s * spreadL, 0, hip);
     // przy siedzeniu miednica jest niżej niż stojąc, a tułów ją niesie — nogi zaczynają od miednicy
     emit('thigh', Th, st);
+    if (st.torso === 'coat') emit('coatFlap', Th, st);
     const Sh = joint(M_[6], Th, 0, -DIM.thigh, 0, 0, 0, knee);
     emit('shin', Sh, st);
     const Sf = joint(M_[7], Sh, 0, -DIM.shin, 0, 0, 0, ankle);
@@ -196,13 +200,13 @@ export function pose(h, emit) {
 }
 
 // podgląd w Node: pozowana figura jako zestaw siatek (kolory instancji wpieczone w wierzchołki)
-export function previewFigure(seed, mode = 'stand', Rng, parts) {
+export function previewFigure(seed, mode = 'stand', Rng, parts, place = {}) {
   const r = new Rng(seed);
   const st = makeStyle(r, { female: mode.includes('f') ? true : mode.includes('m') ? false : undefined });
-  const h = { x: 0, y: 0, z: 0, yaw: 0, speed: 0, phase: 0.6, t: 0.3, sit: 0, wave: 0, fall: 0, fallDx: 1, fallDz: 0, look: 0, steer: 0, id: 1, style: st };
+  const h = { x: place.x ?? 0, y: place.y ?? 0, z: place.z ?? 0, yaw: place.yaw ?? 0, speed: 0, phase: 0.6, t: 0.3, sit: 0, wave: 0, fall: 0, fallDx: 1, fallDz: 0, look: 0, steer: 0, id: 1, lap: place.lap || 0, style: st };
   if (mode.includes('walk')) { h.speed = 1.4; }
   if (mode.includes('run')) { h.speed = 4.2; h.phase = 0.9; }
-  if (mode.includes('sit')) { h.sit = 1; h.y = 0.7; }
+  if (mode.includes('sit')) { h.sit = 1; if (place.y === undefined) h.y = 0.7; }
   if (mode.includes('wave')) h.wave = 1;
   if (mode.includes('fall')) h.fall = 1;
   const out = [];

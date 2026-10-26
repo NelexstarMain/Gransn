@@ -111,24 +111,29 @@ export function makeQuadGrid(seed, half, s = 10.5) {
   // relaksacja do kwadratów
   const N = px.length, Q = quads.length / 4;
   const ax = new Float64Array(N), az = new Float64Array(N), cnt = new Float64Array(N);
+  const v = new Int32Array(4); // bufor wielokrotnego użytku (wcześniej: nowa tablica i destrukturyzacja na każdy czworokąt)
   for (let it = 0; it < 6; it++) {
     ax.fill(0); az.fill(0); cnt.fill(0);
     for (let q = 0; q < Q; q++) {
-      const v = [quads[q * 4], quads[q * 4 + 1], quads[q * 4 + 2], quads[q * 4 + 3]];
+      v[0] = quads[q * 4]; v[1] = quads[q * 4 + 1]; v[2] = quads[q * 4 + 2]; v[3] = quads[q * 4 + 3];
       let cx = 0, cz = 0;
-      for (const i of v) { cx += px[i] / 4; cz += pz[i] / 4; }
+      for (let k = 0; k < 4; k++) { cx += px[v[k]] / 4; cz += pz[v[k]] / 4; }
       let sx = 0, sz = 0;
       for (let i = 0; i < 4; i++) {
-        let dx = px[v[i]] - cx, dz = pz[v[i]] - cz;
-        for (let k = 0; k < i; k++) [dx, dz] = [dz, -dx]; // obrót o -90°
-        sx += dx / 4; sz += dz / 4;
+        const dx = px[v[i]] - cx, dz = pz[v[i]] - cz;
+        // obrót o -90° (i razy)
+        const rx = i === 0 ? dx : i === 1 ? dz : i === 2 ? -dx : -dz;
+        const rz = i === 0 ? dz : i === 1 ? -dx : i === 2 ? -dz : dx;
+        sx += rx / 4; sz += rz / 4;
       }
       for (let i = 0; i < 4; i++) {
-        let tx = sx, tz = sz;
-        for (let k = 0; k < i; k++) [tx, tz] = [-tz, tx]; // obrót o +90°
-        ax[v[i]] += cx + tx - px[v[i]];
-        az[v[i]] += cz + tz - pz[v[i]];
-        cnt[v[i]]++;
+        // obrót o +90° (i razy)
+        const tx = i === 0 ? sx : i === 1 ? -sz : i === 2 ? -sx : sz;
+        const tz = i === 0 ? sz : i === 1 ? sx : i === 2 ? -sz : -sx;
+        const w = v[i];
+        ax[w] += cx + tx - px[w];
+        az[w] += cz + tz - pz[w];
+        cnt[w]++;
       }
     }
     for (let i = 0; i < N; i++) if (!fixed[i] && cnt[i]) { px[i] += (ax[i] / cnt[i]) * 0.42; pz[i] += (az[i] / cnt[i]) * 0.42; }

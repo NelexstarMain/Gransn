@@ -158,5 +158,19 @@ console.log({ potracenia: peds.stats.downed - d1 });
 
 // 5) każdy typ auta buduje się i ma kotwice
 for (const k of Object.keys(kit.kinds)) { const a = kit.anchors(k); const parts = kit.body(k, 1); if (!a.driver || !parts.length) { console.log('BŁĄD typ', k); nan++; } }
+// ile wywołań rysowania dokładają dynamiczne obiekty (instancje z count > 0 + siatki pojazdu gracza)
+{
+  let inst = 0, single = 0, tris = 0, shadowCasters = 0;
+  scene.traverse((o) => {
+    if (!o.visible || !o.geometry) return;
+    const n = o.isInstancedMesh ? o.count : 1;
+    if (o.isInstancedMesh && o.count === 0) return;
+    const tri = (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+    if (o.isInstancedMesh) inst++; else if (o.isMesh) single++;
+    tris += tri * n;
+    if (o.castShadow) shadowCasters++;
+  });
+  console.log({ wywolaniaInstancji: inst, siatkiPojedyncze: single, trojkatowDynamicznych: Math.round(tris), rzucajaCien: shadowCasters });
+}
 console.log({ klatek: frames, nan, ludzie: crowd.count, boty: traffic.bots.length, piesi: peds.walkers.length, ms: Math.round(performance.now() - t0) });
 if (nan) process.exit(1);

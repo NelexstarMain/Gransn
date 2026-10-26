@@ -469,36 +469,37 @@ function vanBody(b, S) {
 }
 
 function truckBody(b, S) {
-  const { L, zc, q } = S, xc = S.cowl, c = S.color;
-  // kabina otwarta z daszkiem
+  const { zc, q } = S, xc = S.cowl, c = S.color;
+  // kabina otwarta z daszkiem — ZA przegrodą (przód auta to +x), skrzynia ładunkowa jeszcze dalej do tyłu
+  const cx0 = xc - 0.95;
   lofted(b, 'body', [
+    { x: cx0, zc, y0: 0.55, y1: 1.15, hw: 0.78, e: 4 },
     { x: xc, zc, y0: 0.55, y1: 1.15, hw: 0.78, e: 4 },
-    { x: xc + 0.75, zc, y0: 0.55, y1: 1.15, hw: 0.78, e: 4 },
   ], c, 10);
-  b.box('paint', xc + 0.45, 1.15, zc - 0.7, xc + 0.7, 1.7, zc + 0.7, 'xXyYzZ', { tint: [0.28, 0.17, 0.1] }); // oparcie
-  rbox(b, 'paint', xc + 0.1, 1.15, zc - 0.7, xc + 0.5, 1.3, zc + 0.7, S.seat || LEATHER, 3.2, 8);
-  for (const [x, z] of [[xc + 0.05, -0.74], [xc + 0.05, 0.74], [xc + 0.78, -0.74], [xc + 0.78, 0.74]]) b.tube('metal', [x, 1.15, zc + z], [x, 2.0, zc + z], 0.022, 0.022, 6, { tint: DARK });
+  rbox(b, 'paint', xc - 0.66, 1.15, zc - 0.7, xc - 0.24, 1.3, zc + 0.7, S.seat || LEATHER, 3.2, 8);
+  rboxZ(b, 'paint', xc - 0.82, 1.2, zc - 0.7, xc - 0.66, 1.72, zc + 0.7, S.seat || LEATHER, 3.2, 8);
+  for (const [x, z] of [[xc + 0.03, -0.74], [xc + 0.03, 0.74], [cx0 + 0.04, -0.74], [cx0 + 0.04, 0.74]]) b.tube('metal', [x, 1.15, zc + z], [x, 2.0, zc + z], 0.022, 0.022, 6, { tint: DARK });
   lofted(b, 'paint', [
-    { x: xc - 0.1, zc, y0: 1.96, y1: 2.04, hw: 0.84, e: 3 },
-    { x: xc + 0.4, zc, y0: 1.98, y1: 2.12, hw: 0.88, e: 2.8 },
-    { x: xc + 0.9, zc, y0: 1.96, y1: 2.04, hw: 0.84, e: 3 },
+    { x: cx0 - 0.08, zc, y0: 1.96, y1: 2.04, hw: 0.84, e: 3 },
+    { x: (cx0 + xc) / 2, zc, y0: 1.98, y1: 2.12, hw: 0.88, e: 2.8 },
+    { x: xc + 0.1, zc, y0: 1.96, y1: 2.04, hw: 0.84, e: 3 },
   ], [0.12, 0.11, 0.1], 10);
-  windscreen(b, S, xc + 0.04, 1.15, 1.9, 0.64, 0.06);
-  steering(b, S, xc + 0.38, -1);
+  windscreen(b, S, xc + 0.05, 1.15, 1.9, 0.64, 0.06);
+  steering(b, S, xc - 0.2, -1);
   // skrzynia ładunkowa: podłoga, burty z desek, ładunek
-  const bx0 = 0.06, bx1 = xc - 0.08, fy = 0.72;
+  const bx0 = 0.06, bx1 = cx0 - 0.06, fy = 0.72;
   b.box('wood', bx0, fy - 0.08, zc - 0.88, bx1, fy, zc + 0.88, 'xXyYzZ', { tint: [0.34, 0.24, 0.15] });
   for (const s of [-1, 1]) {
     for (let k = 0; k < 3; k++) b.box('wood', bx0, fy + 0.02 + k * 0.17, zc + s * 0.86 - 0.02, bx1, fy + 0.17 + k * 0.17, zc + s * 0.86 + 0.02, 'xXyYzZ', { tint: [0.4 + k * 0.01, 0.28, 0.17] });
   }
   b.box('wood', bx0, fy + 0.02, zc - 0.88, bx0 + 0.04, fy + 0.52, zc + 0.88, 'xXyYzZ', { tint: [0.36, 0.25, 0.15] });
   b.box('wood', bx1 - 0.04, fy + 0.02, zc - 0.88, bx1, fy + 0.52, zc + 0.88, 'xXyYzZ', { tint: [0.36, 0.25, 0.15] });
-  const cargo = S.cargo || 0;
+  const cargo = S.cargo || 0, len = bx1 - bx0;
   if (cargo === 0) {
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) rbox(b, 'wood', bx0 + 0.15 + i * 0.52, fy + 0.0, zc - 0.7 + j * 0.72, bx0 + 0.62 + i * 0.52, fy + 0.46 + ((i + j) % 2) * 0.1, zc - 0.05 + j * 0.72, [0.5 + i * 0.03, 0.38, 0.22], 6, 6);
+    const n = Math.max(2, Math.floor((len - 0.3) / 0.52));
+    for (let i = 0; i < n; i++) for (let j = 0; j < 2; j++) rbox(b, 'wood', bx0 + 0.15 + i * 0.52, fy + 0.0, zc - 0.7 + j * 0.72, bx0 + 0.62 + i * 0.52, fy + 0.46 + ((i + j) % 2) * 0.1, zc - 0.05 + j * 0.72, [0.5 + i * 0.03, 0.38, 0.22], 6, 6);
   } else {
-    for (let i = 0; i < 2; i++) b.cyl('wood', bx0 + 0.45 + i * 0.75, zc - 0.35 + (i ? 0.7 : 0), fy, fy + 0.8, 0.3, 0.3, q ? 12 : 8, { tint: [0.45, 0.32, 0.18] }, 'Y');
-    for (let i = 0; i < 2; i++) b.cyl('wood', bx0 + 0.45 + i * 0.75, zc + 0.35 - (i ? 0.7 : 0), fy, fy + 0.8, 0.3, 0.3, q ? 12 : 8, { tint: [0.4, 0.28, 0.16] }, 'Y');
+    for (let i = 0; i < 2; i++) for (const zz of [-0.35, 0.35]) b.cyl('wood', bx0 + 0.45 + i * 0.75, zc + zz, fy, fy + 0.8, 0.3, 0.3, q ? 12 : 8, { tint: [0.45 - i * 0.04, 0.32, 0.18] }, 'Y');
   }
 }
 
@@ -534,7 +535,7 @@ export const PARKED_KINDS = ['tourer', 'sedan', 'roadster', 'taxi'];
 export function carAnchors(kind) {
   const K = CAR_KINDS[kind] || CAR_KINDS.tourer, cowl = K.L - K.hood - 0.25;
   const x = (v) => v - K.L / 2, z = (v) => v - K.Wd / 2;
-  const driverX = kind === 'van' ? cowl + 0.5 : kind === 'truck' ? cowl + 0.3 : kind === 'sedan' ? cowl - 0.35 : cowl - 0.37;
+  const driverX = kind === 'van' ? cowl + 0.5 : kind === 'truck' ? cowl - 0.45 : kind === 'sedan' ? cowl - 0.35 : cowl - 0.37;
   const seatY = kind === 'truck' ? 1.3 : kind === 'van' ? 0.95 : 0.84;
   return {
     driver: [x(driverX), seatY, z(K.Wd / 2 - 0.3)],

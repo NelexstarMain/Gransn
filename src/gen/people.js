@@ -49,11 +49,17 @@ export const PEOPLE_PARTS = {
     vloft(b, [[-0.14, 0, 0.108, 0.168], [-0.07, 0, 0.11, 0.172], ...bodiceSecs().slice(0)], WHITE, 14);
     buttons(b, [0.08, 0.2, 0.32]);
   },
+  // płaszcz: korpus do bioder + dwie poły (coatFlap) przypięte do bioder, wahają się razem z udami
   coat(b) {
-    vloft(b, [[-0.68, 0, 0.17, 0.255], [-0.45, 0, 0.145, 0.225], [-0.2, 0, 0.12, 0.19], [-0.06, 0, 0.112, 0.176], ...bodiceSecs()], WHITE, 14);
+    vloft(b, [[-0.17, 0, 0.12, 0.185], [-0.06, 0, 0.112, 0.176], ...bodiceSecs()], WHITE, 14);
     buttons(b, [0.0, 0.12, 0.24, 0.36]);
     // kołnierz płaszcza
     vloft(b, [[0.5, 0.0, 0.082, 0.1], [0.58, 0.0, 0.075, 0.085]], [0.82, 0.82, 0.82], 10, false);
+  },
+  // połą płaszcza: rura wokół uda od biodra do połowy łydki (początek = staw biodrowy)
+  coatFlap(b) {
+    vloft(b, [[0.06, 0, 0.1, 0.094], [-0.05, 0, 0.115, 0.108], [-0.3, 0, 0.128, 0.118], [-0.62, 0, 0.145, 0.13]], WHITE, 10, false);
+    vloft(b, [[-0.58, 0, 0.147, 0.132], [-0.62, 0, 0.147, 0.132]], [0.7, 0.7, 0.7], 10, false);
   },
   dress(b) {
     // stanik + dzwonowa spódnica do kostek, pas i rąbek ciemniejsze
@@ -81,7 +87,7 @@ export const PEOPLE_PARTS = {
     vloft(b, [
       [0.085, 0.018, 0.06, 0.055], [0.12, 0.015, 0.088, 0.077], [0.17, 0.008, 0.106, 0.09],
       [0.23, 0.0, 0.11, 0.092], [0.285, -0.005, 0.099, 0.081], [0.325, -0.008, 0.066, 0.056], [0.345, -0.008, 0.03, 0.026],
-    ], WHITE, 14, true);
+    ], WHITE, 12, true);
     rbox(b, 'cloth', 0.1, 0.152, -0.016, 0.138, 0.205, 0.016, [0.96, 0.9, 0.88], 3, 6); // nos
     for (const s of [-1, 1]) {
       b.box('cloth', -0.02, 0.165, s * 0.09 - 0.007, 0.03, 0.215, s * 0.09 + 0.007, 'xXyYzZ', { tint: [0.95, 0.9, 0.88] }); // ucho
@@ -130,22 +136,22 @@ export const PEOPLE_PARTS = {
 
   // ── kończyny ──
   upperArm(b) {
-    vloft(b, [[0.035, 0, 0.034, 0.033], [0.0, 0, 0.05, 0.048], [-0.1, 0, 0.048, 0.046], [-0.22, 0, 0.041, 0.04], [-0.3, 0, 0.037, 0.036]], WHITE, 9, true);
+    vloft(b, [[0.035, 0, 0.034, 0.033], [0.0, 0, 0.05, 0.048], [-0.1, 0, 0.048, 0.046], [-0.22, 0, 0.041, 0.04], [-0.3, 0, 0.037, 0.036]], WHITE, 7, true);
   },
   foreArm(b) {
-    vloft(b, [[0.0, 0, 0.038, 0.036], [-0.14, 0, 0.034, 0.031], [-0.27, 0, 0.03, 0.027]], WHITE, 9, true);
-    vloft(b, [[-0.24, 0, 0.032, 0.03], [-0.27, 0, 0.032, 0.03]], [0.9, 0.9, 0.9], 9, false);
+    vloft(b, [[0.0, 0, 0.038, 0.036], [-0.14, 0, 0.034, 0.031], [-0.27, 0, 0.03, 0.027]], WHITE, 7, true);
+    vloft(b, [[-0.24, 0, 0.032, 0.03], [-0.27, 0, 0.032, 0.03]], [0.9, 0.9, 0.9], 7, false);
   },
   hand(b) {
-    vloft(b, [[0.0, 0, 0.022, 0.028], [-0.03, 0, 0.02, 0.036], [-0.075, 0, 0.017, 0.03], [-0.095, 0, 0.008, 0.012]], WHITE, 8, true);
+    vloft(b, [[0.0, 0, 0.022, 0.028], [-0.03, 0, 0.02, 0.036], [-0.075, 0, 0.017, 0.03], [-0.095, 0, 0.008, 0.012]], WHITE, 6, true);
     rbox(b, 'cloth', 0.012, -0.065, -0.004, 0.034, -0.012, 0.01, WHITE, 3, 6);
   },
   thigh(b) {
-    vloft(b, [[0.03, 0, 0.06, 0.056], [-0.02, 0, 0.076, 0.068], [-0.2, 0, 0.068, 0.062], [-0.46, 0, 0.054, 0.05]], WHITE, 10, true);
+    vloft(b, [[0.03, 0, 0.06, 0.056], [-0.02, 0, 0.076, 0.068], [-0.2, 0, 0.068, 0.062], [-0.46, 0, 0.054, 0.05]], WHITE, 8, true);
   },
   shin(b) {
-    vloft(b, [[0.0, 0, 0.058, 0.055], [-0.12, -0.008, 0.058, 0.054], [-0.3, -0.004, 0.046, 0.044], [-0.44, 0, 0.04, 0.038]], WHITE, 9, true);
-    vloft(b, [[-0.4, 0, 0.044, 0.042], [-0.44, 0, 0.044, 0.042]], [0.85, 0.85, 0.85], 9, false);
+    vloft(b, [[0.0, 0, 0.058, 0.055], [-0.12, -0.008, 0.058, 0.054], [-0.3, -0.004, 0.046, 0.044], [-0.44, 0, 0.04, 0.038]], WHITE, 7, true);
+    vloft(b, [[-0.4, 0, 0.044, 0.042], [-0.44, 0, 0.044, 0.042]], [0.85, 0.85, 0.85], 7, false);
   },
   shoe(b) {
     const col = [0.1, 0.065, 0.045];
@@ -153,7 +159,7 @@ export const PEOPLE_PARTS = {
       [-0.085, 0.045, -0.085, 0.03], [-0.05, 0.05, -0.085, 0.043], [0.04, 0.052, -0.088, 0.02], [0.14, 0.047, -0.088, -0.012], [0.215, 0.028, -0.086, -0.045],
     ].map(([x, hw, y0, y1]) => {
       const pts = [];
-      for (let i = 0; i < 8; i++) { const t = (i / 8) * TAU; pts.push([x, (y0 + y1) / 2 + ((y1 - y0) / 2) * sp(Math.sin(t), 0.55), hw * sp(Math.cos(t), 0.5)]); }
+      for (let i = 0; i < 6; i++) { const t = (i / 6) * TAU; pts.push([x, (y0 + y1) / 2 + ((y1 - y0) / 2) * sp(Math.sin(t), 0.55), hw * sp(Math.cos(t), 0.5)]); }
       return pts;
     });
     skin(b, 'cloth', rings, { tint: col, caps: true });
@@ -163,6 +169,6 @@ export const PEOPLE_PARTS = {
 
 // które części dostają kolor skóry, ubioru, włosów — używa renderer (instanceColor)
 export const PART_TINT = {
-  jacket: 'coat', coat: 'coat', dress: 'coat', shirt: 'shirt', scarf: 'accent', head: 'skin', hairShort: 'hair', hairStache: 'hair', hairLong: 'hair', hairBun: 'hair',
+  jacket: 'coat', coat: 'coat', coatFlap: 'coat', dress: 'coat', shirt: 'shirt', scarf: 'accent', head: 'skin', hairShort: 'hair', hairStache: 'hair', hairLong: 'hair', hairBun: 'hair',
   hatTop: 'hat', hatBowler: 'hat', hatCap: 'hat', hatBonnet: 'hat', upperArm: 'coat', foreArm: 'coat', hand: 'skin', thigh: 'pants', shin: 'pants', shoe: null,
 };

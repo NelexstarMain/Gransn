@@ -171,7 +171,7 @@ export class TaxiJob {
     // wsiadł: siedzi
     this.boarding = null;
     this.rider = w;
-    h.sitT = 1; h.speed = 0;
+    h.sitT = 1; h.lap = 1; h.speed = 0;
     const pr = this.rng;
     const dest = this.pickStand([car.pos.x, car.pos.z], 250, 900), cp = [car.pos.x, car.pos.z];
     const dd = Math.hypot(dest[0] - cp[0], dest[1] - cp[1]);
@@ -189,7 +189,7 @@ export class TaxiJob {
     car.mesh.updateMatrixWorld(true);
     this.v.set(car.anchors.rider[0] + 0.2, 0, K.Wd / 2 + 1.0).applyMatrix4(car.mesh.matrixWorld);
     h.x = this.v.x; h.z = this.v.z; h.y = this.grid.height(h.x, h.z);
-    h.sitT = 0; h.sit = 0.6; h.waveT = 0; h.yaw = car.heading + Math.PI / 2;
+    h.sitT = 0; h.sit = 0.6; h.lap = 0; h.waveT = 0; h.yaw = car.heading + Math.PI / 2;
     if (!this.peds || !this.peds.adopt(h, h.x, h.z)) this.crowd.remove(h);
   }
 }

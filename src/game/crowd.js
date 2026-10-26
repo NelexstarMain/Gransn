@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { buildPartGeometries, makeStyle, pose } from './rig.js';
 import { Rng } from '../core/rng.js';
 
-const PAIRS = new Set(['upperArm', 'foreArm', 'hand', 'thigh', 'shin', 'shoe']); // po dwie na osobę
+const PAIRS = new Set(['upperArm', 'foreArm', 'hand', 'thigh', 'shin', 'shoe', 'coatFlap']); // po dwie na osobę
 
 export class Crowd {
   constructor(scene, M, max = 150, drawR = 170) {
