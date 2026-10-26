@@ -40,6 +40,8 @@ const key = (code, down = true) => fire(L, down ? 'keydown' : 'keyup', { code })
 const frames = async (n) => { for (let i = 0; i < n; i++) { G.frame(); if (i % 30 === 0) await sleep(0); } };
 fire(L, 'keydown', { code: 'Enter' });
 await frames(5);
+// przechwycenie myszy (Pointer Lock) — bez niego LPM tylko rozgląda się, a strzela X
+document.pointerLockElement = G.renderer.domElement; fire(DL, 'pointerlockchange');
 // jazda
 key('KeyW'); await frames(120); key('KeyD'); await frames(40); key('KeyD', false); key('KeyQ'); await frames(20); key('KeyQ', false);
 console.log({ jazda: true, kmh: Math.round(G.car.kmh), pozycja: [Math.round(G.car.pos.x), Math.round(G.car.pos.z)], boty: G.traffic.bots.length, ludzie: G.crowd.count });
@@ -52,7 +54,8 @@ console.log({ pieszo: !G.car.active, bron: G.weapon.active });
 const ammo0 = G.weapon.ammo;
 fire(L, 'mousedown', { button: 0 }); await frames(5); fire(L, 'mouseup', { button: 0 });
 await frames(80);
-console.log({ strzal: ammo0 - G.weapon.ammo });
+console.log({ strzalLPM: ammo0 - G.weapon.ammo });
+G.weapon.state = 'ready'; const a1 = G.weapon.ammo; key('KeyX'); await frames(3); console.log({ strzalX: a1 - G.weapon.ammo });
 fire(L, 'mousedown', { button: 2 }); await frames(30); fire(L, 'mouseup', { button: 2 });
 key('KeyR'); await frames(100);
 console.log({ ammo: G.weapon.ammo, rezerwa: G.weapon.reserve });

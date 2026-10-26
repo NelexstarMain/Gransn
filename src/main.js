@@ -140,6 +140,21 @@ async function start() {
   const me = crowd.add(meStyle, { sit: 1, sitT: 1 });
   document.body.classList.add('ready');
 
+  // piechur nie przechodzi przez zaparkowaną taksówkę ani przez auta-boty: wypychamy go z ich obrysu
+  const pushOut = (pos, x, z, h, len, wid, r) => {
+    const dx = pos.x - x, dz = pos.z - z, ch = Math.cos(h), sh = Math.sin(h);
+    const al = dx * ch + dz * sh, la = -dx * sh + dz * ch, hl = len / 2 + r, hw = wid / 2 + r;
+    if (Math.abs(al) >= hl || Math.abs(la) >= hw) return;
+    // wyjście najkrótszą drogą (wzdłuż lub w poprzek)
+    let nal = al, nla = la;
+    if (hl - Math.abs(al) < hw - Math.abs(la)) nal = Math.sign(al || 1) * hl; else nla = Math.sign(la || 1) * hw;
+    pos.x = x + nal * ch - nla * sh;
+    pos.z = z + nal * sh + nla * ch;
+  };
+  player.resolve = (pos) => {
+    if (!car.active) pushOut(pos, car.pos.x, car.pos.z, car.heading, car.L, car.W, 0.32);
+    for (const b of traffic.near(pos.x, pos.z, 4)) pushOut(pos, b.x, b.z, b.h, b.len, 1.8, 0.32);
+  };
   player.onStep = (run, crouch) => sound.step(run, crouch);
   player.onJump = () => sound.step(true, false);
   player.onLand = (v) => sound.thud(v * 0.35);
@@ -211,12 +226,14 @@ async function start() {
     if (!playing || e.repeat) return;
     if (e.code === 'KeyE') toggleCar();
     else if (e.code === 'KeyR' && !car.active) weapon.startReload();
-    else if (e.code === 'KeyX' && !car.active) weapon.press(0); // zapasowy spust (bez myszy)
+    else if (e.code === 'KeyX' && !car.active) weapon.press(0); // zapasowy spust (bez Pointer Lock)
+    else if (e.code === 'KeyZ' && !car.active) weapon.press(2);  // zapasowe celowanie
     else if (e.code === 'KeyQ' && car.active) sound.horn(true);
   });
-  addEventListener('keyup', (e) => { if (e.code === 'KeyQ') sound.horn(false); });
-  // mysz: LPM strzał, PPM celowanie (tylko pieszo)
-  addEventListener('mousedown', (e) => { if (playing && !car.active) weapon.press(e.button); });
+  addEventListener('keyup', (e) => { if (e.code === 'KeyQ') sound.horn(false); if (e.code === 'KeyZ') weapon.release(2); });
+  // mysz: LPM strzał, PPM celowanie (tylko pieszo, przy przechwyconym kursorze; w ramce bez Pointer Lock
+  // LPM służy do rozglądania się przeciąganiem, a strzela X i celuje Z)
+  addEventListener('mousedown', (e) => { if (playing && !car.active && player.locked) weapon.press(e.button); });
   addEventListener('mouseup', (e) => weapon.release(e.button));
   // przyciski dotykowe
   const bind = (id, down, up) => {
@@ -256,6 +273,7 @@ async function start() {
       camera.getWorldDirection(bodyV);
       const vl = Math.hypot(bodyV.x, bodyV.z) || 1;
       view.x = bodyV.x / vl; view.z = bodyV.z / vl;
+      traffic.foot = onFoot ? player.pos : null;
       traffic.update(dt, active, car);
       carCars.car = car;
       peds.update(dt, { x: active.x, z: active.z }, carCars, view);

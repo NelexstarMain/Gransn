@@ -169,6 +169,7 @@ export class Vehicle {
 
     this.vx += (aLong * fx + aLat * rx) * dt;
     this.vz += (aLong * fz + aLat * rz) * dt;
+    if (!this.active && Math.hypot(this.vx, this.vz) < 0.5) { this.vx = this.vz = 0; } // zaparkowane: stoi, nie spełza z górki
 
     // kierownica i obrót (model rowerowy): skręt maleje z prędkością
     this.steer += (st - this.steer) * Math.min(1, dt * (st === 0 ? 9 : 5.5));

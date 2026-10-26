@@ -32,6 +32,7 @@ export class Player {
     this.recoilP = 0; this.recoilY = 0;
     this.land = 0;         // chwilowe opuszczenie głowy po lądowaniu
     this.onStep = null; this.onJump = null; this.onLand = null;
+    this.resolve = null;   // (pos) → wypycha gracza z innych brył (auta); ustawia main
     this.lookT = 0;
     this._stepSign = 1;
 
@@ -181,6 +182,7 @@ export class Player {
         if (before < 0 && Math.sin(this.bob) >= 0 && this.onStep) this.onStep(this.sprinting, this.crouchT > 0.5);
       }
     }
+    if (this.resolve && !this.fly) this.resolve(this.pos);
     const lim = 660;
     this.pos.x = clamp(this.pos.x, -lim, lim);
     this.pos.z = clamp(this.pos.z, -lim, lim);

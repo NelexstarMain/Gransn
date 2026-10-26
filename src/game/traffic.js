@@ -154,6 +154,7 @@ export class Traffic {
     this.kit = kit;
     this.crowd = crowd;
     this.peds = null;
+    this.foot = null;      // gracz pieszo ({x, z}) — auta zatrzymują się przed nim jak przed pieszym
     this.nearBuf = [];
     if (!kit) return;
     // karoserie: po jednym InstancedMesh na typ i materiał; lakier (`body`) dostaje kolor z instanceColor
@@ -313,6 +314,10 @@ export class Traffic {
     if (this.peds) {
       const d = this.peds.ahead(b.x, b.z, fx, fz, 11, 1.7);
       if (d >= 0) target = Math.min(target, Math.max(0, (d - b.len / 2 - 1.6) * 1.2));
+    }
+    if (this.foot) {
+      const dx = this.foot.x - b.x, dz = this.foot.z - b.z, along = dx * fx + dz * fz;
+      if (along > 0.3 && along < 11 && Math.abs(-dx * fz + dz * fx) < 1.9) target = Math.min(target, Math.max(0, (along - b.len / 2 - 1.6) * 1.2));
     }
     if (b.bump > 0) { b.bump -= dt; target = Math.min(target, 0); }
     // 2) skrzyżowanie: pierwszeństwo ma ten, kto pierwszy je zajął
