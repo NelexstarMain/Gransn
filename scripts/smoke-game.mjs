@@ -31,7 +31,8 @@ const t0 = performance.now();
 const M = new Proxy({}, { get: (t, k) => (t[k] ??= new THREE.MeshStandardMaterial({ vertexColors: true })) });
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.1, 2000);
-const city = generateCity(1984), grid = new CollisionGrid(city);
+const SEED = Number(process.argv[2]) || 1984;
+const city = generateCity(SEED), grid = new CollisionGrid(city);
 const kit = new CarKit(M);
 const crowd = new Crowd(scene, M, 170, 170);
 const car = new Vehicle(scene, grid, M, kit, 'taxi');
@@ -72,7 +73,7 @@ const frame = (onFoot) => {
 
 // 1) jazda po najdłuższej prostej ulicy: gaz, slalom, ręczny (drift), hamowanie
 {
-  const st = [...city.streets].filter((q) => q.mat === 'asphalt' && !q.bridge).sort((a, b) => Math.hypot(b.b[0] - b.a[0], b.b[1] - b.a[1]) - Math.hypot(a.b[0] - a.a[0], a.b[1] - a.a[1]))[0];
+  const st = [...city.streets].filter((q) => !q.bridge).sort((a, b) => Math.hypot(b.b[0] - b.a[0], b.b[1] - b.a[1]) - Math.hypot(a.b[0] - a.a[0], a.b[1] - a.a[1]))[0];
   const l = Math.hypot(st.b[0] - st.a[0], st.b[1] - st.a[1]), ux = (st.b[0] - st.a[0]) / l, uz = (st.b[1] - st.a[1]) / l;
   car.place(st.a[0] + ux * 4, st.a[1] + uz * 4, Math.atan2(uz, ux));
   console.log('ulica', Math.round(l), 'm, rw', st.rw);

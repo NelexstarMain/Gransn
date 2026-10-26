@@ -28,7 +28,8 @@ export class Player {
     this.sprinting = false;
     this.aiming = false;   // ustawia broń
     this.speed = 0;        // prędkość pozioma
-    this.sens = 1;         // mnożnik czułości (celowanie ją zmniejsza)
+    this.sens = 1;         // mnożnik czułości z ustawień (Settings)
+    this.aimSens = 1;      // dodatkowy mnożnik przy celowaniu (ustawia broń)
     this.recoilP = 0; this.recoilY = 0;
     this.land = 0;         // chwilowe opuszczenie głowy po lądowaniu
     this.onStep = null; this.onJump = null; this.onLand = null;
@@ -46,8 +47,8 @@ export class Player {
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === dom; });
     const look = (dx, dy, k = 0.0022) => {
       this.lookT = performance.now();
-      this.yaw -= dx * k * this.sens;
-      this.pitch = clamp(this.pitch - dy * k * this.sens, -1.5, 1.5);
+      this.yaw -= dx * k * this.sens * this.aimSens;
+      this.pitch = clamp(this.pitch - dy * k * this.sens * this.aimSens, -1.5, 1.5);
     };
     let drag = false;
     dom.addEventListener('mousedown', (e) => { if (e.button === 0) drag = true; });

@@ -13,7 +13,6 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const MAG = 5, RESERVE = 55, RANGE = 380;
 const CYCLE = 1.0, RELOAD = 2.5;
-const BASE_FOV = 72;
 
 export class Weapon {
   constructor(scene, camera, M) {
@@ -255,8 +254,8 @@ export class Weapon {
     this.aim += (target - this.aim) * Math.min(1, dt * 11);
     this.sprintT += ((player.sprinting ? 1 : 0) - this.sprintT) * Math.min(1, dt * 8);
     player.aiming = this.aim > 0.5;
-    player.sens = 1 - 0.55 * this.aim;
-    const fov = BASE_FOV - 24 * this.aim + (player.sprinting ? 3 : 0);
+    player.aimSens = 1 - 0.55 * this.aim; // czułość z ustawień (player.sens) zostaje; celowanie ją tylko zmniejsza
+    const fov = (this.camera.userData.baseFov ?? 72) * (1 - 0.33 * this.aim) + (player.sprinting ? 3 : 0);
     if (Math.abs(this.camera.fov - fov) > 0.05) { this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 9); this.camera.updateProjectionMatrix(); }
     const move = Math.min(1, player.speed / 4.3);
     this.spread = lerp(0.016, 0.0012, this.aim) * (1 - 0.35 * player.crouchT) + move * lerp(0.016, 0.004, this.aim) + (player.onGround ? 0 : 0.03);

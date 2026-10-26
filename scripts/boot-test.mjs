@@ -12,15 +12,18 @@ const gradient = () => ({ addColorStop: noop });
 const ctx = new Proxy({}, { get: (t, k) => (k === 'createRadialGradient' || k === 'createLinearGradient' ? gradient : k === 'measureText' ? () => ({ width: 100 }) : k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : t[k] ?? noop), set: (t, k, v) => { t[k] = v; return true; } });
 let errors = 0;
 const el = (id = '') => {
-  const o = { id, style: {}, width: 0, height: 0, textContent: '', innerHTML: '', addEventListener: noop, appendChild: noop, requestPointerLock: noop, getContext: () => ctx, setAttribute: noop,
-    classList: { add: (c) => { if (c === 'error') errors++; }, remove: noop, toggle: noop } };
+  const o = { id, style: {}, width: 0, height: 0, textContent: '', innerHTML: '', dataset: {}, value: '', addEventListener: noop, appendChild: noop, requestPointerLock: noop, getContext: () => ctx, setAttribute: noop,
+    // panel ustawień: querySelectorAll('[data-k]') zwraca elementy wyczytane z innerHTML
+    querySelectorAll(sel) { return sel === '[data-k]' ? [...String(this.innerHTML).matchAll(/data-k="(\w+)"/g)].map((m) => Object.assign(el(), { dataset: { k: m[1] } })) : []; },
+    querySelector: () => el(),
+    classList: { add: (c) => { if (c === 'error') errors++; }, remove: noop, toggle: noop, contains: () => false } };
   return o;
 };
 const els = new Map();
-globalThis.document = { createElement: () => el(), getElementById: (id) => { if (!els.has(id)) els.set(id, el(id)); return els.get(id); }, addEventListener: addTo(DL), pointerLockElement: null, body: el('body') };
+globalThis.document = { createElement: () => el(), getElementById: (id) => { if (!els.has(id)) els.set(id, el(id)); return els.get(id); }, addEventListener: addTo(DL), pointerLockElement: null, exitPointerLock: noop, body: el('body'), head: el('head'), documentElement: el('html') };
 globalThis.addEventListener = addTo(L);
 globalThis.window = globalThis;
-globalThis.location = { search: '?test&local&high' };
+globalThis.location = { search: '?test&local&high&seed=1984', hash: '', pathname: '/' };
 globalThis.devicePixelRatio = 1; globalThis.innerWidth = 1280; globalThis.innerHeight = 720;
 globalThis.Image = class { set src(v) { this.width = 400; this.height = 300; setTimeout(() => this.onload?.(), 0); } };
 globalThis.requestAnimationFrame = noop;
@@ -68,6 +71,14 @@ G.player.pos.set(G.car.pos.x + 2, G.car.pos.y, G.car.pos.z);
 key('KeyE'); await frames(5);
 console.log({ wsiadl: G.car.active, amunicja: G.weapon.ammo + '/' + G.weapon.reserve });
 await frames(300);
+// tryb filmowy: C w aucie włącza autopilota (nie ma wysiadania), C wyłącza
+key('KeyC'); key('KeyC', false);
+const f0 = G.film.active;
+await frames(200);
+key('KeyE'); await frames(2);
+console.log({ film: f0, autopilot: !!G.car.auto, wsiadanieZablokowane: G.car.active, kmh: Math.round(G.car.kmh), faza: G.film.phase });
+key('KeyC'); key('KeyC', false); await frames(5);
+console.log({ filmWylaczony: !G.film.active, autoWylaczone: !G.car.auto });
 fire(L, 'keydown', { code: 'KeyP' });
 console.log({ klatek: G.renderer.frames, bledy: errors, ms: Math.round(performance.now() - t0), fragmenty: G.streamer.loaded, tri: G.streamer.tris });
 process.exit(errors ? 1 : 0);

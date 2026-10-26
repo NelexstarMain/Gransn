@@ -3,7 +3,7 @@ import { generateCity } from './city/layout.js';
 import { GROUND_TILES } from './gen/assemble.js';
 import { WorkerPool } from './gen/pool.js';
 import { createMaterials } from './render/materials.js';
-import { createAtmosphere } from './render/atmosphere.js';
+import { createAtmosphere, LIGHTS } from './render/atmosphere.js';
 import { CollisionGrid } from './game/collision.js';
 import { Player } from './game/player.js';
 import { Streamer, buildMeshes } from './game/streaming.js';
@@ -17,11 +17,20 @@ import { Crowd } from './game/crowd.js';
 import { Pedestrians } from './game/pedestrians.js';
 import { Weapon } from './game/weapon.js';
 import { Sound } from './game/audio.js';
+import { Settings } from './game/settings.js';
+import { FilmMode } from './game/film.js';
 import { makeStyle } from './game/rig.js';
 import { Rng } from './core/rng.js';
 
 const params = new URLSearchParams(location.search);
-const SEED = Number(params.get('seed')) || 1984;
+// Każde wejście do gry to nowa wyspa. Numer mapy widać w rogu ekranu; ?seed=N albo #N (w linku
+// do gry, gdzie zapytania nie dochodzą) odtwarza dokładnie tę samą wyspę. Losujemy tu, a nie w
+// generatorze: samo generowanie jest deterministyczne (te same dane w wątku głównym i workerach).
+const randomSeed = () => {
+  try { const a = new Uint32Array(1); crypto.getRandomValues(a); return 1 + (a[0] % 999999); } catch { return 1 + Math.floor(Math.random() * 999999); }
+};
+const fromHash = /^#(\d{1,9})$/.exec(location.hash);
+const SEED = Number(params.get('seed')) || (fromHash ? Number(fromHash[1]) : 0) || randomSeed();
 const TEST = params.has('test'); // tryb testowy: klatki renderowane na żądanie
 // tryb lekki: telefony, słabe komputery albo ?low
 const LOW = params.has('low') || (!params.has('high') && (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4));
@@ -33,14 +42,14 @@ const setProgress = (t, label) => {
 };
 const tick = () => new Promise((r) => setTimeout(r, 0)); // oddaj sterowanie przeglądarce (pasek ładowania żyje)
 
-// Rozdzielczość dopasowuje się do wydajności (patrz pętla): maksimum jak dotąd, minimum 0.6.
-const MAX_DPR = Math.min(devicePixelRatio, LOW ? 1 : 1.5), MIN_DPR = 0.6;
-let dpr = MAX_DPR;
+// Rozdzielczość, cienie i zasięg detali ustawia potem `Settings`; automat (patrz pętla) obniża
+// rozdzielczość przy spadku FPS, ale nie poniżej MIN_SCALE ustawionej wartości.
+const MIN_SCALE = 0.6;
 const renderer = new THREE.WebGLRenderer({ antialias: !LOW, powerPreference: 'high-performance' });
-renderer.setPixelRatio(dpr);
+renderer.setPixelRatio(LOW ? 1 : 1.5);
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = LIGHTS.exposure;
 renderer.shadowMap.enabled = !LOW;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false; // mapę cieni odświeżamy co drugą klatkę (patrz pętla)
@@ -48,7 +57,8 @@ $('app').appendChild(renderer.domElement);
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 2200);
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.2, 2200);
+camera.userData.baseFov = 72; // bazowy FOV (Settings go zmienia; kamera auta i broń dokładają własne zmiany)
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -128,6 +138,7 @@ async function start() {
   traffic.peds = peds;
   car.traffic = traffic;
   car.peds = peds;
+  car.obstacles = (x, z) => traffic.near(x, z, 6); // podgląd przeszkód dla autopilota trybu filmowego
   car.active = true;
   car.place(city.spawn.x, city.spawn.z, Math.atan2(-Math.cos(city.spawn.yaw), -Math.sin(city.spawn.yaw)));
   const job = new TaxiJob(scene, city, M, crowd, peds);
@@ -176,7 +187,28 @@ async function start() {
       if (r && r.catch) r.catch(() => {});
     } catch { /* bez przechwycenia myszy: rozglądanie przeciąganiem */ }
   };
-  const pause = () => { playing = false; overlay.style.display = 'flex'; document.body.classList.remove('playing'); sound.horn(false); weapon.aimHeld = false; };
+  const pause = () => { film.stop(); playing = false; overlay.style.display = 'flex'; document.body.classList.remove('playing'); sound.horn(false); weapon.aimHeld = false; };
+  // nowa wyspa: przeładowanie bez numeru mapy (przycisk w menu albo Shift+N)
+  const newIsland = () => {
+    const q = new URLSearchParams(location.search); q.delete('seed');
+    try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '')); } catch { /* ramka bez historii */ }
+    try { if (location.hash) location.hash = ''; location.reload(); } catch { /* ramka bez przeładowania: odśwież stronę ręcznie */ }
+  };
+  $('mapno').textContent = `wyspa nr ${SEED}`;
+  $('newmap').addEventListener('click', (e) => { e.stopPropagation(); newIsland(); });
+  $('newmap').addEventListener('touchend', (e) => { e.stopPropagation(); e.preventDefault(); newIsland(); });
+  // ustawienia: otwarcie wstrzymuje grę (bez zasłaniającej nakładki), zamknięcie wznawia
+  let wasPlaying = false;
+  const settings = new Settings({
+    renderer, camera, scene, atmo, streamer, player, M, low: LOW,
+    onOpen: () => { wasPlaying = playing; playing = false; weapon.aimHeld = false; sound.horn(false); document.exitPointerLock?.(); },
+    onClose: () => { if (wasPlaying) enter(); wasPlaying = false; },
+  });
+  // tryb filmowy: autopilot jedzie taksówką po trasie, kamera filmuje (patrz film.js)
+  const film = new FilmMode({
+    city, grid, car, traffic, camera, settings, streamer,
+    enterGame: () => { playing = true; overlay.style.display = 'none'; document.body.classList.add('playing'); sound.init(); },
+  });
   overlay.addEventListener('click', enter);
   overlay.addEventListener('touchend', (e) => { e.preventDefault(); enter(); });
   addEventListener('keydown', (e) => {
@@ -190,6 +222,7 @@ async function start() {
   addEventListener('keydown', (e) => {
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
     if (e.code === 'KeyM') job.say(sound.toggleMute() ? 'Dźwięk wyłączony (M).' : 'Dźwięk włączony.', 2);
+    if (e.code === 'KeyN' && e.shiftKey) newIsland();
   });
 
   // wsiadanie / wysiadanie: pieszy dostaje karabin, w aucie amunicja się uzupełnia
@@ -197,7 +230,7 @@ async function start() {
   player.yaw = carYaw();
   player.pitch = -0.12;
   const toggleCar = () => {
-    if (!playing) return;
+    if (!playing || film.active) return;
     if (car.active && Math.abs(car.v) < 3) {
       const [fx2, fz2] = car.fwd;
       // lewa burta (kierowca), potem prawa, potem tył
@@ -250,6 +283,18 @@ async function start() {
 
   job.say('W/S gaz i hamulec, A/D skręt, Spacja ręczny. Zatrzymaj się przy machającym pasażerze w żółtym kółku.', 7);
 
+  // tryb filmowy: przycisk w menu i klawisz C (V = zmiana kamery na aucie)
+  const startFilm = () => { car.active = true; player.fly = false; weapon.setActive(false); job.film = true; film.start(); };
+  const fb = $('filmbtn');
+  if (fb) {
+    fb.addEventListener('click', (e) => { e.stopPropagation(); startFilm(); });
+    fb.addEventListener('touchend', (e) => { e.stopPropagation(); e.preventDefault(); startFilm(); });
+  }
+  addEventListener('keydown', (e) => {
+    if (e.code === 'KeyC' && !e.ctrlKey && !e.metaKey && (car.active || !playing)) { film.active ? film.stop() : startFilm(); }
+    else if (e.code === 'KeyV' && film.active) film.cycleMount();
+  });
+
   const clock = new THREE.Clock();
   let fpsAcc = 0, fpsN = 0, fps = 0, streamAcc = 0, frameNo = 0, perfAcc = 0, perfN = 0, perfBad = 0, perfGood = 0, infoAcc = 1, info = '';
   const view = { x: 0, z: -1 };
@@ -260,10 +305,13 @@ async function start() {
     const dt = Math.min(0.05, clock.getDelta());
     frameNo++;
     player.controlsOff = car.active;
-    // auto symuluje się zawsze (zaparkowane trzyma ręczny); steruje nim gracz tylko w środku
+    job.film = film.active;
+    if (film.active) film.update(dt);
+    // auto symuluje się zawsze (zaparkowane trzyma ręczny); steruje nim gracz tylko w środku (w trybie filmowym — autopilot)
     if (playing) car.update(dt, car.active ? player.keys : noKeys, car.active ? player.touchMove : [0, 0]);
     const onFoot = !car.active;
-    if (car.active) car.updateCamera(dt, camera, player);
+    if (film.active) film.placeCamera(dt);
+    else if (car.active) car.updateCamera(dt, camera, player);
     else player.update(playing ? dt : 0);
     if (playing) weapon.update(dt);
     const active = car.active ? car.pos : player.pos;
@@ -303,29 +351,33 @@ async function start() {
     telescreen.update(dt);
     M.water.normalMap.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
     // cienie co drugą klatkę: odciąża GPU, a ruch cieni i tak jest płynny
-    if (!LOW && (frameNo & 1) === 0) renderer.shadowMap.needsUpdate = true;
+    if (renderer.shadowMap.enabled && (frameNo & 1) === 0) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
-    // wydajność: gdy klatki są wolne, obniż rozdzielczość; gdy zapas — podnieś (z histerezą)
+    // wydajność: gdy klatki są wolne, obniż rozdzielczość; gdy zapas — podnieś (z histerezą).
+    // Mnożnik trzyma `Settings` (autoScale), więc ręczna rozdzielczość z menu pozostaje punktem odniesienia.
     fpsAcc += dt; fpsN++; perfAcc += dt; perfN++;
     if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
-    if (perfAcc > 1.5 && playing && !TEST) {
+    if (perfAcc > 1.5) {
       const f = perfN / perfAcc;
       perfAcc = 0; perfN = 0;
-      if (f < 40 && dpr > MIN_DPR) { if (++perfBad >= 2) { dpr = Math.max(MIN_DPR, dpr - 0.1); renderer.setPixelRatio(dpr); renderer.setSize(innerWidth, innerHeight); perfBad = 0; } perfGood = 0; }
-      else if (f > 57 && dpr < MAX_DPR) { if (++perfGood >= 3) { dpr = Math.min(MAX_DPR, dpr + 0.05); renderer.setPixelRatio(dpr); renderer.setSize(innerWidth, innerHeight); perfGood = 0; } perfBad = 0; }
-      else { perfBad = 0; perfGood = 0; }
+      if (playing && !TEST && settings.v.auto && !settings.isOpen && !film.active) {
+        const k = settings.autoScale;
+        if (f < 40 && k > MIN_SCALE) { if (++perfBad >= 2) { settings.setAutoScale(Math.max(MIN_SCALE, k - 0.07)); perfBad = 0; } perfGood = 0; }
+        else if (f > 57 && k < 1) { if (++perfGood >= 3) { settings.setAutoScale(Math.min(1, k + 0.04)); perfGood = 0; } perfBad = 0; }
+        else { perfBad = 0; perfGood = 0; }
+      } else { perfBad = 0; perfGood = 0; }
     }
     infoAcc += dt;
     if (infoAcc > 0.5) {
       infoAcc = 0;
-      info = `${fps.toFixed(0)} FPS · ${Math.round(dpr * 100)}% rozdz. · fragmenty: ${streamer.loaded}/${city.chunks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${renderer.info.render.calls} · ludzie ${crowd.count}${player.fly ? ' · LOT' : ''}`;
+      info = `${fps.toFixed(0)} FPS · ${settings.resNow.toFixed(2)}× rozdz. · fragmenty: ${streamer.loaded}/${city.chunks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${renderer.info.render.calls} · ludzie ${crowd.count}${player.fly ? ' · LOT' : ''}`;
     }
     const nearCar = onFoot && Math.hypot(player.pos.x - car.pos.x, player.pos.z - car.pos.z) < 5;
     hud.update(dt, { pos: active, yaw: car.active ? carYaw() : player.yaw }, info, job, car, camera, { onFoot, weapon, player, peds, nearCar });
     if (!TEST) requestAnimationFrame(frame);
   }
   frame();
-  window.__game = { city, player, streamer, renderer, scene, camera, frame, car, job, traffic, peds, crowd, weapon, kit };
+  window.__game = { settings, film, city, player, streamer, renderer, scene, camera, frame, car, job, traffic, peds, crowd, weapon, kit };
 }
 
 const showError = (msg) => {

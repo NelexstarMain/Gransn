@@ -19,6 +19,11 @@
       #track { height: 4px; background: #333; } #bar { height: 100%; width: 0; background: #f2c200; transition: width 0.2s; }
       #loadlabel { font-size: 13px; margin-top: 10px; color: #aaa; }
       @keyframes pulse { 50% { opacity: 0.4; } }
+      #filmbtn { margin-top: 18px; padding: 10px 22px; font: inherit; font-size: 16px; border-radius: 8px; border: 1px solid #f2c200; background: rgba(16,28,36,0.6); color: #f2c200; cursor: pointer; letter-spacing: 0.1em; }
+      #filmbtn:hover, #filmbtn:focus-visible { background: #f2c200; color: #1a1a1a; outline: none; }
+      #mapbar { margin-top: 22px; display: flex; gap: 14px; align-items: center; font-size: 13px; color: #bdb7a6; letter-spacing: 0.08em; }
+      #newmap { font: inherit; letter-spacing: 0.12em; text-transform: uppercase; color: #f2c200; background: transparent; border: 1px solid #f2c200; padding: 6px 12px; cursor: pointer; }
+      #newmap:hover, #newmap:focus-visible { background: #f2c200; color: #1a1a1a; outline: none; }
       #hud { position: fixed; inset: 0; pointer-events: none; }
       body.nohud #hud { display: none; }
       #minimap { position: absolute; right: 16px; top: 16px; width: 220px; height: 220px; border: 2px solid rgba(0,0,0,0.5); opacity: 0.85; }
@@ -72,13 +77,16 @@
       <h2>TAXI · WYSPA</h2>
       <div class="keys">
         Jeździsz taksówką po wyspie: podjedź do pasażera w żółtym kółku, zatrzymaj się, zawieź go do zielonego celu. Uważaj na ruch uliczny, korki i przechodniów.<br />
-        W/S — gaz/hamulec &nbsp;·&nbsp; A/D — skręt &nbsp;·&nbsp; Spacja — ręczny (drift) &nbsp;·&nbsp; Q — klakson &nbsp;·&nbsp; Mysz — kamera &nbsp;·&nbsp; E — wysiądź/wsiądź<br />
+        W/S — gaz/hamulec &nbsp;·&nbsp; A/D — skręt &nbsp;·&nbsp; Spacja — ręczny (drift) &nbsp;·&nbsp; Q — klakson &nbsp;·&nbsp; Mysz — kamera &nbsp;·&nbsp; E — wysiądź/wsiądź &nbsp;·&nbsp; C (w aucie) — tryb filmowy, V — zmiana kamery<br />
         Pieszo: WASD (marsz jest wolny), Shift — bieg (męczy), C — kucanie, Spacja — skok, F — lot<br />
         Karabin (po wyjściu z auta): LPM — strzał, PPM — celuj, R — przeładuj (bez przechwyconej myszy: X — strzał, Z — celuj). Amunicja uzupełnia się w taksówce<br />
-        H — ukryj HUD &nbsp;·&nbsp; M — wycisz dźwięk &nbsp;·&nbsp; Esc / P — pauza &nbsp;·&nbsp; Telefon: lewy kciuk chodzi, prawy obraca kamerę, przyciski po prawej
+        H — ukryj HUD &nbsp;·&nbsp; M — wycisz dźwięk &nbsp;·&nbsp; Shift+N — nowa wyspa &nbsp;·&nbsp; Esc / P — pauza &nbsp;·&nbsp; Telefon: lewy kciuk chodzi, prawy obraca kamerę, przyciski po prawej
       </div>
       <div id="loader"><div id="track"><div id="bar"></div></div><div id="loadlabel">Ładowanie…</div></div>
+      <button id="filmbtn" type="button">▶ TRYB FILMOWY (2 min)</button>
+      <button id="setbtn">⚙ USTAWIENIA</button>
       <div class="go">[ KLIKNIJ / DOTKNIJ / ENTER, ABY JECHAĆ ]</div>
+      <div id="mapbar"><span id="mapno"></span><button id="newmap" type="button">Nowa wyspa</button></div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

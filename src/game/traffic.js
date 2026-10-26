@@ -89,7 +89,7 @@ export function buildRoadGraph(streets) {
 
 // A* po grafie dróg — kopiec binarny i bufory wielokrotnego użytku (bez alokacji na wywołanie;
 // wcześniej open.splice() dawał zacięcia przy planowaniu trasy)
-function astar(G, from, to) {
+export function astar(G, from, to) {
   const N = G.nodes.length;
   let S = G._as;
   if (!S) S = G._as = { g: new Float64Array(N), f: new Float64Array(N), prev: new Int32Array(N), seen: new Int32Array(N), stamp: 0, ids: [], keys: [] };
@@ -272,6 +272,17 @@ export class Traffic {
   remove(b) {
     if (b.lock >= 0 && this.G.nodes[b.lock].lock === b.id) this.G.nodes[b.lock].lock = -1;
     if (b.drv && this.crowd) this.crowd.remove(b.drv);
+  }
+
+  // usuwa boty w promieniu r (np. zakleszczone z autem w trybie filmowym); ruch uzupełni się sam
+  removeNear(x, z, r) {
+    let w = 0;
+    for (let i = 0; i < this.bots.length; i++) {
+      const b = this.bots[i];
+      if (Math.hypot(b.x - x, b.z - z) > r) this.bots[w++] = b;
+      else this.remove(b);
+    }
+    this.bots.length = w;
   }
 
   update(dt, player, playerCar) {

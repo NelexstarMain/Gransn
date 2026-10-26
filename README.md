@@ -5,7 +5,7 @@ Gra 3D w przeglądarce (Three.js). Jeździsz taksówką, wozem z ok. 1900 roku (
 Na wyspie (~0,9 km, losowy obrys z półwyspami) są:
 - śródmieście z kamienicami i rynek z ratuszem i fontannami,
 - przedmieścia z domkami i ogródkami, lasy i wydmy przy brzegu,
-- rzeka z mostami, kolej z dworcem i pociągiem (płaskie przejazdy), autostrada na poziomie gruntu z mostem łukowym,
+- rzeka z mostami, autostrada na poziomie gruntu z mostem,
 - latarnia morska, molo, parki,
 - kioski, budki telefoniczne, przystanki i zaparkowane auta.
 
@@ -21,10 +21,11 @@ Sterowanie:
 - mysz — kamera, E — wysiądź/wsiądź (wysiąść można przy prędkości poniżej ok. 10 km/h),
 - pieszo: WASD (marsz jest wolny, ok. 2 m/s), Shift — bieg (męczy; po wyczerpaniu trzeba odpocząć), C lub Ctrl — kucanie, Spacja — skok, F — tryb lotu,
 - karabin (tylko pieszo): LPM — strzał, PPM — celowanie, R — przeładowanie; amunicja uzupełnia się po wsiadaniu do taksówki,
-- H — ukryj HUD, M — wycisz dźwięk, Esc lub P — pauza,
+- H — ukryj HUD, M — wycisz dźwięk, Esc lub P — pauza, O lub ⚙ — ustawienia (jakość, cienie, FOV, czułość…), Shift+N — nowa wyspa,
+- tryb filmowy: C w aucie albo przycisk w menu (autopilot jedzie po wyspie, V zmienia kamerę, C kończy),
 - telefon: lewy kciuk chodzi/jedzie, prawy obraca kamerę, przyciski po prawej (ogień, celuj, R, skok, E).
 
-Parametry adresu: `?seed=1234` generuje inną wyspę, `?low` lub `?high` wymusza jakość grafiki.
+Każde wejście do gry to nowa losowa wyspa (numer w rogu ekranu). `?seed=1234` albo `#1234` odtwarza dokładnie tę wyspę, `?low` lub `?high` wymusza jakość grafiki.
 
 ## Ruch uliczny: kierowcy-boty i korki
 

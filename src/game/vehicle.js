@@ -7,20 +7,22 @@
 //  • Kolizje: sub-kroki, ślizg po ścianie, siła uderzenia (kamera, iskry, dźwięk), boty i piesi.
 import * as THREE from 'three';
 import { WHEEL_NOMINAL } from './carkit.js';
-import { GROUND, WALK, COURT, PLAZA, BRIDGE } from './collision.js';
+import { CAR_KINDS, carAnchors } from '../gen/vehicles.js';
+import { GROUND, BRIDGE, ROAD } from './collision.js';
 
 const GRAV = 9.8;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const NOKEYS = new Set();
 
 export class Vehicle {
+  // scene = null → tryb bez grafiki (symulacje w Node: sama fizyka, bez siatek)
   constructor(scene, grid, M, kit, kind = 'taxi', color = [0.95, 0.76, 0.12]) {
     this.grid = grid;
     this.T = grid.T;
     this.city = grid.city;
     this.kind = kind;
-    this.K = kit.kinds[kind];
-    this.anchors = kit.anchors(kind);
+    this.K = CAR_KINDS[kind];
+    this.anchors = carAnchors(kind);
     this.wb = this.K.L - this.K.front - this.K.rear; // rozstaw osi
     this.L = this.K.L;
     this.W = this.K.Wd;
@@ -29,31 +31,34 @@ export class Vehicle {
     this.mesh = new THREE.Group();
     this.body = new THREE.Group();
     this.mesh.add(this.body);
-    this.tailMat = M.tail.clone();
-    for (const p of kit.body(kind, 2, color)) {
-      const m = new THREE.Mesh(p.geometry, p.name === 'tail' ? this.tailMat : p.material);
-      m.castShadow = p.name !== 'light' && p.name !== 'tail';
-      m.receiveShadow = true;
-      this.body.add(m);
-    }
     this.wheels = [];
-    const solid = !!this.K.solid, nom = solid ? WHEEL_NOMINAL.solid : WHEEL_NOMINAL.spoke;
-    const wparts = kit.wheel(solid, 2);
-    for (const w of this.anchors.wheels) {
-      const pivot = new THREE.Group(), spin = new THREE.Group();
-      pivot.position.set(w.x, w.y, w.z);
-      pivot.scale.setScalar(w.r / nom);
-      for (const p of wparts) {
-        const m = new THREE.Mesh(p.geometry, p.material);
-        m.castShadow = true;
+    this.tailMat = { emissiveIntensity: 0 };
+    if (scene) {
+      this.tailMat = M.tail.clone();
+      for (const p of kit.body(kind, 2, color)) {
+        const m = new THREE.Mesh(p.geometry, p.name === 'tail' ? this.tailMat : p.material);
+        m.castShadow = p.name !== 'light' && p.name !== 'tail';
         m.receiveShadow = true;
-        spin.add(m);
+        this.body.add(m);
       }
-      pivot.add(spin);
-      this.body.add(pivot);
-      this.wheels.push({ pivot, spin, front: w.front, r: w.r });
+      const solid = !!this.K.solid, nom = solid ? WHEEL_NOMINAL.solid : WHEEL_NOMINAL.spoke;
+      const wparts = kit.wheel(solid, 2);
+      for (const w of this.anchors.wheels) {
+        const pivot = new THREE.Group(), spin = new THREE.Group();
+        pivot.position.set(w.x, w.y, w.z);
+        pivot.scale.setScalar(w.r / nom);
+        for (const p of wparts) {
+          const m = new THREE.Mesh(p.geometry, p.material);
+          m.castShadow = true;
+          m.receiveShadow = true;
+          spin.add(m);
+        }
+        pivot.add(spin);
+        this.body.add(pivot);
+        this.wheels.push({ pivot, spin, front: w.front, r: w.r });
+      }
+      scene.add(this.mesh);
     }
-    scene.add(this.mesh);
 
     this.pos = new THREE.Vector3();
     this.heading = 0; // kierunek jazdy w płaszczyźnie (x,z): (cos, sin)
@@ -104,32 +109,51 @@ export class Vehicle {
     return false;
   }
 
-  // nawierzchnia pod autem: przyczepność i maksymalna prędkość
+  // nawierzchnia pod autem: przyczepność, maksymalna prędkość (ułamek), opór i przyspieszenie.
+  // Poza jezdnią (chodnik, trawa, plac) auto jedzie wolno: ok. 22 km/h i słabsze przyspieszenie.
   surfaceAt(x, z) {
     const t = this.grid.type(x, z);
-    if (t === GROUND) {
-      const n = this.city.roads.nearest(x, z);
-      if (n && n.c < 0.4 && n.s.mat === 'dirt') return { name: 'dirt', grip: 0.78, vmax: 0.8, drag: 0.9 };
-      return { name: 'grass', grip: 0.6, vmax: 0.5, drag: 2.4 };
+    this.offRoad = t !== BRIDGE && t !== ROAD;
+    if (this.offRoad) {
+      if (t === GROUND) {
+        const n = this.city.roads.nearest(x, z);
+        if (n && n.c < 0.4 && n.s.mat === 'dirt') return { name: 'dirt', grip: 0.78, vmax: 0.8, drag: 0.9, accel: 1 };
+        return { name: 'grass', grip: 0.6, vmax: 0.35, drag: 2.4, accel: 0.55 };
+      }
+      return { name: 'walk', grip: 0.9, vmax: 0.35, drag: 0.9, accel: 0.55 };
     }
-    if (t === WALK || t === PLAZA || t === COURT) return { name: 'walk', grip: 0.9, vmax: 0.85, drag: 0.9 };
     const n = this.city.roads.nearest(x, z);
-    if (n && n.s.mat === 'cobble') return { name: 'cobble', grip: 0.92, vmax: 0.95, drag: 0.3 };
-    if (n && n.s.mat === 'dirt') return { name: 'dirt', grip: 0.78, vmax: 0.8, drag: 0.9 };
-    return { name: 'asphalt', grip: 1, vmax: 1, drag: 0 };
+    if (n && n.s.mat === 'cobble') return { name: 'cobble', grip: 0.92, vmax: 0.95, drag: 0.3, accel: 1 };
+    if (n && n.s.mat === 'dirt') return { name: 'dirt', grip: 0.78, vmax: 0.8, drag: 0.9, accel: 1 };
+    return { name: 'asphalt', grip: 1, vmax: 1, drag: 0, accel: 1 };
+  }
+
+  // maksymalny skręt kół przy danej prędkości (rad) — autopilot trybu filmowego przelicza na wychylenie kierownicy
+  steerMax(u = this.v) {
+    const au = Math.abs(u);
+    return 0.58 / (1 + (au / 8.5) * (au / 8.5));
   }
 
   update(dt, keys, touch = [0, 0]) {
     if (!this.active) { keys = NOKEYS; touch = [0, 0]; }
     const k = (c) => keys.has(c);
-    const thr = clamp((k('KeyW') || k('ArrowUp') ? 1 : 0) + Math.max(0, touch[1]), 0, 1);
-    const brk = clamp((k('KeyS') || k('ArrowDown') ? 1 : 0) + Math.max(0, -touch[1]), 0, 1);
-    const st = clamp((k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0) + touch[0], -1, 1);
-    const hand = k('Space') || !this.active; // zaparkowane auto trzyma ręczny
-    this.throttle = thr;
+    let thr = clamp((k('KeyW') || k('ArrowUp') ? 1 : 0) + Math.max(0, touch[1]), 0, 1);
+    let brk = clamp((k('KeyS') || k('ArrowDown') ? 1 : 0) + Math.max(0, -touch[1]), 0, 1);
+    let st = clamp((k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0) + touch[0], -1, 1);
+    let hand = k('Space') || !this.active; // zaparkowane auto trzyma ręczny
 
     const fx = Math.cos(this.heading), fz = Math.sin(this.heading), rx = -fz, rz = fx;
     let u = this.vx * fx + this.vz * fz, w = this.vx * rx + this.vz * rz;
+    // autopilot (tryb filmowy): auto = { steer: -1..1, v: prędkość docelowa m/s } zastępuje klawisze
+    const auto = this.auto;
+    if (auto) {
+      const e = auto.v - u;
+      thr = e > 0.15 ? clamp(e * 0.8, 0, 1) : 0;
+      brk = e < -0.7 ? clamp(-e * 0.3, 0, 1) : 0;
+      st = clamp(auto.steer, -1, 1);
+      hand = false;
+    }
+    this.throttle = thr;
     const sf = this.surfaceAt(this.pos.x, this.pos.z);
     this.surface = sf.name;
     const vmax = 18.5 * sf.vmax, au = Math.abs(u);
@@ -145,7 +169,7 @@ export class Vehicle {
     let aLong = 0;
     if (thr > 0) {
       if (u < -0.6) aLong += 11 * thr;
-      else aLong += thr * [7.6, 5.2, 3.5][this.gear] * (1 - Math.pow(clamp(Math.max(0, u) / vmax, 0, 1), 3)) * (this.shiftT > 0 ? 0.3 : 1);
+      else aLong += thr * [7.6, 5.2, 3.5][this.gear] * (1 - Math.pow(clamp(Math.max(0, u) / vmax, 0, 1), 3)) * (this.shiftT > 0 ? 0.3 : 1) * sf.accel;
     }
     this.braking = false;
     if (brk > 0) {
@@ -158,6 +182,8 @@ export class Vehicle {
     aLong -= Math.sign(u) * Math.min(au / dt, 0.4 + 0.0011 * u * u + sf.drag);
     if (thr === 0 && brk === 0 && !hand) aLong -= Math.sign(u) * Math.min(au / dt, 1.5);
     aLong -= GRAV * Math.sin(this.pitch) * 0.6;
+    // poza jezdnią: ostre hamowanie do ok. 22 km/h po zjechaniu z drogi (jak w poprzedniej wersji gry)
+    if (sf.vmax < 0.5 && au > vmax) aLong -= Math.sign(u) * Math.min(au - vmax, (au - vmax) * 3 + 1.5);
 
     // tarcie boczne: ogranicza przyczepność (koło tarcia), ręczny odpuszcza tył → drift
     // przyczepność spada od razu po pociągnięciu ręcznego, a wraca łagodnie (drift trwa chwilę po puszczeniu)
@@ -173,12 +199,11 @@ export class Vehicle {
 
     // kierownica i obrót (model rowerowy): skręt maleje z prędkością
     this.steer += (st - this.steer) * Math.min(1, dt * (st === 0 ? 9 : 5.5));
-    const dMax = 0.58 / (1 + (au / 6.5) * (au / 6.5));
-    this.steerAngle = this.steer * dMax;
+    this.steerAngle = this.steer * this.steerMax(u);
     let yawT = (u * Math.tan(this.steerAngle)) / this.wb;
     if (hand && au > 3) yawT *= 1.4; // ręczny: tył ucieka, auto się kręci
     yawT = clamp(yawT, -1.7, 1.7);
-    this.yawRate += (yawT - this.yawRate) * Math.min(1, dt * 9);
+    this.yawRate += (yawT - this.yawRate) * Math.min(1, dt * 14);
 
     // ruch w sub-krokach, żeby przy dużej prędkości nie przeskakiwać ścian
     const speed = Math.hypot(this.vx, this.vz);
@@ -321,7 +346,7 @@ export class Vehicle {
       camera.position.x += (Math.random() - 0.5) * s; camera.position.y += (Math.random() - 0.5) * s; camera.position.z += (Math.random() - 0.5) * s;
     }
     camera.lookAt(this.pos.x, this.pos.y + 1.35, this.pos.z);
-    const fov = 72 + Math.min(11, sp * 0.55);
+    const fov = (camera.userData.baseFov ?? 72) + Math.min(11, sp * 0.55);
     if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
   }
 }

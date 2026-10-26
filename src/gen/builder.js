@@ -40,6 +40,9 @@ export const MATDEF = {
   asphalt: { dirt: 1 },
   leaf: { wob: 0.5, dirt: 2.5 },
   slab: { bump: 0.008, dirt: 1.2, ground: 1 },
+  lodwalk: { bump: 0.008, dirt: 1.2, ground: 1 },
+  lawn: { bump: 0.03, dirt: 2.2, ground: 1 },
+  cobblep: { bump: 0.04, dirt: 1.8, ground: 1 },
   curb: { dirt: 1, ground: 1 },
   lod: { wob: W, ao: 1, dirt: 1 },
   lodroof: { wob: W, dirt: 1 },
@@ -60,6 +63,7 @@ export class Builder {
     this.W = this.H = this.D = 1;
     this.tints = Object.create(null);
     this.ground = () => 0; // wysokość terenu (x,z) — pochylenie i AO liczone względem gruntu
+    this.aoK = 1;          // siła przyciemnienia przy ziemi (małe rekwizyty: 0,45, żeby nie były czarne)
     this._Q = new Float64Array(12);
     this._N = new Float64Array(12);
     this._t = [0, 0, 0];
@@ -205,11 +209,12 @@ export class Builder {
         x += noise3(qx * s, 3.7, qz * s) * h;
         z += noise3(qx * s, 9.1, qz * s) * h;
       }
-      if (def.wob) {
+      const wob = o.wob !== undefined ? o.wob : def.wob; // o.wob: mały rekwizyt z liści (donica) — bez metrowych wybrzuszeń
+      if (wob) {
         const f = 0.45;
-        x += def.wob * noise3(qx * f, qy * f, qz * f);
-        y += def.wob * noise3(qx * f + 31.4, qy * f, qz * f);
-        z += def.wob * noise3(qx * f, qy * f + 17.7, qz * f);
+        x += wob * noise3(qx * f, qy * f, qz * f);
+        y += wob * noise3(qx * f + 31.4, qy * f, qz * f);
+        z += wob * noise3(qx * f, qy * f + 17.7, qz * f);
       }
       if (def.bump && !o.flat) {
         y += def.bump * (noise3(qx * 0.17, 0.5, qz * 0.17) * 0.7 + noise3(qx * 0.9, 1.5, qz * 0.9) * 0.3);
@@ -223,7 +228,7 @@ export class Builder {
       else { BU[vi * 2] = (qx * tx + qz * tz) * uvs; BU[vi * 2 + 1] = qy * uvs; }
 
       let s = shade0;
-      if (def.ao) s *= 0.55 + 0.45 * smooth(rel / (def.aoH || 3.4));
+      if (def.ao) s *= 1 - (1 - (0.55 + 0.45 * smooth(rel / (def.aoH || 3.4)))) * this.aoK;
       if (def.dirt) {
         const d = noise3(qx * 0.11, qy * 0.23, qz * 0.11) + 0.5 * noise3(qx * 0.5, qy * 0.5, qz * 0.5);
         s *= 1 + 0.13 * def.dirt * d;
