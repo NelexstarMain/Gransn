@@ -4,9 +4,9 @@ Ten plik Claude Code wczytuje automatycznie. Mówi, czym jest projekt, jak praco
 
 ## Projekt w skrócie
 
-Gra 3D w przeglądarce (Three.js `0.170.0` + Vite `6`, czysty JS, moduły ES). Jeździsz taksówką, wozem z ok. 1900 roku, po proceduralnie generowanej wyspie i wozisz pasażerów. Na ulicach jeżdżą boty i tworzą korki.
+Gra 3D w przeglądarce (Three.js `0.170.0` + Vite `6`, czysty JS, moduły ES). Jeździsz taksówką, wozem z ok. 1900 roku, po proceduralnie generowanej wyspie i wozisz pasażerów. Na ulicach jeżdżą boty (6 typów aut) i tworzą korki, po chodnikach chodzą przechodnie, a po wyjściu z auta gracz ma karabin.
 
-Nie ma żadnych plików z modelami ani teksturami. Wszystko powstaje z ~45 modułów w kodzie, szumu i tekstur malowanych na canvasie. Jedyne zewnętrzne pliki to dwa zdjęcia w `public/posters/` (reklamy taksówek).
+Nie ma żadnych plików z modelami, teksturami ani dźwiękami. Wszystko powstaje z modułów w kodzie, szumu, tekstur malowanych na canvasie i dźwięku syntezowanego w Web Audio. Jedyne zewnętrzne pliki to dwa zdjęcia w `public/posters/` (reklamy taksówek).
 
 ```bash
 npm install
@@ -15,16 +15,27 @@ npm run build          # dist/
 npm run check          # reguły świata (obiekty poza jezdnią, brak nakładań, ściany poza jezdnią)
 npm run sim            # symulacja ruchu ulicznego bez grafiki (korki, zakleszczenia)
 npm run build-world    # buduje CAŁY świat w Node: wyjątki, NaN, ląd pod wodą
+npm run sim-peds       # symulacja pieszych z autami: budynki, woda, przejścia, strzał
+npm run smoke          # test dymny gry w Node (auto, ruch, piesi, taksówka, karabin, potrącenie)
+node scripts/boot-test.mjs   # prawdziwy main.js na atrapie DOM i renderera, gra cały scenariusz
+npm run hash           # skrót geometrii świata (po optymalizacji generatora MUSI być ten sam)
+npm run model -- car out.png kind=taxi   # podgląd modelu: rasteryzator programowy → PNG (Read pokaże obraz)
+npm run photo          # „aparat”: zdjęcia PNG świata i każdego elementu, bez przeglądarki (katalog zdjecia/)
+node scripts/seeds.mjs 1 60 [--build]   # sprawdza wiele ziaren naraz (jezdnie, ściany, ląd pod wodą, NaN)
+node scripts/audit-roads.mjs 1 40 [--where]  # audyt sieci ulic: przecięcia, wyspy, ślepe uliczki, mosty
+node scripts/sim-film.mjs 1984  # symulacja trybu filmowego (autopilot 150 s, boty, utknięcia)
+node scripts/map.mjs 1984 [--props]     # plan miasta z góry (PNG): drogi, budynki, rzeka, mosty, tory
 ```
 
 ## Jak pracować z tym użytkownikiem (WAŻNE)
 
 - **Język:** pisze po polsku, często dyktując głosem, z literówkami („wieksze”, „zrub”). Odpowiadaj po polsku, zwięźle, bez żargonu. Gdy coś jest niejasne, interpretuj w duchu wcześniejszych próśb (patrz Historia).
-- **NIE uruchamiaj testów w przeglądarce** (Playwright/Chromium). Użytkownik wprost tego zabronił i przerywa takie procesy (kod 137). Weryfikuj wyłącznie przez `npm run check`, `npm run sim`, `npm run build-world` i `npx vite build`. W raporcie uczciwie pisz, czego nie dało się sprawdzić wizualnie.
+- **NIE uruchamiaj testów w przeglądarce** (Playwright/Chromium). Użytkownik wprost tego zabronił i przerywa takie procesy (kod 137). Weryfikuj przez `npm run check`, `sim`, `sim-peds`, `build-world`, `smoke`, `node scripts/boot-test.mjs` i `npx vite build`. Wygląd sprawdzaj `npm run photo` (świat i rekwizyty) oraz `npm run model` (auta, ludzie, karabin): to programowe rastery w Node, nie przeglądarka; oglądaj PNG-i narzędziem Read. To przybliżenie GPU (światło, cień, tekstury, mgła, ACES), nie kopia piksel w piksel. W raporcie uczciwie pisz, czego nie dało się sprawdzić w prawdziwym WebGL (światło, cienie, FPS).
 - **Robi przerwy i wraca z nową listą.** Często powtarza wcześniejszą wiadomość w całości, zanim doda nowe punkty. Najpierw upewnij się, że stare punkty są zrobione.
 - **Po każdej zmianie:**
-  1. Commit na gałęzi `ccr-f37277ad-qchwz7`, z opisem po polsku i trailerami z system-reminder.
-  2. `git push -u origin ccr-f37277ad-qchwz7`.
+  1. Commit na gałęzi przydzielonej w poleceniu sesji (równoległe sesje mają różne gałęzie, np. `ccr-ecc3ed84-ivhb3i`, `ccr-82241717-wn3zfe`, `ccr-a540e01c-2z335y`), z opisem po polsku i trailerami z system-reminder.
+  **UWAGA: wiele sesji publikuje pod TYM SAMYM linkiem. Przed publikacją `git fetch` i scal cudze gałęzie (`git merge origin/<gałąź>`), inaczej nowa publikacja nadpisze cudze poprawki (tak wróciły błędy rzeki).**
+  2. `git push -u origin <ta gałąź>`.
   3. Ponowna publikacja gry pod tym samym linkiem (procedura niżej). Użytkownik gra **wyłącznie przez link** i nie uruchamia `npm`.
 - **Zdjęcia w `public/posters/brat1.jpg` i `brat2.jpg`** to twarz samego użytkownika. Potwierdził to i chce ich używać (reklamy „TAXI GRANSN”, pomniki w parkach, billboard na rynku). Nie usuwaj ich i nie podmieniaj.
 
@@ -48,6 +59,15 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 5. Jezdnie mają być ciągłe, przejezdne, szerokie co najmniej 5–6 m, bez kolizji. Każdy obiekt (kosz, budka…) ma swój kafelek ~5×5 m i nic się nie nakłada. Autostrada na ziemi, nie na estakadzie. Miasto mniejsze.
 6. Boty-kierowcy z trasami (A*) i korkami. Dym, ślady opon, odbicia w szybach, ładniejsze światło **bez spadku FPS**.
 7. Ostatnio: miasto było częściowo pod wodą (morze przykrywało ląd). Naprawione w `terrain.js` (dolna granica lądu) i w `grid.js` (plaża sprawdzana przed rzeką). Podkład terenu leży teraz 5 cm niżej i jest płaski.
+8. „Latająca powierzchnia” nad rzeką: punkty siatki w korycie miały typ ulicy, więc dostawały chodnik, którego rogi rzutowano na OBA brzegi (płyta wisiała nad wodą, auto mogło po niej jechać, mogli tam stać pasażerowie). Teraz punkty w korycie to `T_WATER`, a ćwiartka chodnika jest rzutowana tylko na brzeg swojego punktu (`clampToBank(x, z, side)`, `bankSide`).
+9. Brzeg rzeki = dokładnie linia w odległości `hw` od osi (`terrain.bankL/bankR`: narożnik po wewnętrznej stronie zakrętu, łuk po zewnętrznej). Po niej idą mury nabrzeża, minimapa i kolizje (koryto SOLID poza mostami). Wcześniej mur szedł po ściętym narożniku, a ziemia po łuku, więc wystawała nad wodę. Końcówki ulic przy nabrzeżu są docinane do brzegu. Autostrada przecina rzekę po moście (`highwayBridge` w `layout.js`). Wszystkie jezdnie w mieście (też autostrada i mosty) to bruk, drogi w lesie są ubite; asfalt (bez pasów) jest w kodzie, ale nieużywany.
+10. Uskok przy rzece: spłaszczenie rynku podnosiło ziemię aż do brzegu (do 3 m nad nabrzeżem i mostami). Teraz w `height()` najpierw jest rynek, potem dolina rzeki, więc brzeg leży zawsze na `bankY`. Rynek chroni tylko pas `r…r+50`. Przy ujściu mur nabrzeża schodzi razem z terenem (`cageY` w `buildRiver`).
+11. Niewidoczne drogi: `roads.clamp` przesuwał róg chodnika do NAJBLIŻSZEGO krawężnika, więc róg za osią ulicy lądował po drugiej stronie i płyta (+0,15) zakrywała ok. 2/3 jezdni. Teraz `sidewalkClamp` (assemble.js) + `roads.clampSide` docinają rogi zawsze na stronę punktu siatki (to samo w LOD). Poza jezdnią taksówka przyspiesza słabiej i jedzie maks. ok. 22 km/h (`vehicle.js`, `offRoad`).
+13. Color grading BEZ postprocessingu: `GRADE` w `materials.js` wstrzykiwany `onBeforeCompile` przed `dithering_fragment` (mniej nasycenia, `pow` 1,28 = ciemniejsze cienie, zimne cienie / ciepłe światła, lekka krzywa S). Do tego ciemniejsze niebo, mgła, hemisfera i ekspozycja 0,92. Nowy materiał z `createMaterials` dostaje grading sam.
+14. Wiszące powierzchnie po zmianach: (a) most autostrady był prostą belką między `e0`–`e1`, a jezdnia jest łamaną, więc część jezdni wisiała nad wodą bez pokładu (i kolizja BRIDGE obejmowała prostokąt nad wodą). Teraz `buildRiver` stawia przęsło pod KAŻDYM odcinkiem autostrady z `bridge`, a kolizja pomija `br.highway`. (b) tor kolejowy wisiał do 1,7 m nad terenem przez wygładzanie; teraz jest przycięty do ±0,2 m od terenu (`routes.js`).
+16. Z mostu nie dało się zjechać: koryto rzeki (SOLID) i końce ulic zasypywały komórki pokładu 1–3 m od krawędzi mostu. Teraz `collision.js` wypełnia mosty (prostokąt + ulice z `bridge`) NA KOŃCU, po korycie. Test: skrypt jazdy po osi każdego mostu sprawdza `solid()` jak `Vehicle.blocked`.
+17. Ustawienia gracza (`game/settings.js`, przycisk ⚙ pod minimapą, klawisz O, przycisk w menu startowym): jakość (Niska/Średnia/Wysoka/Ultra = rozdzielczość + cienie + zasięg detali), cienie (wył./1024/2048/4096), FOV, czułość, ciemność kolorów (`GRADE_UNIFORM` w `materials.js`, 0 = bez gradingu), jasność, mgła. Zapis w localStorage (`gransn.settings.v2`). Domyślnie „Wysoka” (res 1,5, cienie 2048, detale 170 m) także na telefonie; `?low` wpływa już tylko na liczbę botów. Otwarcie panelu wstrzymuje grę, zamknięcie wznawia.
+12. Większe miasto, mniej ulic: `HALF` 460 → 520 (ląd ~0,44 km²), ziarna Voronoi co 66 m (było 58), w `roads.js` rzadsze odgałęzienia (Voronoi: co 40–58 m, szansa 0,4; ulice: kontynuacja przy gęstości > 0,24, boczne > 0,38 i 0,26). Gęstość ulic spadła z ~38 do ~30 km/km².
 
 ## Architektura (src/)
 
@@ -55,25 +75,44 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 |---|---|
 | `core/rng.js`, `core/noise.js` | deterministyczny RNG (`hash`, `Rng`), szum Perlina 3D. **W generacji nigdy nie używaj `Math.random`**: świat musi wyjść identycznie w wątku głównym i w workerach. |
 | `city/terrain.js` | wyspa (`coastR(θ)`, `inland`), wzgórza, rzeka (oś + brzegi `left/right`), `height(x,z)` ze spłaszczeniem rzeki i rynku oraz dolną granicą lądu |
-| `city/layout.js` | `generateCity(seed)`: mosty → ziarna Poisson + Lloyd → Voronoi (strefy + krawędzie = szkielet ulic) → trasy → drogi P&M → `RoadNet` → siatka → klasyfikacja → dekoracje → fragmenty. `HALF = 460`. |
+| `city/layout.js` | `generateCity(seed)`: mosty → ziarna Poisson + Lloyd → Voronoi (strefy + krawędzie = szkielet ulic) → trasy → drogi P&M → `RoadNet` → siatka → klasyfikacja → dekoracje → fragmenty. `HALF = 520`. |
 | `city/roads.js` | L-system Parish & Müller: cele globalne (gęstość) i ograniczenia lokalne (przecięcie, przyciągnięcie, przedłużenie, woda). Wejście: mosty i krawędzie Voronoi/autostrady jako gotowe odcinki. |
+| `city/netfix.js` | WYKOŃCZENIE sieci ulic po L-systemie (`finalizeNetwork`): planaryzacja (podział w przecięciach i T-kontaktach, zgrzewanie końców), usuwanie zbyt bliskich równoległych uliczek, zwijanie odcinków < 6 m, ostre kąty, łączenie/usuwanie odciętych wysp, przedłużanie lub usuwanie ślepych uliczek. Mosty i autostrada są nieruchome. |
+| `city/audit.js` | `auditStreets`: liczy błędy sieci (przecięcia bez węzła, szczeliny, ślepe uliczki, wyspy, ostre kąty, bliskie równoległe) i daje `score`; `growRoads` liczy 3 warianty L-systemu i bierze najlepszy |
+| `city/organic.js` | ORGANICZNE ulice: łańcuchy między skrzyżowaniami → gładkie krzywe (Chaikin + Catmull-Rom, odcinki ~9 m), przyjmowane tylko bez przecięć, bez zbliżania się do innych ulic i rzeki. Rynek (plac + 40 m), mosty i autostrada zostają proste. |
 | `city/roadnet.js` | `RoadNet`: drogi jako **kapsuły** (odcinek + `rw`). `clearance`, `nearest`, `clamp` (docinanie chodników), `capsulePoly` (kolizje) |
-| `city/routes.js` | kolej (z dworcem) i autostrada (krzywe Catmull-Rom) |
+| `city/routes.js` | autostrada (krzywa Catmull-Rom); **kolei nie ma** (`routes.rail` to pusta trasa, użytkownik jej nie chciał). `bestRoute` wybiera łuk wg ziarna |
+| `city/tidy.js` | porządkowanie sieci ulic po L-systemie: łączy współliniowe odcinki, usuwa krótkie ślepe uliczki |
+| `city/bridges.js` | MOSTY z segmentów 5 m (`SEG`): `makeBridge`, `bridgeSegments`, `onBridge`. Most jest prosty, prostopadły do rzeki, segmenty stykają się krawędź w krawędź. Miejski 2 segmenty szerokości, autostrada 3, kolejowy 1 (`br.rail`). Moduł `bridgeseg`. |
+| `city/props.js` | REJESTR REKWIZYTÓW (rozmiar, odcisk `r`, kolizja `solid`, priorytet, orientacja, limit) i tabele stref `ZONES`. Dodajesz rekwizyt: wpis tu + moduł w `gen/propmods.js` + (opcjonalnie) wariant w `VARIANT` w `assemble.js` |
+| `render/layers.js` | KOLEJNOŚĆ WARSTW nawierzchni (wysokość, renderOrder, polygonOffset z jednej tabeli `SURFACE`) |
 | `city/grid.js` | nieregularna siatka czworokątów (Stålberg), `buildingInfo` (gramatyka brył + palety HSL), `classifyGrid`, `raised`, `wallPlan`, `decorate` (1 obiekt na punkt), `makeChunks` |
 | `gen/cage.js` | trójliniowa deformacja kostki (FFD) + poprawne normalne |
 | `gen/builder.js` | budowa geometrii: szum zależny od pozycji w świecie, pochylenie, AO, UV w metrach. `MATDEF` (stała `W`: **jeden szum dla wszystkich materiałów budynków**, inaczej plakaty i ramy „chowają się” w ścianie) |
-| `gen/modules.js` | ~45 modułów: ściany, okna (`windowCore`, `glassFrame`), drzwi, witryny, gzymsy, dachy, mosty, nabrzeża, drzewa (rekurencyjne, 4 gatunki), auta (`oldcar`), kioski, budki, przystanki, fontanna, tory, latarnia morska, molo… |
+| `gen/propmods.js` | ~45 nowych modułów rekwizytów (hydrant, słup ogłoszeniowy, stragany, altana, wiatrak, łódź…), dopinane do `M` przez `installProps` |
+| `gen/modules.js` | ~45 modułów: ściany, okna (`windowCore`, `glassFrame`), drzwi, witryny, gzymsy, dachy, mosty, nabrzeża, drzewa (rekurencyjne, 4 gatunki), kioski, budki, przystanki, fontanna, tory, latarnia morska, molo… Auta (`oldcar`, `carwheel`) dokleja `Object.assign(M, vehicleModules)` z `vehicles.js` |
+| `gen/vehicles.js` | 6 typów aut (`CAR_KINDS`): tourer, taxi, sedan, van, truck, roadster. Gładkie „skóry” (`skin`, `ringX`, `lofted`, `rbox`) z superelips i policzonymi normalnymi, koło (`wheel`), błotniki, maska, chłodnica, lampy, kotwice kierowcy i pasażera (`carAnchors`). Parametr `q` = poziom detalu |
+| `gen/people.js` | części ciała (`PEOPLE_PARTS`) z przegubem w początku układu: korpus (kurtka/płaszcz/suknia), głowa, fryzury, nakrycia głowy, ręce, nogi, buty. Materiał `cloth`, kolor z instanceColor |
+| `gen/weapons.js` | karabin z zamkiem (`rifle`, `bolt`) i ręce w widoku z pierwszej osoby (`arms`) |
 | `gen/assemble.js` | składanie fragmentu: `buildQuad` (ściany, dachy `roofSpec`, ćwiartki gruntu), `buildRoad` (wstęga, zaokrąglone końce, krawężniki maskowane), rekwizyty, `buildRiver`, `buildChunkLOD`, `buildGroundTile` |
 | `gen/worker.js`, `gen/pool.js` | generacja w Web Workerach. Pula przełącza się na wątek główny, gdy workery nie działają (`?local` wymusza ten tryb). |
 | `game/streaming.js` | fragmenty 80×80 m: detal blisko (170 m, w `?low` 90 m), dalej LOD |
 | `game/collision.js` | siatka 0,5 m z typami: GROUND −0,05, ROAD +0,06, WALK +0,15, BRIDGE, SOLID. Jezdnia wypełniana na końcu, więc jest zawsze przejezdna. |
-| `game/vehicle.js` | fizyka taksówki, kolizje z botami, `moduleMesh` (siatka modułu dla obiektów ruchomych) |
-| `game/traffic.js` | graf dróg, A*, boty (pas, łuki Béziera, odstęp, pierwszeństwo/blokada węzła, cierpliwość), rysowanie przez InstancedMesh |
-| `game/taxi.js` | pasażerowie, kursy, opłaty, napiwki |
+| `game/carkit.js` | siatki aut dla gry (`CarKit`: karoseria per typ i poziom detalu, koło wspólne), `modelParts` |
+| `game/vehicle.js` | taksówka: wektor prędkości (drift), biegi, zawieszenie na sprężynach, koła, tylne światła, kolizje (ściany, boty, piesi), kamera zza auta |
+| `game/traffic.js` | graf dróg, A* na kopcu, boty (pas, łuki Béziera, odstęp, pierwszeństwo, piesi), InstancedMesh per typ i materiał, koła instancjonowane, `raycast`/`shot` dla broni |
+| `game/rig.js` | geometria części ciała, losowy wygląd (`makeStyle`), poza (`pose`: chód, siedzenie, machanie, upadek), `identityParts` |
+| `game/crowd.js` | rysowanie wszystkich ludzi (piesi, kierowcy, pasażerowie): InstancedMesh na część ciała |
+| `game/pedestrians.js` | silnik NPC: chodniki wzdłuż grafu, przejścia, unik, panika, upadek, `ahead`, `raycast`, `carHit`, `adopt` |
+| `game/taxi.js` | pasażerowie jako ludzie z tłumu (czekają, machają, idą do drzwi, siadają, wysiadają), kursy, opłaty, napiwki |
+| `game/weapon.js` | karabin: model w widoku z pierwszej osoby, strzał, rozrzut, zamek, przeładowanie, celowanie, trafienia, smugi |
+| `game/audio.js` | dźwięk syntezowany (silnik, klakson, strzał, kroki, uderzenia, pisk opon) |
+| `game/film.js` | TRYB FILMOWY (klawisz C, przycisk w menu): autopilot jedzie okrążenie wyspy (A* po grafie botów, pure pursuit, ~2–2,5 min), kamera przymocowana do auta (maska / zderzak / zza auta, V przełącza), FOV 100, jakość Ultra, bez HUD-u. `Vehicle.auto` = sterowanie autopilota. Nagrywa się zewnętrznie (OBS, Win+G). |
 | `game/fx.js` | dym, kurz, ślady opon (Points + bufor pierścieniowy) |
-| `game/player.js`, `game/hud.js` | chodzenie/lot, mysz/dotyk; minimapa, panel kursu, strzałka |
+| `game/player.js`, `game/hud.js` | chodzenie (wolne, wytrzymałość, kucanie, bezwładność), lot, mysz/dotyk; minimapa, panel kursu, strzałka, amunicja, celownik |
 | `render/*` | tekstury proceduralne, materiały PBR, atlas plakatów, atmosfera (słońce, niebo, mapa otoczenia z sylwetką miasta) |
 | `main.js` | start (ładowanie w tle, wejście zawsze możliwe), pętla gry |
+| `scripts/photo.mjs`, `scripts/photo/raster.mjs` | „aparat”: te same moduły, tekstury, materiały i światło (`LIGHTS` z `render/atmosphere.js`) rysowane programowo w Node. Ujęcia miasta + plansze studyjne (`--only kamienice,elementy,przyroda,nawierzchnie,wieza`, `--fast` = mały kadr). Canvas z `@napi-rs/canvas`. |
 
 ### Kluczowe zasady i liczby (nie psuj ich)
 
@@ -93,22 +132,59 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - **Jezdnia:** `rw` to 3,0 (uliczki P&M), 3,4 lub 4,2 (ulice Voronoi), 4,0 (główne P&M), 5,5 (autostrada), 3,5 (most). Punkt siatki jest pusty, jeśli `clearance < 5,2`, więc ściany zawsze są poza jezdnią.
 - **Rekwizyty:** jeden na punkt siatki. Muszą trzymać odstęp od jezdni (`clearance`), od budynków (`bldDist`) i od siebie (`free`). Drzewo zamiast wchodzić w dom zmniejsza się.
 - **Determinizm:** to samo `generateCity(seed)` liczy się w każdym workerze. Wszystko losowe idzie przez `hash`/`Rng`.
-- **Wydajność:** cała wyspa ma ok. 3 mln trójkątów (detal plus LOD). Auta-boty są instancjonowane. Odbicia pochodzą z PMREM liczonego raz. Nie dodawaj postprocessingu, który kosztuje FPS.
+- **Wydajność:** cała wyspa ma ok. 6 mln trójkątów (detal plus LOD). Auta-boty i ludzie są instancjonowani. Odbicia pochodzą z PMREM liczonego raz. Nie dodawaj postprocessingu, który kosztuje FPS. Mapa cieni odświeża się co drugą klatkę, rozdzielczość dopasowuje się do FPS (mnożnik `Settings.autoScale` 0,6…1 razy rozdzielczość z menu; wyłącza go pole „Automatyczna rozdzielczość”, a w trybie filmowym i przy otwartych ustawieniach stoi w miejscu), HUD odświeża się ok. 8 Hz, nowe fragmenty świata trafiają do sceny po jednym na klatkę (`Streamer.defer/tick`).
+- **Optymalizacja generatora musi zachować geometrię co do bitu:** przed zmianą w `noise.js`, `builder.js`, `terrain.js` zapisz `npm run hash` (aktualnie seed 1984 = `4086ba8`, po scaleniu z gałęzią `ccr-82241717-wn3zfe`; skrót zmienia się tylko, gdy celowo zmieniasz wygląd świata, np. zaparkowane auta), po zmianie generatora skrót ma się zgadzać.
+- **Układ współrzędnych modeli ruchomych:** x = przód, y = góra, z = prawa strona (kierowca siedzi po lewej, z < 0). Kurs `heading` to kąt kierunku jazdy w płaszczyźnie (x, z): przód = (cos, sin), prawa = (−sin, cos); `mesh.rotation.y = −heading`.
+- **Auta w świecie i w grze to ten sam moduł** (`oldcar`). Lakier to materiał `body` (kolor z wierzchołków albo z `instanceColor`), tylne światła `tail`, ludzie `cloth`. Zaparkowane auta mają stałą stopkę 3,6 × 1,7 m (klatka ściska moduł do ≤5%), więc typy parkowane (`PARKED_KINDS`) mają nominalną długość 3,6–3,85 m.
+- **Piesi nie używają `Math.random`** w symulacji (Rng z ziarnem); efekty cząsteczkowe mogą.
 
 ### Ostatnie wyniki weryfikacji (seed 1984)
 
 | narzędzie | wynik |
 |---|---|
-| `npm run check` | ~3400 obiektów, 0 na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 364 budynki |
-| `npm run sim` | 34 auta, ~18 km/h średnio, ~1/3 w korkach, najdłuższe czekanie ~12 s, 0 NaN |
-| `npm run build-world` | 144 fragmenty, ok. 3,0 mln trójkątów, 0 błędów, 0 punktów lądu pod wodą |
+| `npm run check` | 3563 obiekty, 0 na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 835 budynków, 1139 odcinków ulic |
+| `npm run sim` | 34 auta, ~18 km/h średnio, ~39% stoi (korki to cecha gry), najdłuższe czekanie ~12 s, 0 NaN |
+| `npm run build-world` | 169 fragmentów, ok. 6,15 mln trójkątów (detal + LOD łącznie), 0 błędów, 0 punktów lądu pod wodą; ~28 s (bez optymalizacji generatora było ~44 s) |
+| `npm run sim-peds` | 60 pieszych, 0 w budynkach, 0 w wodzie, 0 NaN, ~17% pozycji na jezdni (przejścia i narożniki), 0,26 ms na krok |
+| `npm run smoke` | 0 wyjątków i 0 NaN: jazda, kurs z pasażerem, wysiadanie, strzały (8/8 trafień przy wolnej linii), potrącenie |
+| `node scripts/boot-test.mjs` | prawdziwy `main.js` (z ustawieniami i trybem filmowym) rusza i przechodzi scenariusz bez błędów |
+| `node scripts/sim-film.mjs 1984` | autopilot: 1583 z 1655 m trasy w 200 s, ~2 s poza jezdnią, 0 NaN (ziarna 7 i 31337 też bez NaN) |
+
+Fizyka taksówki (płaska płyta): 0–50 km/h w ~4,1 s, maksimum ~62 km/h, hamowanie z 61 km/h na ~16 m.
+
+**Kontrakt `Vehicle` ↔ tryb filmowy.** `Vehicle(scene|null, grid, M, kit, kind)`: przy `scene = null` jest sama fizyka (skrypty `sim-film`, `sim-peds`). `car.auto = {steer, v}` zastępuje klawisze autopilotem; `car.steerMax()` = maks. skręt kół przy bieżącej prędkości, `car.wb` = rozstaw osi, `car.obstacles(x, z)` = boty w pobliżu (podpina je `main.js`). Zmieniając fizykę, odpal `node scripts/sim-film.mjs` na kilku ziarnach, bo autopilot jest czuły na zakręcanie i hamowanie.
+
+
+15. Przegląd wyglądu zdjęciami: chodniki z płyt wchodziły na jezdnię (teraz ćwiartki przy jezdni są dzielone i docinane po kawałku), rynek nie miał ratusza (jezdnie wygenerowane przez L-system są usuwane z 21 m od środka, wieża z zegarami i miedzianym hełmem to `M.townhall`, `extras` typu `townhall`), puste pola płyt zamieniają się w trawniki z drzewami (`lawn()` w `grid.js`), nowe tekstury (tynk bez łat, cegła z paletą i jasną zaprawą, trawa ze stokrotkami, drewno), nowe drzewa (topola kolumnowa, gęsta korona dębu), pasażer z twarzą, budka, kiosk, przystanek, kosz.
+
+13. **Mosty z segmentów 5 m** (`city/bridges.js`): miejskie, autostrada i kolejowy. Trasy (autostrada, tory) są prostowane na przecięciu rzeki (`straightenCrossing`). Segment `solid` na końcach (oparcie), reszta z łukiem. Zdjęcia: `--seed 4 --cam … --look …`.
+14. **Układ dróg:** krawędzie Voronoi są proste (wyginanie usunięte, bo wyglądało brzydko), odgałęzienia L-systemu dokładnie prostopadłe, `tidyStreets` łączy odcinki i usuwa ślepe uliczki < 30 m.
+15. **Warstwy nawierzchni** (`render/layers.js`): każda nawierzchnia ma warstwę; wyższa wygrywa test głębi (polygonOffset) i rysuje się później (renderOrder). Nowa nawierzchnia = wpis w `SURFACE` + materiał o tej samej nazwie.
+16. **Rekwizyty:** `decorate` ustawia kandydatów wg priorytetu (punkty orientacyjne → budowle → wysokie słupy → drzewa → meble → drobiazgi → rośliny) i sprawdza prawdziwy odcisk (jezdnia, ściany z zapasem dla wysokich, rzeka, mosty, tory, autostrada, korony drzew). `check-world` liczy odciski z rejestru. 53 rodzaje, ~44 nowe.
+9. **Nowa mapa przy każdym wejściu:** `main.js` losuje ziarno (`crypto.getRandomValues`), numer wyspy jest w rogu ekranu i na ekranie startowym razem z przyciskiem „Nowa wyspa” (też Shift+N). `?seed=N` albo `#N` w linku odtwarza tę samą wyspę. Losowanie jest tylko w `main.js`, generator nadal jest deterministyczny. Przed oddaniem zmian w generatorze odpal `node scripts/seeds.mjs 1 60 --build`, bo 1984 to jedno ziarno z wielu.
+10. Naturalniejsze miasto: ulice z krawędzi Voronoi są łagodnie wyginane (`bendEdge`), kolory ścian z palety historycznych barw zależnej od dzielnicy (szum), wysokość kamienic maleje od rynku, wieże rzadsze, mocniejsze wzgórza na obrzeżach, drzewa przy ulicach. Punkt siatki, którego ćwiartka (nie tylko narożnik) sięga jezdni, przestaje być budynkiem.
+11. Gałąź `ccr-ecc3ed84-ivhb3i` (inna sesja: ustawienia `settings.js`, większe miasto, asfalt bez pasów, most autostrady jako `city.bridges[].highway`) jest scalona z tą gałęzią. Przed publikacją gry zawsze zrób `Artifact read` i sprawdź, czy ktoś inny nie wrzucił nowszej wersji. Ruch uliczny po scaleniu jest o kilka km/h wolniejszy niż na tamtej gałęzi (ulice kręte).
+12. Dachy: gzymsy (`cornice`, `string`) i okapy domów (`eave`) mają denka na końcach i element narożny w wypukłym rogu (parametry `endKind`, `cornerOwner` z `wallSegment`), wcześniej narożniki były dziurami. Mosty: poręcz nabrzeża to osobny moduł `quayrail` stawiany tylko tam, gdzie nie ma jezdni, mostu, torów ani autostrady; autostrada nad rzeką to most (`riverRun` w `routes.js`, `st.bridge` ustawiane w `layout.js`).
+
+**Pułapka przy detalach tuż przed ścianą:** szum materiału (`wob`) liczy się w wierzchołkach. Jeden duży prostokąt ściany i detal 1 cm przed nim rozchodzą się o kilka cm i detal „tonie” w ścianie. Dużą ścianę dziel siatką ~0,8 m (`b.grid`) albo odsuń detal o ≥ 3 cm.
 
 ## Znane braki i pomysły na dalej
 
-- Koła aut się nie obracają (cała karoseria to jedna siatka modułu).
-- Nie ma pieszych-botów (pasażerowie stoją), nie ma pory dnia i nocy.
-- Boty nie widzą się na skrzyżowaniach bez węzła w grafie (np. przecięcia z torami).
+- Nie ma pory dnia i nocy (światła aut i latarnie są gotowe na noc: materiał `light`).
+- Piesi nie siadają na ławkach, nie rozmawiają ze sobą i nie mijają się (brak kolizji piesi–piesi); kierowcy botów nie reagują na strzały poza zatrzymaniem na chwilę.
+- Boty nie mają świateł hamowania (instancje), a nie widzą się na skrzyżowaniach bez węzła w grafie (np. przecięcia z torami).
+- Karabin nie zostawia śladów po kulach, a hit-scan zakłada budynki do 18 m wysokości.
+- Wygląd aut, ludzi i karabinu sprawdzono tylko rasteryzatorem programowym (`npm run model`), nie w prawdziwym WebGL: światło, cienie i FPS na urządzeniu użytkownika nie były widziane.
 - LOD nie ma rekwizytów (lamp, ławek), drzewa w LOD to proste ostrosłupy.
 - UV dachów: rzut z góry lub z boku, więc rzędy dachówek nie zawsze idą wzdłuż połaci.
 - Pasażer siada w aucie przez `car.mesh.add`. Przy wysiadaniu jest usuwany. Działa, ale wsiadanie nie ma animacji.
 - `?low` włącza się automatycznie na telefonach i przy ≤4 rdzeniach lub ≤4 GB RAM.
+
+9. **Voronoi + L-system zostają i są dopracowane** (`netfix.js`, `audit.js`: planaryzacja, spójność, 3 warianty z wyborem po audycie, usuwanie cienkich komórek Voronoi, uliczka nie biegnie równolegle tuż obok drogi, most miejski nigdy w miejscu mostu autostrady, autostrada zawsze ciągła). Audyt: 0 przecięć bez węzła, 0 wysp, ~2 ślepe uliczki na mapę (przy rzece/plaży to norma). Próba zastąpienia ich planarnym grafem pierścieni (`plan.js`) została wycofana na prośbę użytkownika („ja chcę Voronoi i L-system”). Nie wracaj do regularnej siatki bez wyraźnej prośby. Tory usunięte na prośbę. Prześwity bramne (`ARCH`) bez podparcia (brak sąsiada z pełnym parterem) zamieniają się w zwykły budynek: to był „latający dom”.
+10. **Most = kafelek `bridgeseg` 5 m.** Balustrada jest ciągła (bez pilastrów na styku, tralki o podziałce zgranej z segmentem), słupy tylko na samych końcach; jezdnia mostu to ta sama wstęga co ulica (`buildRoad`), pod nią kamienny pokład. Most ma `cols=3` (15 m: jezdnia 8,4 m + chodniki 3,3 m).
+11. **Budżet dodatków.** `BUDGET` w `city/props.js` ogranicza liczbę sztuk każdego nowego rodzaju; razem ok. 95–100 nowych rzeczy na wyspę (lampy, ławki, kosze, budki, drzewa, krzewy i auta nie są liczone). Nie podnoś limitów bez prośby: użytkownik chciał „50–100 na mapę, bez chaosu”.
+
+12. **Tryb filmowy** (`game/film.js`): użytkownik chciał filmik z przejazdu po całej wyspie z kamerą na aucie i szerokim kątem. Renderer w Node jest za wolny na film (35 s na klatkę 640×360), więc zrobiony jest tryb w grze, który użytkownik nagrywa sam. Trasa i autopilot sprawdzane skryptem `sim-film.mjs`. Zakleszczenie z botem: po 2,5 s bot obok znika, po 5 s auto przeskakuje 14 m po trasie.
+13. **Ulice nie wchodzą w koryto rzeki** (`keepOffRiver` w `netfix.js`): krawędzie Voronoi biegnące po linii brzegu miały jezdnię do połowy w wodzie (13–33 na mapę), co blokowało auto jako SOLID. Teraz węzły odsuwają się od brzegu na szerokość jezdni + 1,2 m.
+
+14. **Sesja `ccr-a540e01c-2z335y`** (optymalizacja, auta, chodzenie, karabin, piesi), scalona z gałęzią `ccr-82241717-wn3zfe`: generator ~35% szybszy bez zmiany geometrii (szum z tablicą gradientów, bufory typowane w `Builder`, `riverDist`), 6 typów aut z gładkimi skórami (`gen/vehicles.js`) i obracającymi się kołami, fizyka z poślizgiem i zawieszeniem, chodzenie 2,0 m/s (bieg 4,3, kucanie 1,05, celowanie 1,35; wytrzymałość), karabin po wyjściu z auta (E; X = strzał i Z = celowanie bez Pointer Lock), silnik pieszych (`pedestrians.js`) i szybki rysunek ludzi (`crowd.js`, `rig.js`), dźwięk syntezowany. Po scaleniu: `main.js` łączy oba światy (ustawienia, tryb filmowy, losowa wyspa przy wejściu, przycisk „Nowa wyspa”). Klawisz C = film w aucie, a pieszo = kucanie.

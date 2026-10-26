@@ -11,11 +11,12 @@
 import { Rng, hash } from '../core/rng.js';
 import { makeQuadGrid, classifyGrid, decorate, makeChunks } from './grid.js';
 import { makeRoutes } from './routes.js';
+import { makeBridge, riverSite, onBridge } from './bridges.js';
 import { growRoads } from './roads.js';
 import { RoadNet } from './roadnet.js';
 import { Terrain } from './terrain.js';
 
-export const HALF = 460; // mniejsza wyspa (~0,6 km²)
+export const HALF = 520; // wyspa ~0,45 km² lądu (było 460)
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -109,39 +110,22 @@ function inradius(poly, c) {
 }
 
 // ── mosty ───────────────────────────────────────────────────────────────────
-function makeBridges(terrain, rng) {
+// Dwa mosty miejskie: proste, prostopadłe do rzeki, z segmentów po 5 m (bridges.js).
+function makeCityBridges(terrain, rng, avoid = null) {
   const out = [];
   const P = terrain.pts, cand = [];
   for (let x = -HALF; x <= HALF; x += 10) {
     for (let i = 0; i < P.length - 1; i++) {
       if (x < P[i][0] || x > P[i + 1][0]) continue;
       const p = lerp2(P[i], P[i + 1], (x - P[i][0]) / (P[i + 1][0] - P[i][0]));
-      if (terrain.inland(p[0], p[1]) > 70) cand.push(x);
+      // most miejski nie może stanąć w miejscu mostu autostrady (dwa mosty w jednym miejscu)
+      if (terrain.inland(p[0], p[1]) > 70 && !(avoid && Math.hypot(p[0] - avoid.p[0], p[1] - avoid.p[1]) < 140)) cand.push(x);
     }
   }
   const xs = cand.length ? [0.2, 0.8].map((f) => cand[Math.floor(f * (cand.length - 1))]) : [];
   for (const x0 of xs) {
-    const x = x0 + rng.float(-15, 15);
-    const r = terrain.river(x, terrain.pts[0][1]);
-    // punkt na osi rzeki o danym x
-    let best = null;
-    const P = terrain.pts;
-    for (let i = 0; i < P.length - 1; i++) {
-      const a = P[i], b = P[i + 1];
-      if (x >= a[0] && x <= b[0]) {
-        const t = (x - a[0]) / (b[0] - a[0]);
-        best = { p: lerp2(a, b, t), tx: b[0] - a[0], tz: b[1] - a[1] };
-      }
-    }
-    if (!best) continue;
-    void r;
-    const tl = Math.hypot(best.tx, best.tz);
-    const T = [best.tx / tl, best.tz / tl], Nn = [-T[1], T[0]];
-    const skew = rng.float(-0.22, 0.22), c = Math.cos(skew), s = Math.sin(skew);
-    const A = [Nn[0] * c - Nn[1] * s, Nn[0] * s + Nn[1] * c];
-    const perp = [-A[1], A[0]];
-    const L = terrain.hw / Math.abs(A[0] * Nn[0] + A[1] * Nn[1]) + 0.2;
-    out.push({ p: best.p, axis: A, perp, L, width: 12, e0: [best.p[0] - A[0] * L, best.p[1] - A[1] * L], e1: [best.p[0] + A[0] * L, best.p[1] + A[1] * L] });
+    const site = riverSite(terrain, x0 + rng.float(-15, 15));
+    if (site) out.push(makeBridge(terrain, site, { cols: 2 }));
   }
   return out;
 }
@@ -169,7 +153,7 @@ function placeSeeds(terrain, bridges, center, rng) {
           const along = s * (b.L + d);
           seeds.push({ x: b.p[0] + b.axis[0] * along + b.perp[0] * 36 * q, z: b.p[1] + b.axis[1] * along + b.perp[1] * 36 * q, fixed: true });
         }
-  const minD = 58;
+  const minD = 66; // rzadsze ulice główne (Voronoi)
   for (let i = 0; i < 9000; i++) {
     const x = rng.float(-HALF + 10, HALF - 10), z = rng.float(-HALF + 10, HALF - 10);
     if (!seedAllowed(x, z, terrain, bridges, center)) continue;
@@ -300,17 +284,33 @@ export function generateCity(seed = 1984) {
   const terrain = new Terrain(seed, HALF);
   const center = [0, 0];
   terrain.plaza = { x: center[0], z: center[1], r: 70, y: terrain.hills(center[0], center[1]) };
-  const bridges = makeBridges(terrain, rng);
-  const seeds = placeSeeds(terrain, bridges, center, rng);
+  const routes = makeRoutes(seed, terrain, []);
+  const bridges = makeCityBridges(terrain, rng, routes.highway.bridge);
+  let seeds = placeSeeds(terrain, bridges, center, rng);
 
   let cells = voronoi(seeds);
-  for (let it = 0; it < 2; it++) {
+  for (let it = 0; it < 3; it++) {
     cells.forEach((c, i) => {
       const s = seeds[i];
       if (s.fixed || c.length < 3) return;
       const cc = polyCentroid(c);
       if (seedAllowed(cc[0], cc[1], terrain, bridges, center)) { s.x = cc[0]; s.z = cc[1]; }
     });
+    cells = voronoi(seeds);
+  }
+  // cienkie komórki-szczeliny (ulice biegnące równolegle tuż obok siebie, ostre kąty) znikają:
+  // usuwamy ich ziarno, a sąsiedzi przejmują teren. Ziarna stałe (mosty, rynek) i komórki przy
+  // rzece lub brzegu zostają, bo tam wąski kształt jest naturalny.
+  for (let pass = 0; pass < 6; pass++) {
+    const bad = new Set();
+    cells.forEach((c, i) => {
+      if (seeds[i].fixed || c.length < 3) return;
+      const cc = polyCentroid(c);
+      if (terrain.river(cc[0], cc[1]).d < terrain.hw + 45 || terrain.inland(cc[0], cc[1]) < 70) return;
+      if (inradius(c, cc) < 11 || polyArea(c) < 1500) bad.add(i);
+    });
+    if (!bad.size) break;
+    seeds = seeds.filter((_, i) => !bad.has(i));
     cells = voronoi(seeds);
   }
   cells = cells.map((c, i) => (c.length >= 3 ? clipRiver(c, seeds[i], terrain) : c));
@@ -371,7 +371,7 @@ export function generateCity(seed = 1984) {
     else if (br.chance(Math.max(0.12, Math.min(0.92, 1.3 - dC / 430))) && rIn > 22) blk.kind = 'tenement';
     else blk.kind = 'houses';
     // dzika przyroda przy brzegu wyspy
-    if (blk.kind !== 'plaza' && terrain.inland(c[0], c[1]) < 150 && br.chance(0.75)) blk.kind = 'nature';
+    if (blk.kind !== 'plaza' && terrain.inland(c[0], c[1]) < 135 && br.chance(0.6)) blk.kind = 'nature';
     cell.seed.kind = blk.kind;
     if (blk.kind === 'plaza') fillPlaza(blk, terrain);
     blocks.push(blk);
@@ -398,7 +398,6 @@ export function generateCity(seed = 1984) {
   const sgn = toP[0] * b0.axis[0] + toP[1] * b0.axis[1] > 0 ? 1 : -1;
   const spawn = { x: b0.p[0] + b0.perp[0] * 2, z: b0.p[1] + b0.perp[1] * 2, yaw: Math.atan2(-b0.axis[0] * sgn, -b0.axis[1] * sgn) };
 
-  const routes = makeRoutes(seed, terrain);
   // autostrada (na ziemi) wchodzi do sieci jako szeroka droga — L-system łączy się z nią
   const hwEdges = [];
   let s0 = 0;
@@ -408,7 +407,26 @@ export function generateCity(seed = 1984) {
     if (terrain.inland(a[0], a[1]) > 24 && terrain.inland(b[0], b[1]) > 24) hwEdges.push({ a, b, rw: 5.5, type: 'H', s0 });
     s0 += L;
   }
-  const streets = growRoads(seed, terrain, bridges, center, [...hwEdges, ...vEdges]);
+  // krawędź Voronoi biegnąca tuż obok autostrady (równolegle, < 18 m) tylko ją dubluje
+  const nearHw = (e) => {
+    const L = dist(e.a, e.b);
+    if (L < 1) return false;
+    let hit = 0;
+    const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+    for (let k = 0; k < 5; k++) {
+      const p = lerp2(e.a, e.b, (k + 0.5) / 5);
+      for (const h of hwEdges) {
+        const dx = h.b[0] - h.a[0], dz = h.b[1] - h.a[1], l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((p[0] - h.a[0]) * dx + (p[1] - h.a[1]) * dz) / l2));
+        const d = Math.hypot(p[0] - h.a[0] - dx * t, p[1] - h.a[1] - dz * t);
+        let da = Math.abs(ang - Math.atan2(dz, dx)) % Math.PI; if (da > Math.PI / 2) da = Math.PI - da;
+        if (d < 18 && da < 0.45) { hit++; break; }
+      }
+    }
+    return hit >= 3;
+  };
+  const vKeep = vEdges.filter((e) => !nearHw(e));
+  const streets = growRoads(seed, terrain, bridges, center, [...hwEdges, ...vKeep]);
   // nawierzchnia: bruk w mieście, ubita droga w lesie, asfalt na autostradzie
   const kindAt = (x, z) => {
     let best = null, bd = 1e18;
@@ -417,8 +435,15 @@ export function generateCity(seed = 1984) {
   };
   for (const st of streets) {
     const mx = (st.a[0] + st.b[0]) / 2, mz = (st.a[1] + st.b[1]) / 2;
-    st.mat = st.type === 'H' ? 'asphalt' : kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'cobble';
-    st.town = st.mat === 'cobble';
+    st.mat = kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'cobble';
+    if (st.type === 'H' || st.bridge) st.mat = 'cobble';
+    st.town = st.mat === 'cobble' && st.type !== 'H';
+  }
+  // autostrada nad rzeką: most z segmentów (routes.js) i jezdnia leżąca płasko na jego pokładzie
+  const hwBridge = routes.highway.bridge;
+  if (hwBridge) {
+    bridges.push(hwBridge);
+    for (const st of streets) if (st.type === 'H' && onBridge(hwBridge, (st.a[0] + st.b[0]) / 2, (st.a[1] + st.b[1]) / 2, 1)) st.bridge = true;
   }
   const roads = new RoadNet(streets);
   const extras = makeExtras(terrain, routes, rng);
@@ -437,11 +462,11 @@ function fillPlaza(blk, terrain) {
   blk.ministry = { tiers: [1, 0.79, 0.6, 0.42].map((k) => hs * k), tierH: 22, y: terrain.plaza.y };
 }
 
-// ── latarnia morska, molo, dworzec z pociągiem ──────────────────────────────
+// ── latarnia morska, molo ──────────────────────────────
 function makeExtras(T, routes, rng) {
   const out = [];
   const coastPt = (a, inset) => { const r = T.coastR(a) - inset; return [Math.cos(a) * r, Math.sin(a) * r]; };
-  const far = (p, d) => routes.highway.pts.every((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) > d) && routes.rail.pts.every((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) > d) && T.river(p[0], p[1]).d > 60;
+  const far = (p, d) => routes.highway.pts.every((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) > d) && T.river(p[0], p[1]).d > 60;
   let la = rng.float(0, Math.PI * 2);
   for (let i = 0; i < 24 && !far(coastPt(la, 6), 80); i++) la += 0.27;
   out.push({ kind: 'lighthouse', p: coastPt(la, 6), clear: 12 });
@@ -453,9 +478,5 @@ function makeExtras(T, routes, rng) {
     const e = [(o[0] - p[0]) / L, (o[1] - p[1]) / L];
     out.push({ kind: 'pier', p, e, len: L, clear: 6 });
   }
-  const R = routes.rail, i = R.station;
-  const a = R.pts[i - 5], b = R.pts[i + 5];
-  const L = Math.hypot(b[0] - a[0], b[1] - a[1]), e = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [-e[1], e[0]];
-  out.push({ kind: 'station', p: R.pts[i], e, n, y: R.y[i], clear: 34 });
   return out;
 }
