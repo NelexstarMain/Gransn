@@ -484,9 +484,8 @@ export function decorate(city) {
         for (const v of g.vAt(x + i * 16, z + j * 16)) if (TY[v] === T_BLD && !(g.ARCH[v] === 2)) d = Math.min(d, Math.hypot(X[v] - x, Z[v] - z));
     return d - 3.0;
   };
-  const hwBridge = city.routes.highway.bridge;
   const onRoute = (p, r) => polyDist(city.routes.rail, p[0], p[1]) < r + 3.2 || polyDist(city.routes.highway, p[0], p[1]) < r + 6.8
-    || city.bridges.some((br) => onBridge(br, p[0], p[1], r + 1.5)) || (hwBridge && onBridge(hwBridge, p[0], p[1], r + 2));
+    || city.bridges.some((br) => onBridge(br, p[0], p[1], r + 1.5));
   const dry = (p) => T.river(p[0], p[1]).d > T.hw + 2 && T.height(p[0], p[1]) > T.seaY + 0.3;
   const fits = (p, r, { roadGap = 0.5, tall = false, air = 0 } = {}) =>
     roads.clearance(p[0], p[1]) >= r + roadGap && bldDist(p[0], p[1]) >= r + (tall ? 0.5 : 0.15) && dry(p) && !onRoute(p, r) && !conflict(p, r, air, tall);

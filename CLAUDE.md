@@ -68,12 +68,11 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 |---|---|
 | `core/rng.js`, `core/noise.js` | deterministyczny RNG (`hash`, `Rng`), szum Perlina 3D. **W generacji nigdy nie używaj `Math.random`**: świat musi wyjść identycznie w wątku głównym i w workerach. |
 | `city/terrain.js` | wyspa (`coastR(θ)`, `inland`), wzgórza, rzeka (oś + brzegi `left/right`), `height(x,z)` ze spłaszczeniem rzeki i rynku oraz dolną granicą lądu |
-| `city/layout.js` | `generateCity(seed)`: mosty → ziarna Poisson + Lloyd → Voronoi (strefy + krawędzie = szkielet ulic) → trasy → drogi P&M → `RoadNet` → siatka → klasyfikacja → dekoracje → fragmenty. `HALF = 520`. |
-| `city/roads.js` | L-system Parish & Müller: cele globalne (gęstość) i ograniczenia lokalne (przecięcie, przyciągnięcie, przedłużenie, woda). Wejście: mosty i krawędzie Voronoi/autostrady jako gotowe odcinki. |
+| `city/plan.js` | **Plan ulic** (graf planarny): aleje promieniowe od rynku, pierścienie co 54 m, podulice, mosty na osiach alei, autostrada i kolej jako łuki pierścieni. Linie → przecięcia → obcięcie ślepych końców → ściany grafu = kwartały. `chooseBridges`, `planCity`. |
+| `city/layout.js` | `generateCity(seed)`: `chooseBridges` → `planCity` → kwartały (plac, kamienice, domki, park, natura) → `RoadNet` → siatka → klasyfikacja → dekoracje → fragmenty. `HALF = 520`. |
 | `city/roadnet.js` | `RoadNet`: drogi jako **kapsuły** (odcinek + `rw`). `clearance`, `nearest`, `clamp` (docinanie chodników), `capsulePoly` (kolizje) |
-| `city/routes.js` | kolej (z dworcem) i autostrada (krzywe Catmull-Rom). `bestRoute` wybiera łuk wg ziarna: przechodzi przez rzekę raz albo wcale, i prostuje przecięcie prostopadle do rzeki |
+| `city/routes.js` | tylko `polyDist` (trasy kolei i autostrady liczy `plan.js`) |
 | `city/bridges.js` | MOSTY z segmentów 5 m (`SEG`): `makeBridge`, `bridgeSegments`, `onBridge`. Most jest prosty, prostopadły do rzeki, segmenty stykają się krawędź w krawędź. Miejski 2 segmenty szerokości, autostrada 3, kolejowy 1 (`br.rail`). Moduł `bridgeseg`. |
-| `city/tidy.js` | porządkowanie sieci ulic po L-systemie: łączy współliniowe odcinki, usuwa krótkie ślepe uliczki |
 | `city/props.js` | REJESTR REKWIZYTÓW (rozmiar, odcisk `r`, kolizja `solid`, priorytet, orientacja, limit) i tabele stref `ZONES`. Dodajesz rekwizyt: wpis tu + moduł w `gen/propmods.js` + (opcjonalnie) wariant w `VARIANT` w `assemble.js` |
 | `render/layers.js` | KOLEJNOŚĆ WARSTW nawierzchni (wysokość, renderOrder, polygonOffset z jednej tabeli `SURFACE`) |
 | `city/grid.js` | nieregularna siatka czworokątów (Stålberg), `buildingInfo` (gramatyka brył + palety HSL), `classifyGrid`, `raised`, `wallPlan`, `decorate` (1 obiekt na punkt), `makeChunks` |
@@ -143,3 +142,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - UV dachów: rzut z góry lub z boku, więc rzędy dachówek nie zawsze idą wzdłuż połaci.
 - Pasażer siada w aucie przez `car.mesh.add`. Przy wysiadaniu jest usuwany. Działa, ale wsiadanie nie ma animacji.
 - `?low` włącza się automatycznie na telefonach i przy ≤4 rdzeniach lub ≤4 GB RAM.
+
+9. **Układ miasta zastąpiony planem (`plan.js`).** Wcześniej: Voronoi + L-system Parish & Müller (`roads.js`, `tidy.js`). Wyglądało to z góry chaotycznie, więc użytkownik poprosił o „więcej budynków i bardziej przemyślany” układ. Voronoi/P&M **usunięte** (do odzyskania z historii gita sprzed tego commita, jeśli użytkownik zechce wrócić). Teraz: ok. 1100 budynków, regularna siatka promieniowo-pierścieniowa.
+10. **Most = kafelek `bridgeseg` 5 m.** Balustrada jest ciągła (bez pilastrów na styku, tralki o podziałce zgranej z segmentem), słupy tylko na samych końcach; jezdnia mostu to ta sama wstęga co ulica (`buildRoad`), pod nią kamienny pokład. Most ma `cols=3` (15 m: jezdnia 8,4 m + chodniki 3,3 m).
+11. **Budżet dodatków.** `BUDGET` w `city/props.js` ogranicza liczbę sztuk każdego nowego rodzaju; razem ok. 95–100 nowych rzeczy na wyspę (lampy, ławki, kosze, budki, drzewa, krzewy i auta nie są liczone). Nie podnoś limitów bez prośby: użytkownik chciał „50–100 na mapę, bez chaosu”.

@@ -79,6 +79,22 @@ export const PROPS = {
   telegraph: P([1.8, 7.5, 0.8], 0.4, PRIO.tall, { solid: [0.15, 0.15], tall: true, orient: 'along' }),
 };
 
+// ── budżet dodatków: razem ok. 50–100 nowych rzeczy na całą wyspę ────────────
+//  Limit sztuk na rodzaj (waga „ile tego ma być”). Zwykłe wyposażenie (lampy, ławki, kosze,
+//  budki, drzewa, krzewy, auta) nie jest tu liczone. Miejsca wybiera losowo tabela stref, więc
+//  dodatki są rozrzucone po mapie, a nie skupione w jednym miejscu.
+export const BUDGET = {
+  // punkty orientacyjne i budowle
+  statue: 3, gazebo: 2, well: 3, windmill: 1, pergola: 2, swing: 1, sandbox: 1, sundial: 2, shrine: 2, roadcross: 2,
+  adcolumn: 3, streetclock: 3, stall: 2, fruitstall: 2, flowerstand: 3, cafeset: 4, wagon: 1,
+  // ulica
+  hydrant: 3, postbox: 3, bollard: 2, signpost: 2, pump: 2, planter: 3, sandwich: 2, trough: 1, lampdouble: 3,
+  bicycle: 2, handcart: 2, crates: 2, barrels: 2, firewood: 1, telegraph: 3, milestone: 2,
+  // ogród, przyroda, wybrzeże
+  shed: 3, beehive: 2, haystack: 2, clothesline: 2, coop: 2, rock: 3, stump: 2, rowboat: 2, deckchair: 2, flowerbed: 2, hedge: 3,
+};
+for (const [k, n] of Object.entries(BUDGET)) PROPS[k].max = n;
+
 // Nowe rodzaje (bez dotychczasowych): do liczenia i do zdjęć studyjnych
 export const NEW_KINDS = Object.keys(PROPS).filter((k) => !['lamp', 'bench', 'bin', 'booth', 'kiosk', 'busstop', 'bush', 'car', 'column'].includes(k));
 

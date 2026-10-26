@@ -476,7 +476,7 @@ function posterQuad(b, x0, y0, x1, y1, z, uv) {
 Object.assign(M, {
   // 22. Segment mostu 5 m (x = wzdłuż mostu, z = w poprzek). Każdy segment ma własny łuk
   //     z półfilarami po 0,5 m przy krawędziach, więc dwa segmenty stykają się w pełnym
-  //     filarze; ciągła jezdnia, chodniki, gzyms, balustrada z pilastrami na styku.
+  //     filarze; ciągła jezdnia, chodniki, gzyms, balustrada bez szwów na styku.
   //     p.solid = oparcie na lądzie (bez łuku), p.first/p.last = słupy końcowe,
   //     p.sw = szerokość chodnika (m).
   bridgeseg(b, W, H, D, p) {
@@ -538,28 +538,29 @@ Object.assign(M, {
       }
       return;
     }
-    // nawierzchnia: jezdnia z brukiem, chodniki z krawężnikiem
+    // nawierzchnia: pod jezdnią kamienny pokład (sama jezdnia to wstęga ulicy z buildRoad, więc
+    // na moście i przed nim jest ta sama nawierzchnia), po bokach chodniki z krawężnikiem
     const sw = p.sw ?? Math.min(2.5, D * 0.22), pw = 0.45;
-    b.gridY('cobble', H, 0, sw, W, D - sw, 2, Math.max(1, Math.round((D - 2 * sw) / 2.5)), { flat: 1 });
+    b.gridY('stone', H, 0, sw, W, D - sw, 2, Math.max(1, Math.round((D - 2 * sw) / 2.5)), { flat: 1, tint: [0.5, 0.48, 0.45] });
     for (const [za, zb, fz] of [[pw, sw, 1], [D - sw, D - pw, -1]]) {
       b.rectY('slab', H + 0.15, 0, za, W, zb, 1, { flat: 1 });
       const zc = fz > 0 ? zb : za;
       b.rectX('curb', 0, zc, H, zc, H + 0.15, 1);
       b.poly('curb', [[0, H, zc], [W, H, zc], [W, H + 0.15, zc], [0, H + 0.15, zc]], [0, 0, fz]);
     }
-    // balustrady: cokół, tralki, pochwyt, pilastry na styku segmentów, słupy na końcach
+    // balustrada ciągła od końca do końca mostu: cokół, tralki o stałej podziałce (zgranej z
+    // długością segmentu, więc na styku nie ma szwu) i pochwyt; słupy tylko na samych końcach
     for (const [za, zb] of [[0, pw], [D - pw, D]]) {
       b.box('stone', 0, H, za, W, H + 0.3, zb, 'yYzZ', so);
       b.box('stone', 0, H + 0.95, za - 0.04, W, H + 1.12, zb + 0.04, 'yYzZ', so);
       const nb = 16;
       for (let i = 0; i < nb; i++) {
         const x = ((i + 0.5) * W) / nb;
-        if (x < 0.34 || x > W - 0.34) continue;
+        if ((p.first && x < 0.5) || (p.last && x > W - 0.5)) continue;
         b.cyl('stone', x, (za + zb) / 2, H + 0.3, H + 0.95, 0.09, 0.07, 6, so);
       }
-      for (const [x0, x1] of [[0, 0.28], [W - 0.28, W]]) b.box('stone', x0, H, za - 0.07, x1, H + 1.22, zb + 0.07, 'xXYzZ', so);
-      if (p.first) b.box('stone', 0, H, za - 0.1, 0.6, H + 1.42, zb + 0.1, 'xXYzZ', so);
-      if (p.last) b.box('stone', W - 0.6, H, za - 0.1, W, H + 1.42, zb + 0.1, 'xXYzZ', so);
+      if (p.first) b.box('stone', 0, H, za - 0.1, 0.5, H + 1.3, zb + 0.1, 'xXYzZ', so);
+      if (p.last) b.box('stone', W - 0.5, H, za - 0.1, W, H + 1.3, zb + 0.1, 'xXYzZ', so);
     }
   },
 

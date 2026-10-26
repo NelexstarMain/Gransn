@@ -13,7 +13,7 @@ import { HALF } from '../city/layout.js';
 import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
 import { polyDist } from '../city/routes.js';
-import { SEG, bridgeSegments, onBridge } from '../city/bridges.js';
+import { SEG, bridgeSegments } from '../city/bridges.js';
 import { SURFACE, SURF_Y } from '../render/layers.js';
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -147,7 +147,6 @@ function buildRail(b, city, i) {
   const W = Math.hypot(c[0] - a[0], c[1] - a[1]);
   const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
   if (T.inland(mid[0], mid[1]) < 2) return;
-  if (city.routes.rail.bridge && onBridge(city.routes.rail.bridge, mid[0], mid[1], 0)) return; // tor leży na segmentach mostu
   const bridge = T.river(mid[0], mid[1]).d < T.hw + 3;
   // przejazd przez jezdnię: szyny równo z drogą, bez podsypki
   const crossing = !bridge && city.roads.clearance(mid[0], mid[1]) < 2.5;
@@ -536,7 +535,7 @@ export function buildRiver(city) {
     const hw = br.width / 2, Hb = T.bankY - yb;
     for (const sg of bridgeSegments(br)) {
       const pts = [[sg.a[0] - br.perp[0] * hw, sg.a[1] - br.perp[1] * hw], [sg.c[0] - br.perp[0] * hw, sg.c[1] - br.perp[1] * hw], [sg.a[0] + br.perp[0] * hw, sg.a[1] + br.perp[1] * hw], [sg.c[0] + br.perp[0] * hw, sg.c[1] + br.perp[1] * hw]];
-      place(b, 'bridgeseg', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), SEG, Hb, br.width, { solid: sg.solid, first: sg.first, last: sg.last, sw: (br.width - 2 * (br.highway ? 5.5 : 3.5)) / 2, rail: br.rail });
+      place(b, 'bridgeseg', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), SEG, Hb, br.width, { solid: sg.solid, first: sg.first, last: sg.last, sw: br.rail ? undefined : (br.width - 2 * 4.2) / 2, rail: br.rail });
     }
     // latarnie po obu stronach, na styku segmentów (co 2 segmenty od środka)
     if (!br.rail) for (const k of [-2, 2]) for (const sd of [-1, 1]) {
