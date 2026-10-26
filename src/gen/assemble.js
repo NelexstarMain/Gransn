@@ -11,7 +11,7 @@ import { Rng, hash } from '../core/rng.js';
 import { HALF } from '../city/layout.js';
 import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
-import { polyDist, riverRun } from '../city/routes.js';
+import { polyDist } from '../city/routes.js';
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -306,16 +306,32 @@ function roofQuarter(b, city, info, G, i, top) {
 // Nawierzchnia ćwiartki pustego punktu. W mieście wszystko poza jezdnią leży
 // na +0,15 m (chodnik / trawnik / bruk podwórza) i jest DOCINANE do krawędzi
 // jezdni; od strony niskiego terenu (las, plaża) dostaje obrzeże.
-function groundQuarter(b, city, G, i, q) {
-  const g = city.grid, T = city.terrain, a = G.v[i], ty = g.TY[a];
-  if (!raised(city, a)) return;
-  const roads = city.roads;
-  const clampAll = (p) => {
-    let c = roads.clamp(p, 0.3);
-    const bank = T.clampToBank(c[0], c[1]);
+// Docinanie ćwiartki chodnika do jezdni i brzegu rzeki. Wszystkie rogi idą na TĘ
+// stronę ulicy/rzeki, po której leży punkt odniesienia (punkt siatki albo — gdy
+// sam stoi na jezdni — jego róg najdalej od jezdni). null = ćwiartka cała na jezdni.
+export function sidewalkClamp(city, G, i) {
+  const T = city.terrain, roads = city.roads;
+  const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
+  let ref = G.p[i];
+  if (roads.clearance(ref[0], ref[1]) < 0.3) {
+    let best = -1e9;
+    for (const p of raw) { const cl = roads.clearance(p[0], p[1]); if (cl > best) { best = cl; ref = p; } }
+    if (best < 0.3) return null;
+  }
+  const own = T.bankSide(ref[0], ref[1]);
+  return (p) => {
+    let c = roads.clampSide(p, ref, 0.3);
+    const bank = T.clampToBank(c[0], c[1], own);
     if (bank) c = [bank[0], bank[1]];
     return c;
   };
+}
+
+function groundQuarter(b, city, G, i, q) {
+  const g = city.grid, T = city.terrain, roads = city.roads, a = G.v[i], ty = g.TY[a];
+  if (!raised(city, a)) return;
+  const clampAll = sidewalkClamp(city, G, i);
+  if (!clampAll) return;
   const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
   const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES) || lawn(city, a) ? 'grass'
     : ty === T_COURT || ty === T_PLAZA ? 'cobble' : 'slab';
@@ -369,17 +385,27 @@ function buildRoad(b, city, s) {
   const o = { tint: ROAD_TINT[s.mat], flat: 1 };
   const yOff = s.mat === 'asphalt' ? 0.07 : s.mat === 'cobble' ? 0.06 : 0.05;
   const Y = (x, z) => (s.bridge ? T.bankY : T.height(x, z)) + yOff;
+  // ulica kończąca się przy nabrzeżu: wierzchołki z koryta wracają na brzeg (bez "balkonu" nad wodą)
+  const own = s.bridge ? 0 : T.bankSide((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2);
+  const onLand = (x, z) => {
+    if (s.bridge) return [x, z];
+    const c = T.clampToBank(x, z, own);
+    return c ? [c[0], c[1]] : [x, z];
+  };
   const P = (along, side) => {
-    const x = s.a[0] + u[0] * along + n[0] * side, z = s.a[1] + u[1] * along + n[1] * side;
+    const [x, z] = onLand(s.a[0] + u[0] * along + n[0] * side, s.a[1] + u[1] * along + n[1] * side);
     return [x, Y(x, z), z];
   };
+  // asfalt: autostrada ma 4 pasy (cała szerokość tekstury), ulice tylko środek z osią
+  const v0 = s.type === 'H' ? 0 : 0.3, v1 = s.type === 'H' ? 1 : 0.7, s0 = s.s0 || 0;
   const steps = Math.max(1, Math.ceil(L / 3)), across = 2;
   for (let i = 0; i < steps; i++) {
     const t0 = (i / steps) * L, t1 = ((i + 1) / steps) * L;
     for (let j = 0; j < across; j++) {
       const w0 = -rw + (2 * rw * j) / across, w1 = -rw + (2 * rw * (j + 1)) / across;
       const q = [P(t0, w0), P(t1, w0), P(t1, w1), P(t0, w1)];
-      const oo = s.mat === 'asphalt' ? { ...o, uv: [[(s.s0 + t0) / 12, j / across], [(s.s0 + t1) / 12, j / across], [(s.s0 + t1) / 12, (j + 1) / across], [(s.s0 + t0) / 12, (j + 1) / across]] } : o;
+      const va = v0 + ((v1 - v0) * j) / across, vb = v0 + ((v1 - v0) * (j + 1)) / across;
+      const oo = s.mat === 'asphalt' ? { ...o, uv: [[(s0 + t0) / 12, va], [(s0 + t1) / 12, va], [(s0 + t1) / 12, vb], [(s0 + t0) / 12, vb]] } : o;
       b.wpoly(mat, q, [0, 1, 0], oo);
     }
   }
@@ -388,7 +414,7 @@ function buildRoad(b, city, s) {
     const base = Math.atan2(dir[1], dir[0]), seg = 8;
     for (let k = 0; k < seg; k++) {
       const a0 = base - Math.PI / 2 + (k / seg) * Math.PI, a1 = base - Math.PI / 2 + ((k + 1) / seg) * Math.PI;
-      const p0 = [c[0] + Math.cos(a0) * rw, c[1] + Math.sin(a0) * rw], p1 = [c[0] + Math.cos(a1) * rw, c[1] + Math.sin(a1) * rw];
+      const p0 = onLand(c[0] + Math.cos(a0) * rw, c[1] + Math.sin(a0) * rw), p1 = onLand(c[0] + Math.cos(a1) * rw, c[1] + Math.sin(a1) * rw);
       b.wpoly(mat, [[c[0], Y(c[0], c[1]), c[1]], [p1[0], Y(p1[0], p1[1]), p1[1]], [p0[0], Y(p0[0], p0[1]), p0[1]]], [0, 1, 0], s.mat === 'asphalt' ? { ...o, uv: [[0.02, 0.5], [0.02, 0.5], [0.02, 0.5]] } : o);
     }
   };
@@ -436,7 +462,7 @@ export function buildRiver(city) {
   });
   // poręcz nabrzeża stoi tylko tam, gdzie nie ma jezdni, mostu, torów ani autostrady
   const free = (x, z) => !nearBridge([x, z]) && city.roads.clearance(x, z) > 0.9 && polyDist(city.routes.rail, x, z) > 4.5 && polyDist(city.routes.highway, x, z) > 9.5;
-  for (const bank of [T.left, T.right]) {
+  for (const bank of [T.bankL, T.bankR]) {
     for (let i = 0; i < bank.length - 1; i++) {
       const a = bank[i], c = bank[i + 1], L = dist(a, c), m = Math.max(1, Math.round(L / 6));
       const mid = lerp2(a, c, 0.5), rv = T.river(mid[0], mid[1]);
@@ -446,34 +472,35 @@ export function buildRiver(city) {
         const qa = [pa[0] + out[0], pa[1] + out[1]], qc = [pc[0] + out[0], pc[1] + out[1]];
         const pm = lerp2(pa, pc, 0.5);
         if (T.inland(pm[0], pm[1]) < 12) continue;
-        place(b, 'quay', Cage.quad(pa, pc, qa, qc, yb, T.bankY), dist(pa, pc), H, 1, {});
+        // przy ujściu teren opada do plaży — mur nabrzeża schodzi razem z nim (bez stopnia)
+        const top = (p) => Math.max(T.waterY + 0.4, Math.min(T.bankY, T.height(p[0], p[1])));
+        place(b, 'quay', cageY([pa, pc, qa, qc], [pa, pc, qa, qc].map((p) => top(p) - H), H), dist(pa, pc), H, 1, {});
         const k = Math.max(1, Math.round(dist(pa, pc) / 2.2));
         for (let u = 0; u < k; u++) {
           const ra = lerp2(pa, pc, u / k), rc = lerp2(pa, pc, (u + 1) / k), rm = lerp2(ra, rc, 0.5);
           if (!free(ra[0], ra[1]) || !free(rc[0], rc[1]) || !free(rm[0], rm[1])) continue;
-          place(b, 'quayrail', Cage.quad(ra, rc, [ra[0] + out[0], ra[1] + out[1]], [rc[0] + out[0], rc[1] + out[1]], T.bankY, T.bankY + 1.1), dist(ra, rc), 1.1, 1, {});
+          if (top(ra) < T.bankY - 0.25 || top(rc) < T.bankY - 0.25) continue; // przy ujściu mur schodzi do plaży — bez poręczy
+          const rq = [ra, rc, [ra[0] + out[0], ra[1] + out[1]], [rc[0] + out[0], rc[1] + out[1]]];
+          place(b, 'quayrail', cageY(rq, rq.map(top), 1.1), dist(ra, rc), 1.1, 1, {});
         }
       }
     }
   }
-  // autostrada nad rzeką: przęsła z balustradami, jezdnia (asfalt) leży 7 cm nad bruk-podkładem
-  const run = riverRun(T, city.routes.highway);
-  if (run) {
-    const P = city.routes.highway.pts, hwHalf = 8;
-    const nodes = [run.i0];
-    let acc = 0;
-    for (let i = run.i0; i < run.i1; i++) {
-      acc += dist(P[i], P[i + 1]);
-      if (acc >= 11 || i === run.i1 - 1) { nodes.push(i + 1); acc = 0; }
-    }
-    if (nodes.length > 2 && dist(P[nodes[nodes.length - 2]], P[nodes[nodes.length - 1]]) < 5) nodes.splice(nodes.length - 2, 1);
-    for (let k = 0; k < nodes.length - 1; k++) {
-      const ia = nodes[k], ic = nodes[k + 1], A = P[ia], C = P[ic], na = routeNormal(P, ia), nc = routeNormal(P, ic);
-      const pts = [[A[0] - na[0] * hwHalf, A[1] - na[1] * hwHalf], [C[0] - nc[0] * hwHalf, C[1] - nc[1] * hwHalf], [A[0] + na[0] * hwHalf, A[1] + na[1] * hwHalf], [C[0] + nc[0] * hwHalf, C[1] + nc[1] * hwHalf]];
-      place(b, 'bridge', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), dist(A, C), H, 2 * hwHalf, { end0: k === 0, end1: k === nodes.length - 2 });
-    }
+  // most autostrady idzie za jej łamaną (odcinek po odcinku), a nie po prostej:
+  // każdy odcinek nad korytem dostaje własne przęsło pod samą jezdnią
+  for (const st of city.streets) {
+    if (st.type !== 'H' || !st.bridge) continue;
+    const L = dist(st.a, st.b);
+    if (L < 1) continue;
+    let near = false;
+    for (let t = 0; t <= 1.0001; t += 0.1) if (T.river(st.a[0] + (st.b[0] - st.a[0]) * t, st.a[1] + (st.b[1] - st.a[1]) * t).d < T.hw + 1) near = true;
+    if (!near) continue;
+    const u = [(st.b[0] - st.a[0]) / L, (st.b[1] - st.a[1]) / L], n = [-u[1], u[0]], hw = st.rw + 2.5;
+    const pts = [[st.a[0] - n[0] * hw, st.a[1] - n[1] * hw], [st.b[0] - n[0] * hw, st.b[1] - n[1] * hw], [st.a[0] + n[0] * hw, st.a[1] + n[1] * hw], [st.b[0] + n[0] * hw, st.b[1] + n[1] * hw]];
+    place(b, 'bridge', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), L, T.bankY - yb, 2 * hw, { end0: T.river(st.a[0], st.a[1]).d >= T.hw, end1: T.river(st.b[0], st.b[1]).d >= T.hw });
   }
   for (const br of city.bridges) {
+    if (br.highway) continue;
     const spans = 3, hw = br.width / 2;
     const E = (t) => lerp2(br.e0, br.e1, t);
     const Hb = T.bankY - yb;
@@ -502,8 +529,9 @@ export function buildChunkLOD(city, id) {
       const a = V[i];
       if (g.TY[a] !== T_BLD) {
         if (raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN && !lawn(city, a)) {
-          const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]];
-          if (q4.some((p) => T.river(p[0], p[1]).d < T.hw + 0.5)) continue;
+          const cl = sidewalkClamp(city, G, i);
+          if (!cl) continue;
+          const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map(cl);
           b.wpoly('slab', q4.map((p) => [p[0], T.height(p[0], p[1]) + 0.1, p[1]]), [0, 1, 0], { flat: 1 });
         }
         continue;
@@ -530,7 +558,7 @@ export function buildChunkLOD(city, id) {
     if (L < 0.5) continue;
     const n = [-(st.b[1] - st.a[1]) / L * st.rw, (st.b[0] - st.a[0]) / L * st.rw];
     const P = (p, sd) => { const x = p[0] + n[0] * sd, z = p[1] + n[1] * sd; return [x, (st.bridge ? T.bankY : T.height(x, z)) + 0.13, z]; };
-    b.wpoly(st.mat === 'dirt' ? 'gravel' : st.mat === 'asphalt' ? 'asphalt' : 'cobble', [P(st.a, -1), P(st.b, -1), P(st.b, 1), P(st.a, 1)], [0, 1, 0], { tint: ROAD_TINT[st.mat], flat: 1, uv: [[0, 0], [L / 12, 0], [L / 12, 1], [0, 1]] });
+    b.wpoly(st.mat === 'dirt' ? 'gravel' : st.mat === 'asphalt' ? 'asphalt' : 'cobble', [P(st.a, -1), P(st.b, -1), P(st.b, 1), P(st.a, 1)], [0, 1, 0], { tint: ROAD_TINT[st.mat], flat: 1, uv: st.type === 'H' ? [[0, 0], [L / 12, 0], [L / 12, 1], [0, 1]] : [[0, 0.3], [L / 12, 0.3], [L / 12, 0.7], [0, 0.7]] });
   }
   // wieża ratusza w LOD: trzon + miedziany hełm (widać ją z całej wyspy)
   for (const ex of ch.extras) {

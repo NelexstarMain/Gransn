@@ -249,8 +249,10 @@ export function classifyGrid(city) {
     const kind = ns ? ns.kind : 'houses';
     ZN[v] = kind === 'tenement' ? Z_TENEMENT : kind === 'nature' ? Z_NATURE : Z_HOUSES;
     if (inl < 0 || Math.abs(x) > city.half - 4 || Math.abs(z) > city.half - 4) { TY[v] = T_WATER; continue; }
-    if (inl < 34) { TY[v] = T_BEACH; continue; } // plaża przed rzeką: ujście rzeki to też brzeg
-    if (T.river(x, z).d < T.hw + 6) continue;
+    const rd = T.river(x, z).d;
+    if (rd < T.hw) { TY[v] = T_WATER; continue; } // koryto (także ujście): bez chodnika, drzew, pasażerów
+    if (inl < 34) { TY[v] = T_BEACH; continue; }
+    if (rd < T.hw + 6) continue;
     // jezdnia + pas, w którym nie wolno stawiać budynków (przejazd ≥ 6 m, ściany ≥ 0,8 m od krawędzi)
     if (CL[v] < 5.2) continue;
     if (polyDist(city.routes.rail, x, z) < 5.5) { TY[v] = T_RAIL; continue; }

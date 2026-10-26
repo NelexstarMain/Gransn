@@ -17,7 +17,6 @@ export class CollisionGrid {
     this.n = Math.ceil((city.size + 80) / cell);
     this.data = new Uint8Array(this.n * this.n);
     const T = this.T, g = city.grid;
-    for (let i = 0; i < T.left.length - 1; i++) this.fill([T.left[i], T.left[i + 1], T.right[i + 1], T.right[i]], SOLID);
     for (let q = 0; q < g.quads.length / 4; q++) {
       const G = quadGeom(g, q);
       for (let i = 0; i < 4; i++) {
@@ -43,6 +42,7 @@ export class CollisionGrid {
     }
     for (const bb of city.billboards) if (!bb.noPosts) for (const k of [-0.3, 0.3]) this.disc(bb.p[0] + bb.e[0] * bb.size[0] * k, bb.p[1] + bb.e[1] * bb.size[0] * k, 0.3);
     for (const br of city.bridges) {
+      if (br.highway) continue; // most autostrady = jezdnia (BRIDGE wypełniane niżej po odcinkach)
       const hw = br.width / 2 - 0.5, e = 0.5;
       const P = (pt, s) => [pt[0] + br.perp[0] * s, pt[1] + br.perp[1] * s];
       const e0 = [br.e0[0] - br.axis[0] * e, br.e0[1] - br.axis[1] * e], e1 = [br.e1[0] + br.axis[0] * e, br.e1[1] + br.axis[1] * e];
@@ -50,6 +50,28 @@ export class CollisionGrid {
     }
     // jezdnia na końcu: zawsze przejezdna (nic na niej nie stoi)
     for (const st of city.streets) this.fill(capsulePoly(st, 0, 4), st.bridge ? BRIDGE : ROAD);
+    // koryto rzeki (dokładnie do nabrzeża) — nie da się wjechać na wodę, tylko na most
+    const P = T.pts, hw = T.hw, c = this.cell;
+    for (let i = 0; i < P.length - 1; i++) {
+      const x0 = Math.min(P[i][0], P[i + 1][0]) - hw, x1 = Math.max(P[i][0], P[i + 1][0]) + hw;
+      const z0 = Math.min(P[i][1], P[i + 1][1]) - hw, z1 = Math.max(P[i][1], P[i + 1][1]) + hw;
+      for (let z = Math.floor(z0 / c) * c + c / 2; z <= z1; z += c)
+        for (let x = Math.floor(x0 / c) * c + c / 2; x <= x1; x += c) {
+          const k = this.idx(x, z);
+          if (k < 0 || this.data[k] === BRIDGE || this.data[k] === SOLID) continue;
+          if (T.river(x, z).d < hw) this.data[k] = SOLID;
+        }
+    }
+    // mosty na końcu: ostatnie słowo ma pokład (inaczej koniec ulicy przy brzegu albo koryto
+    // zasypywały jego komórki i z mostu nie dało się zjechać)
+    for (const br of city.bridges) {
+      if (br.highway) continue;
+      const hw = br.width / 2 - 0.5, e = 0.5;
+      const P = (pt, s) => [pt[0] + br.perp[0] * s, pt[1] + br.perp[1] * s];
+      const e0 = [br.e0[0] - br.axis[0] * e, br.e0[1] - br.axis[1] * e], e1 = [br.e1[0] + br.axis[0] * e, br.e1[1] + br.axis[1] * e];
+      this.fill([P(e0, -hw), P(e1, -hw), P(e1, hw), P(e0, hw)], BRIDGE);
+    }
+    for (const st of city.streets) if (st.bridge) this.fill(capsulePoly(st, 0, 4), BRIDGE);
   }
 
   idx(x, z) {

@@ -41,7 +41,7 @@ export class Hud {
     poly(coast, '#d9c79a');
     const inner = coast.map(([x, z]) => { const l = Math.hypot(x, z); return [x * (1 - 34 / l), z * (1 - 34 / l)]; });
     poly(inner, '#6d8a52');
-    for (let i = 0; i < T.left.length - 1; i++) poly([T.left[i], T.left[i + 1], T.right[i + 1], T.right[i]], '#3d6a80');
+    poly([...T.bankL, ...T.bankR.slice().reverse()], '#3d6a80');
     ctx.lineCap = 'round';
     for (const s of this.city.streets) {
       ctx.strokeStyle = s.mat === 'asphalt' ? '#e8e2d0' : s.mat === 'dirt' ? '#a58a64' : '#c9c4b6';

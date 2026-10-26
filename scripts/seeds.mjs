@@ -38,7 +38,7 @@ for (let seed = from; seed <= to; seed++) {
     row.spawnClear = +R.clearance(sp.x, sp.z).toFixed(1);
     if (BUILD) {
       let nan = 0, tris = 0;
-      const ids = [0, 1, 2, 3].map((k) => Math.floor(((k + 0.5) / 4) * c.chunks.length));
+      const ids = c.chunks.map((h) => [h.id, h.quads.length]).sort((a, b) => b[1] - a[1]).slice(0, 4).map((x) => x[0]); // najgęstsze fragmenty
       for (const id of ids) for (const o of [buildChunk(c, id), buildChunkLOD(c, id)]) for (const m of Object.values(o.mats)) { tris += m.i.length / 3; for (const v of m.p) if (!Number.isFinite(v)) { nan++; break; } }
       row.nan = nan; row.kTri = Math.round(tris / 1000);
     }

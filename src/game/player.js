@@ -17,6 +17,7 @@ export class Player {
     this.keys = new Set();
     this.bob = 0;
     this.locked = false;
+    this.sens = 1; // mnożnik czułości (ustawienia)
 
     addEventListener('keydown', (e) => {
       this.keys.add(e.code);
@@ -29,6 +30,7 @@ export class Player {
     this.lookT = 0;
     const look = (dx, dy, k = 0.0022) => {
       this.lookT = performance.now();
+      k *= this.sens;
       this.yaw -= dx * k;
       this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * k));
     };

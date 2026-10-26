@@ -11,12 +11,12 @@
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
 import { makeQuadGrid, classifyGrid, decorate, makeChunks } from './grid.js';
-import { makeRoutes, riverRun } from './routes.js';
+import { makeRoutes } from './routes.js';
 import { growRoads } from './roads.js';
 import { RoadNet } from './roadnet.js';
 import { Terrain } from './terrain.js';
 
-export const HALF = 460; // mniejsza wyspa (~0,6 km²)
+export const HALF = 520; // wyspa ~0,45 km² lądu (było 460)
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -147,6 +147,31 @@ function makeBridges(terrain, rng) {
   return out;
 }
 
+// most autostrady: odcinki nad korytem dostają flagę bridge, a w miejscu
+// przecięcia z osią rzeki powstaje prosty most (jak mosty ulic)
+function highwayBridge(terrain, streets) {
+  // przejazd nad korytem: od pierwszego do ostatniego punktu autostrady nad wodą
+  let first = null, last = null, rw = 5.5;
+  for (const st of streets) {
+    if (st.type !== 'H') continue;
+    let over = false;
+    for (let t = 0; t <= 1.0001; t += 0.05) {
+      const x = st.a[0] + (st.b[0] - st.a[0]) * t, z = st.a[1] + (st.b[1] - st.a[1]) * t;
+      if (terrain.river(x, z).d >= terrain.hw) continue;
+      over = true;
+      const k = (st.s0 || 0) + t * Math.hypot(st.b[0] - st.a[0], st.b[1] - st.a[1]);
+      if (!first || k < first.k) first = { k, p: [x, z] };
+      if (!last || k > last.k) last = { k, p: [x, z] };
+    }
+    if (over || terrain.river((st.a[0] + st.b[0]) / 2, (st.a[1] + st.b[1]) / 2).d < terrain.hw + 2) { st.bridge = true; rw = st.rw; }
+  }
+  if (!first || terrain.inland(first.p[0], first.p[1]) < 24) return null;
+  const d = [last.p[0] - first.p[0], last.p[1] - first.p[1]], l = Math.hypot(d[0], d[1]) || 1;
+  const A = [d[0] / l, d[1] / l], L = l / 2 + 1.5;
+  const p = [(first.p[0] + last.p[0]) / 2, (first.p[1] + last.p[1]) / 2];
+  return { p, axis: A, perp: [-A[1], A[0]], L, width: 2 * rw + 5, highway: true, e0: [p[0] - A[0] * L, p[1] - A[1] * L], e1: [p[0] + A[0] * L, p[1] + A[1] * L] };
+}
+
 // ── ziarna Voronoi ──────────────────────────────────────────────────────────
 function seedAllowed(x, z, terrain, bridges, center) {
   if (Math.abs(x) > HALF - 8 || Math.abs(z) > HALF - 8) return false;
@@ -170,7 +195,7 @@ function placeSeeds(terrain, bridges, center, rng) {
           const along = s * (b.L + d);
           seeds.push({ x: b.p[0] + b.axis[0] * along + b.perp[0] * 36 * q, z: b.p[1] + b.axis[1] * along + b.perp[1] * 36 * q, fixed: true });
         }
-  const minD = 58;
+  const minD = 66; // rzadsze ulice główne (Voronoi)
   for (let i = 0; i < 9000; i++) {
     const x = rng.float(-HALF + 10, HALF - 10), z = rng.float(-HALF + 10, HALF - 10);
     if (!seedAllowed(x, z, terrain, bridges, center)) continue;
@@ -440,18 +465,13 @@ export function generateCity(seed = 1984) {
   };
   for (const st of streets) {
     const mx = (st.a[0] + st.b[0]) / 2, mz = (st.a[1] + st.b[1]) / 2;
-    st.mat = st.type === 'H' ? 'asphalt' : kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'cobble';
-    st.town = st.mat === 'cobble';
+    st.mat = kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'cobble';
+    if (st.type === 'H' || st.bridge) st.mat = 'cobble';
+    st.town = st.mat === 'cobble' && st.type !== 'H';
   }
-  // autostrada nad rzeką to most: jezdnia leży płasko na poziomie bulwarów (balustrady i przęsła w buildRiver)
-  const run = riverRun(terrain, routes.highway);
-  if (run) {
-    const idx = new Map(HP.map((q, i) => [q, i]));
-    for (const st of streets) {
-      const i = idx.get(st.a);
-      if (st.type === 'H' && i !== undefined && i >= run.i0 && i < run.i1) st.bridge = true;
-    }
-  }
+  // autostrada nad rzeką: most zamiast jezdni położonej na wodzie
+  const hwBridge = highwayBridge(terrain, streets);
+  if (hwBridge) bridges.push(hwBridge);
   const roads = new RoadNet(streets);
   const extras = makeExtras(terrain, routes, rng);
   const city = { seed, blocks, terrain, bridges, spawn, streets, roads, seedList: seeds, monuments, billboards, routes, extras, size: 2 * HALF, half: HALF };

@@ -12,6 +12,7 @@ import { Vehicle } from './game/vehicle.js';
 import { TaxiJob } from './game/taxi.js';
 import { Traffic } from './game/traffic.js';
 import { CarFX } from './game/fx.js';
+import { Settings } from './game/settings.js';
 
 const params = new URLSearchParams(location.search);
 // Każde wejście do gry to nowa wyspa. Numer mapy widać w rogu ekranu; ?seed=N albo #N (w linku
@@ -33,11 +34,12 @@ const setProgress = (t, label) => {
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, LOW ? 1 : 1.5));
+// rozdzielczość, cienie i zasięg detali ustawia potem `Settings` (domyślnie jakość „Wysoka”)
+renderer.setPixelRatio(1.5);
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = LIGHTS.exposure;
-renderer.shadowMap.enabled = !LOW;
+renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('app').appendChild(renderer.domElement);
 
@@ -65,7 +67,7 @@ async function start() {
   scene.add(sea);
 
   const pool = new WorkerPool(params.has('local') ? 0 : Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1)), city);
-  const streamer = new Streamer(scene, city, pool, M, LOW);
+  const streamer = new Streamer(scene, city, pool, M, false);
   const player = new Player(camera, grid, renderer.domElement);
   player.spawn(city.spawn.x, city.spawn.z, city.spawn.yaw);
   player.update(0);
@@ -129,6 +131,13 @@ async function start() {
   $('mapno').textContent = `wyspa nr ${SEED}`;
   $('newmap').addEventListener('click', (e) => { e.stopPropagation(); newIsland(); });
   $('newmap').addEventListener('touchend', (e) => { e.stopPropagation(); e.preventDefault(); newIsland(); });
+  // ustawienia: otwarcie wstrzymuje grę (bez zasłaniającej nakładki), zamknięcie wznawia
+  let wasPlaying = false;
+  const settings = new Settings({
+    renderer, camera, scene, atmo, streamer, player, M,
+    onOpen: () => { wasPlaying = playing; playing = false; document.exitPointerLock?.(); },
+    onClose: () => { if (wasPlaying) enter(); wasPlaying = false; },
+  });
   overlay.addEventListener('click', enter);
   overlay.addEventListener('touchend', (e) => { e.preventDefault(); enter(); });
   addEventListener('keydown', (e) => {
@@ -209,7 +218,7 @@ async function start() {
     if (!TEST) requestAnimationFrame(frame);
   }
   frame();
-  window.__game = { city, player, streamer, renderer, scene, camera, frame, car, job, traffic };
+  window.__game = { settings, city, player, streamer, renderer, scene, camera, frame, car, job, traffic };
 }
 
 const showError = (msg) => {

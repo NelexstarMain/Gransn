@@ -286,19 +286,13 @@ export function createTextures() {
     const c = (0.35 + id * 0.35) * (0.5 + 0.5 * e);
     return [c, c * 0.95, c * 0.9, e * (1 - d1)];
   }, 4);
-  // — asfalt z pasami (u = wzdłuż drogi, okres 12 m; v = w poprzek): kruszywo, koleiny, łaty,
-  //   pęknięcia, plamy oleju, wyblakłe i wytarte pasy
+  // — asfalt bez pasów (u = wzdłuż drogi, okres 12 m; v = w poprzek): kruszywo, koleiny, łaty, pęknięcia
   T.asphalt = bake(256, 512, (u, v) => {
-    const n = nA(u, v, 16, 4), f = nB(u, v, 128, 1), agg = nC(u, v, 200, 1), wear = nA(u, v, [3, 2], 3), cr = Math.abs(nB(u + 0.3, v + 0.2, [6, 3], 3) - 0.5);
+    const n = nA(u, v, 16, 4), f = nB(u, v, 128, 1), agg = nC(u, v, 200, 1), cr = Math.abs(nB(u + 0.3, v + 0.2, [6, 3], 3) - 0.5);
     const patch = ihash(Math.floor(u * 3) + 5, Math.floor(v * 6) + 11) > 0.84 ? 1 : 0;
     const ruts = Math.exp(-Math.pow((v - 0.36) / 0.05, 2)) + Math.exp(-Math.pow((v - 0.64) / 0.05, 2));
     let c = 0.23 + (n - 0.5) * 0.05 + (f - 0.5) * 0.045 + (agg > 0.82 ? 0.07 : agg < 0.12 ? -0.04 : 0) + ruts * 0.025 + patch * (-0.03 + (f - 0.5) * 0.02);
     if (cr < 0.004) c -= 0.07;
-    const line = (x, w) => Math.abs(v - x) < w;
-    const worn = 0.55 + 0.45 * smooth(0.25, 0.7, wear);
-    if (line(0.04, 0.008) || line(0.96, 0.008)) c = c + (0.85 - c) * worn;
-    else if (line(0.5, 0.012) && !line(0.5, 0.004)) c = c + (0.8 - c) * worn;
-    else if ((line(0.27, 0.007) || line(0.73, 0.007)) && (u % 1) < 0.35) c = c + (0.82 - c) * worn;
     return [c, c, c * 1.02, 0.5 + (f - 0.5) * 0.2 + (agg - 0.5) * 0.15 - (cr < 0.004 ? 0.2 : 0)];
   }, 1, { aniso: 8 });
 

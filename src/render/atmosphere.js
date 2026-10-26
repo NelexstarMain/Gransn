@@ -3,10 +3,10 @@ import * as THREE from 'three';
 
 // Wspólne liczby światła — używa ich też aparat do zdjęć (scripts/photo.mjs).
 export const LIGHTS = {
-  fog: 0xc4d2d8, fogDensity: 0.0026,
-  hemiSky: 0xd6e6f4, hemiGround: 0x6a5a44, hemiIntensity: 1.05,
-  sun: 0xffe0b8, sunIntensity: 2.9, sunDir: [-0.55, 0.5, 0.42],
-  skyTop: 0x5f93c4, envGround: 0x4a4740, envIntensity: 0.6, exposure: 1.05,
+  fog: 0xa4b2b8, fogDensity: 0.0026,
+  hemiSky: 0xc4d6e8, hemiGround: 0x4a4034, hemiIntensity: 0.62,
+  sun: 0xffd8a8, sunIntensity: 3.0, sunDir: [-0.55, 0.5, 0.42],
+  skyTop: 0x4a78a6, envGround: 0x4a4740, envIntensity: 0.4, exposure: 0.92,
 };
 export const FOG_COLOR = new THREE.Color(LIGHTS.fog);
 
@@ -20,7 +20,8 @@ export function createAtmosphere(scene, renderer) {
   // niższe, cieplejsze słońce popołudniowe — dłuższe cienie, złote światło na fasadach
   const sun = new THREE.DirectionalLight(LIGHTS.sun, LIGHTS.sunIntensity);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  let shadowRes = 2048;
+  sun.shadow.mapSize.set(shadowRes, shadowRes);
   const sc = sun.shadow.camera;
   sc.left = -80; sc.right = 80; sc.top = 80; sc.bottom = -80;
   sc.near = 1; sc.far = 400;
@@ -81,10 +82,17 @@ export function createAtmosphere(scene, renderer) {
   return {
     sun,
     sky,
+    setShadowRes(n) {
+      if (n === shadowRes) return;
+      shadowRes = n;
+      sun.shadow.mapSize.set(n, n);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+    },
     update(camPos) {
       sky.position.copy(camPos);
       // cienie podążają za graczem, przyciągnięte do siatki tekseli (bez migotania)
-      const step = 160 / 2048;
+      const step = 160 / shadowRes;
       const tx = Math.round(camPos.x / step) * step, tz = Math.round(camPos.z / step) * step;
       sun.target.position.set(tx, 0, tz);
       sun.position.set(tx + sunDir.x * 200, sunDir.y * 200, tz + sunDir.z * 200);

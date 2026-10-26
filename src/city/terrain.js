@@ -38,11 +38,47 @@ export class Terrain {
       this.left.push([P[i][0] - tz * m, P[i][1] + tx * m]);
       this.right.push([P[i][0] + tz * m, P[i][1] - tx * m]);
     }
+    // nabrzeża = DOKŁADNIE linia w odległości hw od osi: na wewnętrznej stronie zakrętu
+    // narożnik, na zewnętrznej łuk. Dzięki temu mur nabrzeża, ziemia (clampToBank)
+    // i kolizje mają tę samą krawędź — nic nie wisi nad wodą i nie ma szczelin.
+    this.bankL = this.offsetBank(1);
+    this.bankR = this.offsetBank(-1);
     this.plaza = null;
     this.half = half;
     // wyspa: promień brzegu R(θ) z losowymi półwyspami i zatokami
     this.seaY = this.waterY;
     this.isl = { r0: half * 0.84, ph: [r.float(0, 6), r.float(0, 6), r.float(0, 6)], o: r.float(0, 100) };
+  }
+
+  offsetBank(sd) {
+    const P = this.pts, hw = this.hw, out = [];
+    const nrm = (i) => {
+      const a = P[i], b = P[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      return [(-(b[1] - a[1]) / l) * sd, ((b[0] - a[0]) / l) * sd];
+    };
+    out.push([P[0][0] + nrm(0)[0] * hw, P[0][1] + nrm(0)[1] * hw]);
+    for (let i = 1; i < P.length - 1; i++) {
+      const na = nrm(i - 1), nb = nrm(i), p = P[i];
+      const tb = [P[i + 1][0] - p[0], P[i + 1][1] - p[1]];
+      if (na[0] * tb[0] + na[1] * tb[1] >= 0) {
+        // wewnętrzna strona zakrętu: przecięcie przesuniętych odcinków
+        const m = [(na[0] + nb[0]) / 2, (na[1] + nb[1]) / 2], m2 = m[0] * m[0] + m[1] * m[1];
+        out.push([p[0] + (m[0] * hw) / m2, p[1] + (m[1] * hw) / m2]);
+      } else {
+        // zewnętrzna: łuk wokół wierzchołka osi
+        let a0 = Math.atan2(na[1], na[0]), a1 = Math.atan2(nb[1], nb[0]);
+        while (a1 - a0 > Math.PI) a1 -= 2 * Math.PI;
+        while (a0 - a1 > Math.PI) a1 += 2 * Math.PI;
+        const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / 0.12));
+        for (let k = 0; k <= n; k++) {
+          const a = a0 + ((a1 - a0) * k) / n;
+          out.push([p[0] + Math.cos(a) * hw, p[1] + Math.sin(a) * hw]);
+        }
+      }
+    }
+    const e = P.length - 1, ne = nrm(e - 1);
+    out.push([P[e][0] + ne[0] * hw, P[e][1] + ne[1] * hw]);
+    return out;
   }
 
   coastR(theta) {
@@ -90,16 +126,21 @@ export class Terrain {
     const c = this.inland(x, z);
     const land = sstep(-25, 75, c);
     const d = this.river(x, z).d;
-    h = this.bankY + (h - this.bankY) * sstep(this.hw + 6, this.hw + 120, d);
+    // rynek spłaszczony NAJPIERW, potem dolina rzeki: brzeg zawsze leży dokładnie
+    // na wysokości nabrzeża i mostów (wcześniej rynek podnosił ziemię przy rzece
+    // o 1–3 m i powstawał uskok nad murem nabrzeża)
+    const p = this.plaza;
+    let keep = 0;
+    if (p) {
+      const pd = Math.hypot(x - p.x, z - p.z);
+      h = p.y + (h - p.y) * sstep(p.r, p.r + 130, pd);
+      keep = 1 - sstep(p.r, p.r + 50, pd);
+    }
+    h = this.bankY + (h - this.bankY) * Math.max(keep, sstep(this.hw + 6, this.hw + 120, d));
     // plaża i dno morza
     h = this.seaY - 4 + (h - this.seaY + 4) * land;
     // ląd nigdy nie schodzi pod wodę: od ~40 m od brzegu co najmniej 1 m nad morzem
     h = Math.max(h, this.seaY - 6 + 7 * sstep(12, 40, c));
-    const p = this.plaza;
-    if (p) {
-      const pd = Math.hypot(x - p.x, z - p.z);
-      h = p.y + (h - p.y) * sstep(p.r, p.r + 130, pd);
-    }
     return h;
   }
 
@@ -112,12 +153,20 @@ export class Terrain {
   }
 
   // punkt w korycie → rzut na najbliższy brzeg
-  clampToBank(x, z) {
+  // (want = 1/-1: zawsze na brzeg TEJ strony, nawet gdy punkt leży za osią rzeki)
+  clampToBank(x, z, want = 0) {
     const r = this.river(x, z);
     if (r.d >= this.hw) return null;
     // strona rzeki: znak iloczynu wektorowego (styczna × kierunek do punktu)
     const side = r.tx * (z - r.pz) - r.tz * (x - r.px) >= 0 ? 1 : -1;
+    if (want && want !== side) return [r.px - r.nx * this.hw, r.pz - r.nz * this.hw, want];
     if (r.d < 1e-6) return [r.px, r.pz, side];
     return [r.px + r.nx * this.hw, r.pz + r.nz * this.hw, side];
+  }
+
+  // strona rzeki punktu na lądzie (1/-1)
+  bankSide(x, z) {
+    const r = this.river(x, z);
+    return r.tx * (z - r.pz) - r.tz * (x - r.px) >= 0 ? 1 : -1;
   }
 }

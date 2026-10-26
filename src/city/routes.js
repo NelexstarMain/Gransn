@@ -50,7 +50,9 @@ export function makeRoutes(seed, T) {
   const highway = { pts: hw, width: 11 }; // na ziemi (nie estakada)
   // kolej: łuk po drugiej stronie, przy ziemi; kończy się na plażach
   const rw = catmull(arc(T, a0 + Math.PI - 0.2, a0 + Math.PI + 2.0, 0.48, -25, rng), 6);
-  const ry = smoothY(rw.map(([x, z]) => Math.max(T.height(x, z), T.seaY + 1)), 4);
+  // tor leży tuż przy terenie (±0,2 m): bez wiszących nasypów i bez zakopania
+  const rh = rw.map(([x, z]) => Math.max(T.height(x, z), T.seaY + 1));
+  const ry = smoothY(rh, 1).map((y, i) => Math.max(rh[i] - 0.2, Math.min(rh[i] + 0.2, y)));
   const rail = { pts: rw, y: ry, width: 5 };
   rail.station = Math.floor(rw.length * 0.5);
   return { highway, rail };
@@ -66,17 +68,4 @@ export function polyDist(route, x, z) {
     best = Math.min(best, Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t));
   }
   return best;
-}
-
-// Odcinek trasy, który przechodzi nad rzeką: indeksy punktów [i0, i1] (z jednym punktem zapasu
-// po obu stronach, żeby most zaczynał się i kończył na lądzie). Ten sam wynik używa układ
-// miasta (oznacza jezdnię jako most) i geometria (buduje przęsła).
-export function riverRun(T, route, margin = 3.5) {
-  const P = route.pts;
-  let i0 = -1, i1 = -1;
-  for (let i = 0; i < P.length; i++) {
-    if (T.river(P[i][0], P[i][1]).d < T.hw + margin) { if (i0 < 0) i0 = i; i1 = i; }
-  }
-  if (i0 < 0) return null;
-  return { i0: Math.max(0, i0 - 1), i1: Math.min(P.length - 1, i1 + 1) };
 }
