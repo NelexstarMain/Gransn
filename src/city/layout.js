@@ -111,14 +111,15 @@ function inradius(poly, c) {
 
 // ── mosty ───────────────────────────────────────────────────────────────────
 // Dwa mosty miejskie: proste, prostopadłe do rzeki, z segmentów po 5 m (bridges.js).
-function makeCityBridges(terrain, rng) {
+function makeCityBridges(terrain, rng, avoid = null) {
   const out = [];
   const P = terrain.pts, cand = [];
   for (let x = -HALF; x <= HALF; x += 10) {
     for (let i = 0; i < P.length - 1; i++) {
       if (x < P[i][0] || x > P[i + 1][0]) continue;
       const p = lerp2(P[i], P[i + 1], (x - P[i][0]) / (P[i + 1][0] - P[i][0]));
-      if (terrain.inland(p[0], p[1]) > 70) cand.push(x);
+      // most miejski nie może stanąć w miejscu mostu autostrady (dwa mosty w jednym miejscu)
+      if (terrain.inland(p[0], p[1]) > 70 && !(avoid && Math.hypot(p[0] - avoid.p[0], p[1] - avoid.p[1]) < 140)) cand.push(x);
     }
   }
   const xs = cand.length ? [0.2, 0.8].map((f) => cand[Math.floor(f * (cand.length - 1))]) : [];
@@ -283,17 +284,33 @@ export function generateCity(seed = 1984) {
   const terrain = new Terrain(seed, HALF);
   const center = [0, 0];
   terrain.plaza = { x: center[0], z: center[1], r: 70, y: terrain.hills(center[0], center[1]) };
-  const bridges = makeCityBridges(terrain, rng);
-  const seeds = placeSeeds(terrain, bridges, center, rng);
+  const routes = makeRoutes(seed, terrain, []);
+  const bridges = makeCityBridges(terrain, rng, routes.highway.bridge);
+  let seeds = placeSeeds(terrain, bridges, center, rng);
 
   let cells = voronoi(seeds);
-  for (let it = 0; it < 2; it++) {
+  for (let it = 0; it < 3; it++) {
     cells.forEach((c, i) => {
       const s = seeds[i];
       if (s.fixed || c.length < 3) return;
       const cc = polyCentroid(c);
       if (seedAllowed(cc[0], cc[1], terrain, bridges, center)) { s.x = cc[0]; s.z = cc[1]; }
     });
+    cells = voronoi(seeds);
+  }
+  // cienkie komórki-szczeliny (ulice biegnące równolegle tuż obok siebie, ostre kąty) znikają:
+  // usuwamy ich ziarno, a sąsiedzi przejmują teren. Ziarna stałe (mosty, rynek) i komórki przy
+  // rzece lub brzegu zostają, bo tam wąski kształt jest naturalny.
+  for (let pass = 0; pass < 6; pass++) {
+    const bad = new Set();
+    cells.forEach((c, i) => {
+      if (seeds[i].fixed || c.length < 3) return;
+      const cc = polyCentroid(c);
+      if (terrain.river(cc[0], cc[1]).d < terrain.hw + 45 || terrain.inland(cc[0], cc[1]) < 70) return;
+      if (inradius(c, cc) < 11 || polyArea(c) < 1500) bad.add(i);
+    });
+    if (!bad.size) break;
+    seeds = seeds.filter((_, i) => !bad.has(i));
     cells = voronoi(seeds);
   }
   cells = cells.map((c, i) => (c.length >= 3 ? clipRiver(c, seeds[i], terrain) : c));
@@ -354,7 +371,7 @@ export function generateCity(seed = 1984) {
     else if (br.chance(Math.max(0.12, Math.min(0.92, 1.3 - dC / 430))) && rIn > 22) blk.kind = 'tenement';
     else blk.kind = 'houses';
     // dzika przyroda przy brzegu wyspy
-    if (blk.kind !== 'plaza' && terrain.inland(c[0], c[1]) < 150 && br.chance(0.75)) blk.kind = 'nature';
+    if (blk.kind !== 'plaza' && terrain.inland(c[0], c[1]) < 135 && br.chance(0.6)) blk.kind = 'nature';
     cell.seed.kind = blk.kind;
     if (blk.kind === 'plaza') fillPlaza(blk, terrain);
     blocks.push(blk);
@@ -381,7 +398,6 @@ export function generateCity(seed = 1984) {
   const sgn = toP[0] * b0.axis[0] + toP[1] * b0.axis[1] > 0 ? 1 : -1;
   const spawn = { x: b0.p[0] + b0.perp[0] * 2, z: b0.p[1] + b0.perp[1] * 2, yaw: Math.atan2(-b0.axis[0] * sgn, -b0.axis[1] * sgn) };
 
-  const routes = makeRoutes(seed, terrain, bridges);
   // autostrada (na ziemi) wchodzi do sieci jako szeroka droga — L-system łączy się z nią
   const hwEdges = [];
   let s0 = 0;
@@ -391,7 +407,26 @@ export function generateCity(seed = 1984) {
     if (terrain.inland(a[0], a[1]) > 24 && terrain.inland(b[0], b[1]) > 24) hwEdges.push({ a, b, rw: 5.5, type: 'H', s0 });
     s0 += L;
   }
-  const streets = growRoads(seed, terrain, bridges, center, [...hwEdges, ...vEdges]);
+  // krawędź Voronoi biegnąca tuż obok autostrady (równolegle, < 18 m) tylko ją dubluje
+  const nearHw = (e) => {
+    const L = dist(e.a, e.b);
+    if (L < 1) return false;
+    let hit = 0;
+    const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+    for (let k = 0; k < 5; k++) {
+      const p = lerp2(e.a, e.b, (k + 0.5) / 5);
+      for (const h of hwEdges) {
+        const dx = h.b[0] - h.a[0], dz = h.b[1] - h.a[1], l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((p[0] - h.a[0]) * dx + (p[1] - h.a[1]) * dz) / l2));
+        const d = Math.hypot(p[0] - h.a[0] - dx * t, p[1] - h.a[1] - dz * t);
+        let da = Math.abs(ang - Math.atan2(dz, dx)) % Math.PI; if (da > Math.PI / 2) da = Math.PI - da;
+        if (d < 18 && da < 0.45) { hit++; break; }
+      }
+    }
+    return hit >= 3;
+  };
+  const vKeep = vEdges.filter((e) => !nearHw(e));
+  const streets = growRoads(seed, terrain, bridges, center, [...hwEdges, ...vKeep]);
   // nawierzchnia: bruk w mieście, ubita droga w lesie, asfalt na autostradzie
   const kindAt = (x, z) => {
     let best = null, bd = 1e18;

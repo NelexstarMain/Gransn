@@ -17,6 +17,7 @@ npm run sim            # symulacja ruchu ulicznego bez grafiki (korki, zakleszcz
 npm run build-world    # buduje CAŁY świat w Node: wyjątki, NaN, ląd pod wodą
 npm run photo          # „aparat”: zdjęcia PNG świata i każdego elementu, bez przeglądarki (katalog zdjecia/)
 node scripts/seeds.mjs 1 60 [--build]   # sprawdza wiele ziaren naraz (jezdnie, ściany, ląd pod wodą, NaN)
+node scripts/audit-roads.mjs 1 40 [--where]  # audyt sieci ulic: przecięcia, wyspy, ślepe uliczki, mosty
 node scripts/map.mjs 1984 [--props]     # plan miasta z góry (PNG): drogi, budynki, rzeka, mosty, tory
 ```
 
@@ -70,6 +71,8 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 | `city/terrain.js` | wyspa (`coastR(θ)`, `inland`), wzgórza, rzeka (oś + brzegi `left/right`), `height(x,z)` ze spłaszczeniem rzeki i rynku oraz dolną granicą lądu |
 | `city/layout.js` | `generateCity(seed)`: mosty → ziarna Poisson + Lloyd → Voronoi (strefy + krawędzie = szkielet ulic) → trasy → drogi P&M → `RoadNet` → siatka → klasyfikacja → dekoracje → fragmenty. `HALF = 520`. |
 | `city/roads.js` | L-system Parish & Müller: cele globalne (gęstość) i ograniczenia lokalne (przecięcie, przyciągnięcie, przedłużenie, woda). Wejście: mosty i krawędzie Voronoi/autostrady jako gotowe odcinki. |
+| `city/netfix.js` | WYKOŃCZENIE sieci ulic po L-systemie (`finalizeNetwork`): planaryzacja (podział w przecięciach i T-kontaktach, zgrzewanie końców), usuwanie zbyt bliskich równoległych uliczek, zwijanie odcinków < 6 m, ostre kąty, łączenie/usuwanie odciętych wysp, przedłużanie lub usuwanie ślepych uliczek. Mosty i autostrada są nieruchome. |
+| `city/audit.js` | `auditStreets`: liczy błędy sieci (przecięcia bez węzła, szczeliny, ślepe uliczki, wyspy, ostre kąty, bliskie równoległe) i daje `score`; `growRoads` liczy 3 warianty L-systemu i bierze najlepszy |
 | `city/roadnet.js` | `RoadNet`: drogi jako **kapsuły** (odcinek + `rw`). `clearance`, `nearest`, `clamp` (docinanie chodników), `capsulePoly` (kolizje) |
 | `city/routes.js` | autostrada (krzywa Catmull-Rom); **kolei nie ma** (`routes.rail` to pusta trasa, użytkownik jej nie chciał). `bestRoute` wybiera łuk wg ziarna |
 | `city/tidy.js` | porządkowanie sieci ulic po L-systemie: łączy współliniowe odcinki, usuwa krótkie ślepe uliczki |
@@ -144,6 +147,6 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - Pasażer siada w aucie przez `car.mesh.add`. Przy wysiadaniu jest usuwany. Działa, ale wsiadanie nie ma animacji.
 - `?low` włącza się automatycznie na telefonach i przy ≤4 rdzeniach lub ≤4 GB RAM.
 
-9. **Voronoi + L-system zostają.** Próba zastąpienia ich planarnym grafem pierścieni (`plan.js`) została wycofana na prośbę użytkownika („ja chcę Voronoi i L-system”). Nie wracaj do regularnej siatki bez wyraźnej prośby. Tory usunięte na prośbę. Prześwity bramne (`ARCH`) bez podparcia (brak sąsiada z pełnym parterem) zamieniają się w zwykły budynek: to był „latający dom”.
+9. **Voronoi + L-system zostają i są dopracowane** (`netfix.js`, `audit.js`: planaryzacja, spójność, 3 warianty z wyborem po audycie, usuwanie cienkich komórek Voronoi, uliczka nie biegnie równolegle tuż obok drogi, most miejski nigdy w miejscu mostu autostrady, autostrada zawsze ciągła). Audyt: 0 przecięć bez węzła, 0 wysp, ~2 ślepe uliczki na mapę (przy rzece/plaży to norma). Próba zastąpienia ich planarnym grafem pierścieni (`plan.js`) została wycofana na prośbę użytkownika („ja chcę Voronoi i L-system”). Nie wracaj do regularnej siatki bez wyraźnej prośby. Tory usunięte na prośbę. Prześwity bramne (`ARCH`) bez podparcia (brak sąsiada z pełnym parterem) zamieniają się w zwykły budynek: to był „latający dom”.
 10. **Most = kafelek `bridgeseg` 5 m.** Balustrada jest ciągła (bez pilastrów na styku, tralki o podziałce zgranej z segmentem), słupy tylko na samych końcach; jezdnia mostu to ta sama wstęga co ulica (`buildRoad`), pod nią kamienny pokład. Most ma `cols=3` (15 m: jezdnia 8,4 m + chodniki 3,3 m).
 11. **Budżet dodatków.** `BUDGET` w `city/props.js` ogranicza liczbę sztuk każdego nowego rodzaju; razem ok. 95–100 nowych rzeczy na wyspę (lampy, ławki, kosze, budki, drzewa, krzewy i auta nie są liczone). Nie podnoś limitów bez prośby: użytkownik chciał „50–100 na mapę, bez chaosu”.

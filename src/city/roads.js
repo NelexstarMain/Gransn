@@ -16,7 +16,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Rng, hash } from '../core/rng.js';
 import { noise3 } from '../core/noise.js';
-import { tidyStreets } from './tidy.js';
+import { finalizeNetwork } from './netfix.js';
+import { auditStreets } from './audit.js';
 
 // rw = połowa szerokości jezdni (m); przejazd zawsze ≥ 6 m
 const HIGHWAY = { len: 30, rw: 4.0 }, STREET = { len: 19, rw: 3.0 };
@@ -39,8 +40,11 @@ function projT(p, a, b) {
   return { t, d: Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dz * t), q: [a[0] + dx * t, a[1] + dz * t] };
 }
 
-export function growRoads(seed, T, bridges, center, base = []) {
-  const rng = new Rng(hash(seed, 1999));
+const VARIANTS = 3; // tyle wariantów L-systemu liczymy; zostaje ten z najlepszym wynikiem audytu
+
+// Jeden przebieg L-systemu (wariant = inne losowanie odgałęzień). Zwraca surowe odcinki.
+function growOnce(seed, T, bridges, center, base, variant) {
+  const rng = new Rng(hash(seed, 1999, variant));
   const pop = (x, z) => {
     const inl = T.inland(x, z);
     if (inl < 25 || T.river(x, z).d < T.hw + 4) return 0;
@@ -87,7 +91,7 @@ export function growRoads(seed, T, bridges, center, base = []) {
   // szkielet z diagramu Voronoi: gotowe ulice główne; z nich L-system
   // wypuszcza prostopadłe uliczki do wnętrza kwartałów
   for (const e of base) {
-    if (Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 6) continue;
+    if (e.type !== 'H' && Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 6) continue; // autostrada zawsze ciągła
     const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
     insert({ a: e.a, b: e.b, ang, type: e.type || 'v', rw: e.rw, s0: e.s0 });
     const L = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
@@ -154,6 +158,21 @@ export function growRoads(seed, T, bridges, center, base = []) {
         if (da < 0.5) return null;
       }
     }
+    // uliczka nie biegnie równolegle tuż obok innej drogi (zlewałyby się w jedną, a między nimi
+    // nie zmieściłby się budynek)
+    if (s.type === 's') {
+      const ang = Math.atan2(s.b[1] - s.a[1], s.b[0] - s.a[0]);
+      for (let d = 4; d < L - 2; d += 4) {
+        const p = [s.a[0] + ((s.b[0] - s.a[0]) * d) / L, s.a[1] + ((s.b[1] - s.a[1]) * d) / L];
+        for (const o of near(p, 18)) {
+          if (o.bridge || Math.hypot(o.a[0] - s.a[0], o.a[1] - s.a[1]) < 1 || Math.hypot(o.b[0] - s.a[0], o.b[1] - s.a[1]) < 1) continue;
+          const pr = projT(p, o.a, o.b);
+          if (pr.t <= 0.03 || pr.t >= 0.97 || pr.d < 1) continue;
+          let da = Math.abs(ang - o.ang) % Math.PI; if (da > Math.PI / 2) da = Math.PI - da;
+          if (da < 0.3 && pr.d < 16) return null;
+        }
+      }
+    }
     s.rw = s.type === 'h' ? HIGHWAY.rw : STREET.rw;
     s.gen = true;
     return s;
@@ -199,5 +218,16 @@ export function growRoads(seed, T, bridges, center, base = []) {
     return (pc.t <= 0 ? Math.hypot(s.a[0] - center[0], s.a[1] - center[1]) : pc.t >= 1 ? Math.hypot(s.b[0] - center[0], s.b[1] - center[1]) : pc.d) < PLAZA_FREE;
   };
   const out = segs.filter((s) => !s.gen || s.bridge || !nearCenter(s)).map((s) => ({ a: s.a, b: s.b, rw: s.rw, type: s.type, bridge: !!s.bridge, s0: s.s0 || 0, gen: !!s.gen }));
-  return tidyStreets(out);
+  return out;
+}
+
+// Kilka wariantów → wykończenie (planaryzacja, spójność, ślepe uliczki…) → audyt → najlepszy.
+export function growRoads(seed, T, bridges, center, base = []) {
+  let best = null;
+  for (let v = 0; v < VARIANTS; v++) {
+    const net = finalizeNetwork(growOnce(seed, T, bridges, center, base, v), T);
+    const score = auditStreets(net, T).score;
+    if (!best || score < best.score) best = { score, net };
+  }
+  return best.net;
 }
