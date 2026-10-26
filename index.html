@@ -29,7 +29,22 @@
       #taxi b { color: #f2c200; font-size: 20px; }
       #speed { position: absolute; right: 16px; bottom: 14px; font-size: 26px; font-weight: bold; text-shadow: 0 2px 3px #000; }
       #arrow { position: absolute; left: 50%; top: 14px; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 34px solid #f2c200; transform-origin: 50% 60%; filter: drop-shadow(0 2px 2px #000); display: none; }
-      #cross { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: rgba(255,255,255,0.7); border-radius: 50%; }
+      /* celownik: cztery kreski rozsuwane zależnie od rozrzutu (--gap), kropka pośrodku */
+      #cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; --gap: 6px; display: none; filter: drop-shadow(0 0 1px #000); }
+      #cross i { position: absolute; background: #fff; }
+      #cross i:nth-child(1) { width: 2px; height: 9px; left: -1px; top: calc(-1 * var(--gap) - 9px); }
+      #cross i:nth-child(2) { width: 2px; height: 9px; left: -1px; top: var(--gap); }
+      #cross i:nth-child(3) { width: 9px; height: 2px; top: -1px; left: calc(-1 * var(--gap) - 9px); }
+      #cross i:nth-child(4) { width: 9px; height: 2px; top: -1px; left: var(--gap); }
+      #cross b { position: absolute; left: -1.5px; top: -1.5px; width: 3px; height: 3px; border-radius: 50%; background: #fff; }
+      #hitm { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px; border: 2px solid #fff; transform: rotate(45deg); display: none; opacity: 0.9; }
+      #ammo { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); font-size: 22px; font-weight: bold; letter-spacing: 0.08em; text-shadow: 0 2px 3px #000; display: none; }
+      #stam { position: absolute; left: 50%; bottom: 18px; width: 150px; height: 6px; margin-left: -75px; background: rgba(0,0,0,0.45); display: none; }
+      #stamfill { height: 100%; width: 100%; background: #f2c200; }
+      #touchbtns { position: fixed; right: 14px; bottom: 60px; display: none; gap: 10px; flex-direction: column; align-items: flex-end; z-index: 5; }
+      #touchbtns div { display: flex; gap: 10px; }
+      #touchbtns button { width: 56px; height: 56px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.6); background: rgba(16,28,36,0.55); color: #fff; font: bold 15px 'Trebuchet MS', sans-serif; touch-action: none; user-select: none; }
+      @media (pointer: coarse) { body.playing #touchbtns { display: flex; } }
     </style>
   </head>
   <body>
@@ -40,18 +55,27 @@
       <div id="clock">13:00</div>
       <div id="stats"></div>
       <div id="msg"></div>
-      <div id="cross"></div>
+      <div id="cross"><i></i><i></i><i></i><i></i><b></b></div>
+      <div id="hitm"></div>
+      <div id="ammo"></div>
+      <div id="stam"><div id="stamfill"></div></div>
       <div id="taxi"></div>
       <div id="arrow"></div>
       <div id="speed"></div>
+    </div>
+    <div id="touchbtns">
+      <div><button id="b-aim">CEL</button><button id="b-fire">OGIEŃ</button></div>
+      <div><button id="b-r">R</button><button id="b-jump">SKOK</button><button id="b-e">E</button></div>
     </div>
     <div id="overlay">
       <h1>GRANSN</h1>
       <h2>TAXI · WYSPA</h2>
       <div class="keys">
-        Jeździsz taksówką po wyspie: podjedź do pasażera w żółtym kółku, zatrzymaj się, zawieź go do zielonego celu. Uważaj na ruch uliczny i korki.<br />
-        W/S — gaz/hamulec &nbsp;·&nbsp; A/D — skręt &nbsp;·&nbsp; Spacja — ręczny &nbsp;·&nbsp; Mysz — kamera &nbsp;·&nbsp; E — wysiądź/wsiądź<br />
-        Pieszo: WASD, Shift bieg, F lot &nbsp;·&nbsp; H — ukryj HUD &nbsp;·&nbsp; Esc / P — pauza &nbsp;·&nbsp; Telefon: lewy kciuk jedzie, prawy obraca kamerę
+        Jeździsz taksówką po wyspie: podjedź do pasażera w żółtym kółku, zatrzymaj się, zawieź go do zielonego celu. Uważaj na ruch uliczny, korki i przechodniów.<br />
+        W/S — gaz/hamulec &nbsp;·&nbsp; A/D — skręt &nbsp;·&nbsp; Spacja — ręczny (drift) &nbsp;·&nbsp; Q — klakson &nbsp;·&nbsp; Mysz — kamera &nbsp;·&nbsp; E — wysiądź/wsiądź<br />
+        Pieszo: WASD (marsz jest wolny), Shift — bieg (męczy), C — kucanie, Spacja — skok, F — lot<br />
+        Karabin (po wyjściu z auta): LPM — strzał, PPM — celuj, R — przeładuj. Amunicja uzupełnia się w taksówce<br />
+        H — ukryj HUD &nbsp;·&nbsp; M — wycisz dźwięk &nbsp;·&nbsp; Esc / P — pauza &nbsp;·&nbsp; Telefon: lewy kciuk chodzi, prawy obraca kamerę, przyciski po prawej
       </div>
       <div id="loader"><div id="track"><div id="bar"></div></div><div id="loadlabel">Ładowanie…</div></div>
       <div class="go">[ KLIKNIJ / DOTKNIJ / ENTER, ABY JECHAĆ ]</div>

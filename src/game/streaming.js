@@ -41,17 +41,29 @@ export class Streamer {
     this.M = M;
     this.state = city.chunks.map(() => ({ lod: null, detail: null, pending: false, want: false }));
     this.tris = 0;
+    this.addQ = [];      // dodawanie siatek do sceny po jednej na klatkę (wysyłka do GPU bez skoków)
+    this.loadedN = 0;
+    this.pendingN = 0;
+  }
+
+  // odłóż dodanie siatki do sceny; wołane co klatkę zdejmuje jedną z kolejki
+  defer(fn) {
+    this.addQ.push(fn);
+  }
+
+  tick() {
+    if (this.addQ.length) this.addQ.shift()();
   }
 
   // LOD całego miasta w tle — dalekie fragmenty na końcu kolejki
   loadLOD() {
     this.city.chunks.forEach((ch, id) => {
-      this.pool.run({ seed: this.city.seed, kind: 'lod', id }, 1000 + Math.hypot(ch.center[0], ch.center[1])).then((mats) => {
+      this.pool.run({ seed: this.city.seed, kind: 'lod', id }, 1000 + Math.hypot(ch.center[0], ch.center[1])).then((mats) => this.defer(() => {
         const g = buildMeshes(mats, this.M, { shadows: false });
         this.state[id].lod = g;
         g.visible = !this.state[id].detail;
         this.scene.add(g);
-      });
+      }));
     });
   }
 
@@ -61,6 +73,7 @@ export class Streamer {
   }
 
   update(p) {
+    let loaded = 0, pending = 0;
     this.city.chunks.forEach((blk, id) => {
       const st = this.state[id];
       const d = this.distance(id, p);
@@ -68,14 +81,18 @@ export class Streamer {
       else if (d > this.dout) st.want = false;
       if (st.want && !st.detail && !st.pending) this.request(id, d);
       if (!st.want && st.detail) this.unload(id);
+      if (st.detail) loaded++;
+      if (st.pending) pending++;
     });
+    this.loadedN = loaded;
+    this.pendingN = pending;
     this.pool.reprioritize((msg, old) => (msg.kind === 'block' ? this.distance(msg.id, p) : msg.kind === 'lod' ? 1000 + this.distance(msg.id, p) : old));
   }
 
   request(id, d) {
     const st = this.state[id];
     st.pending = true;
-    this.pool.run({ seed: this.city.seed, kind: 'block', id }, d).then((mats) => {
+    this.pool.run({ seed: this.city.seed, kind: 'block', id }, d).then((mats) => this.defer(() => {
       st.pending = false;
       if (!st.want) return;
       st.detail = buildMeshes(mats, this.M);
@@ -83,7 +100,7 @@ export class Streamer {
       this.tris += st.tris;
       this.scene.add(st.detail);
       if (st.lod) st.lod.visible = false;
-    });
+    }));
   }
 
   unload(id) {
@@ -96,10 +113,10 @@ export class Streamer {
   }
 
   get loaded() {
-    return this.state.filter((s) => s.detail).length;
+    return this.loadedN;
   }
 
   get pendingCount() {
-    return this.state.filter((s) => s.pending).length;
+    return this.pendingN;
   }
 }

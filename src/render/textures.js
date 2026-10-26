@@ -8,15 +8,16 @@ function tileNoise(seed) {
   const perm = new Uint8Array(256), val = new Float32Array(256);
   for (let i = 0; i < 256; i++) { perm[i] = i; val[i] = r(); }
   for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
-  const h = (i, j, P) => {
-    const a = ((i % P) + P) % P, b = ((j % P) + P) % P;
-    return val[perm[(perm[a & 255] + b) & 255]];
-  };
+  const wrap = (i, P) => { const a = i % P; return a < 0 ? a + P : a; };
   const n = (x, y, P) => {
     const xi = Math.floor(x), yi = Math.floor(y);
     let xf = x - xi, yf = y - yi;
     xf = xf * xf * (3 - 2 * xf); yf = yf * yf * (3 - 2 * yf);
-    const a = h(xi, yi, P), b = h(xi + 1, yi, P), c = h(xi, yi + 1, P), d = h(xi + 1, yi + 1, P);
+    // siatka okresowa: każdy węzeł liczony raz (wrap + permutacja), bez zagnieżdżonych domknięć
+    const x0 = wrap(xi, P), x1 = wrap(xi + 1, P), y0 = wrap(yi, P), y1 = wrap(yi + 1, P);
+    const p0 = perm[x0 & 255], p1 = perm[x1 & 255];
+    const a = val[perm[(p0 + y0) & 255]], b = val[perm[(p1 + y0) & 255]];
+    const c = val[perm[(p0 + y1) & 255]], d = val[perm[(p1 + y1) & 255]];
     return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf;
   };
   // u,v ∈ [0,1) — bezszwowe fbm z okresem P na pierwszej oktawie
@@ -61,7 +62,7 @@ function bake(w, h, fn, strength = 2, opts = {}) {
       const l = H[y * w + ((x - 1 + w) % w)], r = H[y * w + ((x + 1) % w)];
       const u = H[((y - 1 + h) % h) * w + x], d = H[((y + 1) % h) * w + x];
       let nx = (l - r) * strength, ny = (d - u) * strength, nz = 1;
-      const len = Math.hypot(nx, ny, nz);
+      const len = Math.sqrt(nx * nx + ny * ny + 1);
       nx /= len; ny /= len; nz /= len;
       const i = (y * w + x) * 4;
       nimg.data[i] = (nx * 0.5 + 0.5) * 255;
@@ -97,7 +98,7 @@ function voronoi(G, seed, jitter = 0.85) {
         const gx = xi + i, gy = yi + j;
         const k = (((gy % G) + G) % G) * G + (((gx % G) + G) % G);
         const px = gx + pts[k * 2], py = gy + pts[k * 2 + 1];
-        const d = Math.hypot(px - x, py - y);
+        const d = Math.sqrt((px - x) * (px - x) + (py - y) * (py - y));
         if (d < d1) { d2 = d1; d1 = d; id = ids[k]; cx = px - x; cy = py - y; }
         else if (d < d2) d2 = d;
       }

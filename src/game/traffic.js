@@ -11,9 +11,15 @@
 import * as THREE from 'three';
 import { Rng } from '../core/rng.js';
 import { RoadNet } from '../city/roadnet.js';
-import { moduleMesh } from './vehicle.js';
+import { CAR_KINDS } from '../gen/vehicles.js';
+import { WHEEL_NOMINAL } from './carkit.js';
 
-const CAR_L = 3.6;
+// rozkład typów aut na ulicach i palety lakierów (sRGB)
+const KINDS = [['tourer', 30], ['sedan', 25], ['roadster', 11], ['taxi', 9], ['van', 15], ['truck', 10]];
+const COLORS = [[0.12, 0.13, 0.15], [0.55, 0.12, 0.1], [0.2, 0.32, 0.24], [0.82, 0.8, 0.72], [0.25, 0.35, 0.55], [0.45, 0.32, 0.2], [0.5, 0.42, 0.62], [0.65, 0.55, 0.3], [0.62, 0.6, 0.58], [0.1, 0.22, 0.35]];
+const WORK_COLORS = [[0.2, 0.27, 0.22], [0.35, 0.2, 0.14], [0.22, 0.3, 0.42], [0.48, 0.44, 0.34], [0.5, 0.15, 0.12]];
+const OPEN = new Set(['tourer', 'taxi', 'roadster', 'truck']); // widać kierowcę
+const lin = (c) => Math.pow(c, 2.2);
 
 export function buildRoadGraph(streets) {
   const net = new RoadNet(streets);
@@ -81,37 +87,62 @@ export function buildRoadGraph(streets) {
   return { nodes, edges, live };
 }
 
-// A* po grafie dróg
+// A* po grafie dróg — kopiec binarny i bufory wielokrotnego użytku (bez alokacji na wywołanie;
+// wcześniej open.splice() dawał zacięcia przy planowaniu trasy)
 function astar(G, from, to) {
-  const N = G.nodes.length, gs = new Float64Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), open = [from];
-  const h = (i) => Math.hypot(G.nodes[i].x - G.nodes[to].x, G.nodes[i].z - G.nodes[to].z);
-  const f = new Float64Array(N).fill(Infinity);
-  gs[from] = 0; f[from] = h(from);
-  const inOpen = new Uint8Array(N); inOpen[from] = 1;
-  while (open.length) {
-    let bi = 0;
-    for (let i = 1; i < open.length; i++) if (f[open[i]] < f[open[bi]]) bi = i;
-    const v = open.splice(bi, 1)[0]; inOpen[v] = 0;
-    if (v === to) break;
+  const N = G.nodes.length;
+  let S = G._as;
+  if (!S) S = G._as = { g: new Float64Array(N), f: new Float64Array(N), prev: new Int32Array(N), seen: new Int32Array(N), stamp: 0, ids: [], keys: [] };
+  const stamp = ++S.stamp, { g, f, prev, seen, ids, keys } = S;
+  ids.length = 0; keys.length = 0;
+  const tx = G.nodes[to].x, tz = G.nodes[to].z;
+  const h = (i) => Math.hypot(G.nodes[i].x - tx, G.nodes[i].z - tz);
+  const push = (id, k) => {
+    let i = ids.length;
+    ids.push(id); keys.push(k);
+    while (i > 0) { const p = (i - 1) >> 1; if (keys[p] <= k) break; ids[i] = ids[p]; keys[i] = keys[p]; i = p; }
+    ids[i] = id; keys[i] = k;
+  };
+  const pop = () => {
+    const top = ids[0], lastId = ids.pop(), lastK = keys.pop(), n = ids.length;
+    if (n) {
+      let i = 0;
+      for (;;) {
+        let c = 2 * i + 1;
+        if (c >= n) break;
+        if (c + 1 < n && keys[c + 1] < keys[c]) c++;
+        if (keys[c] >= lastK) break;
+        ids[i] = ids[c]; keys[i] = keys[c]; i = c;
+      }
+      ids[i] = lastId; keys[i] = lastK;
+    }
+    return top;
+  };
+  seen[from] = stamp; g[from] = 0; f[from] = h(from); prev[from] = -1;
+  push(from, f[from]);
+  let found = false;
+  while (ids.length) {
+    const kTop = keys[0], v = pop();
+    if (kTop > f[v] + 1e-9) continue; // nieaktualny wpis
+    if (v === to) { found = true; break; }
     for (const e of G.nodes[v].edges) {
       const E = G.edges[e], w = E.a === v ? E.b : E.a;
-      const ng = gs[v] + E.len * (E.slow ? 1.4 : 1);
-      if (ng < gs[w]) {
-        gs[w] = ng; prev[w] = v; f[w] = ng + h(w);
-        if (!inOpen[w]) { open.push(w); inOpen[w] = 1; }
+      const ng = g[v] + E.len * (E.slow ? 1.4 : 1);
+      if (seen[w] !== stamp || ng < g[w]) {
+        seen[w] = stamp; g[w] = ng; prev[w] = v; f[w] = ng + h(w);
+        push(w, f[w]);
       }
     }
   }
-  if (prev[to] < 0 && from !== to) return null;
+  if (!found && from !== to) return null;
   const path = [to];
   while (path[0] !== from) path.unshift(prev[path[0]]);
   return path;
 }
 
-const COLORS = [[0.12, 0.13, 0.15], [0.55, 0.12, 0.1], [0.2, 0.32, 0.24], [0.82, 0.8, 0.72], [0.25, 0.35, 0.55], [0.45, 0.32, 0.2], [0.5, 0.42, 0.62], [0.65, 0.55, 0.3]];
-
 export class Traffic {
-  constructor(scene, city, grid, M, count) {
+  // kit = CarKit (siatki aut), crowd = ludzie (kierowcy); bez nich (symulacja w Node) liczy się sam ruch
+  constructor(scene, city, grid, M, count, kit = null, crowd = null) {
     this.city = city;
     this.grid = grid;
     this.G = buildRoadGraph(city.streets);
@@ -120,19 +151,45 @@ export class Traffic {
     this.bots = [];
     this.count = count;
     this.t = 0;
-    // warianty kolorów → InstancedMesh dla każdego materiału
-    this.variants = COLORS.map((color) => {
-      const g = moduleMesh('oldcar', CAR_L, 2.2, 1.7, { color, seat: [0.35, 0.15, 0.1] }, M);
-      const parts = g.children.map((m) => {
-        const im = new THREE.InstancedMesh(m.geometry, m.material, count);
+    this.kit = kit;
+    this.crowd = crowd;
+    this.peds = null;
+    this.nearBuf = [];
+    if (!kit) return;
+    // karoserie: po jednym InstancedMesh na typ i materiał; lakier (`body`) dostaje kolor z instanceColor
+    this.sets = {};
+    for (const [kind] of KINDS) {
+      const parts = kit.body(kind, 1, [1, 1, 1]).map((p) => {
+        const im = new THREE.InstancedMesh(p.geometry, p.material, count);
         im.count = 0;
-        im.castShadow = true;
         im.frustumCulled = false;
+        im.castShadow = p.name !== 'light' && p.name !== 'tail';
+        im.receiveShadow = true;
+        if (p.name === 'body') {
+          im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+          im.instanceColor.setUsage(THREE.DynamicDrawUsage);
+        }
+        im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         scene.add(im);
         return im;
       });
-      return { parts, n: 0 };
-    });
+      this.sets[kind] = { parts, n: 0, color: parts.find((im) => im.instanceColor) };
+    }
+    // koła: wspólne dla wszystkich aut (4 instancje na auto), osobno szprychowe i pełne
+    this.wheelSets = {};
+    for (const solid of [false, true]) {
+      const parts = kit.wheel(solid, 1).map((p) => {
+        const im = new THREE.InstancedMesh(p.geometry, p.material, count * 4);
+        im.count = 0;
+        im.frustumCulled = false;
+        im.castShadow = false;
+        im.receiveShadow = true;
+        im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        scene.add(im);
+        return im;
+      });
+      this.wheelSets[solid ? 'solid' : 'spoke'] = { parts, n: 0 };
+    }
     // miękki cień pod autem (tańszy niż cień z mapy dla wielu aut)
     const c = document.createElement('canvas');
     c.width = c.height = 64;
@@ -143,7 +200,7 @@ export class Traffic {
     ctx.fillStyle = gr;
     ctx.fillRect(0, 0, 64, 64);
     const blobTex = new THREE.CanvasTexture(c);
-    this.blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 2.6).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false }), count + 1);
+    this.blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false }), count + 1);
     this.blobs.frustumCulled = false;
     this.blobs.renderOrder = 1;
     scene.add(this.blobs);
@@ -151,7 +208,8 @@ export class Traffic {
     this.q = new THREE.Quaternion();
     this.e = new THREE.Euler();
     this.v3 = new THREE.Vector3();
-    this.one = new THREE.Vector3(1, 1, 1);
+    this.sc = new THREE.Vector3(1, 1, 1);
+    this.tint = new THREE.Color();
   }
 
   nodePos(i) {
@@ -174,9 +232,17 @@ export class Traffic {
       const p = this.nodePos(n);
       const d = Math.hypot(p[0] - near[0], p[1] - near[1]);
       if (d < 40 || d > 380) continue;
-      const bot = { id: this.nextId = (this.nextId || 0) + 1, from: n, path: [n], s: 0, v: 0, vmax: r.float(7.5, 12), variant: Math.floor(r.next() * COLORS.length), x: p[0], z: p[1], h: 0, turn: null, lock: -1, wait: 0 };
+      const kind = r.weighted(KINDS), K = CAR_KINDS[kind];
+      const rgb = kind === 'van' || kind === 'truck' ? r.pick(WORK_COLORS) : kind === 'taxi' ? [0.95, 0.76, 0.12] : r.pick(COLORS);
+      const bot = {
+        id: this.nextId = (this.nextId || 0) + 1, from: n, path: [n], s: 0, v: 0, vmax: r.float(7.5, 12) * (kind === 'truck' ? 0.8 : 1), kind, len: K.L, rgb: rgb.map(lin), wb: K.L - K.front - K.rear,
+        x: p[0], z: p[1], h: 0, turn: null, lock: -1, wait: 0, bump: 0, sf: 0, sr: 0, steer: 0, hPrev: 0, drv: null,
+      };
       if (!this.plan(bot)) continue;
       if (this.bots.some((b) => Math.hypot(b.x - p[0], b.z - p[1]) < 8)) continue;
+      const p0 = this.lanePoint(bot.edge, bot.path[0], 0);
+      bot.x = p0[0]; bot.z = p0[1]; bot.h = bot.hPrev = p0[2];
+      if (this.crowd && OPEN.has(kind)) bot.drv = this.crowd.addDriver(r);
       this.bots.push(bot);
       return;
     }
@@ -202,20 +268,25 @@ export class Traffic {
     return this.G.nodes[a].edges.find((e) => this.G.edges[e].a === b || this.G.edges[e].b === b);
   }
 
+  remove(b) {
+    if (b.lock >= 0 && this.G.nodes[b.lock].lock === b.id) this.G.nodes[b.lock].lock = -1;
+    if (b.drv && this.crowd) this.crowd.remove(b.drv);
+  }
+
   update(dt, player, playerCar) {
     this.t += dt;
     const P = [player.x, player.z];
-    // utrzymuj liczbę aut wokół gracza; dalekie znikają i pojawiają się bliżej
-    this.bots = this.bots.filter((b) => {
-      if (Math.hypot(b.x - P[0], b.z - P[1]) < 470) return true;
-      if (b.lock >= 0) this.G.nodes[b.lock].lock = -1;
-      return false;
-    });
-    let guard = 0;
-    while (this.bots.length < this.count && guard++ < 3) this.spawn(P);
-
+    // utrzymuj liczbę aut wokół gracza; dalekie znikają i pojawiają się bliżej (kompaktowanie w miejscu)
+    let w = 0;
+    for (let i = 0; i < this.bots.length; i++) {
+      const b = this.bots[i];
+      if (Math.hypot(b.x - P[0], b.z - P[1]) < 470) this.bots[w++] = b;
+      else this.remove(b);
+    }
+    this.bots.length = w;
+    if (this.bots.length < this.count) this.spawn(P); // jedno auto na klatkę — A* nie robi zacięć
     for (const b of this.bots) this.drive(b, dt, playerCar);
-    this.render(playerCar);
+    if (this.kit) this.render(dt, playerCar, P);
   }
 
   drive(b, dt, car) {
@@ -223,19 +294,27 @@ export class Traffic {
     const E = G.edges[b.edge];
     const next = b.path[1];
     const fx = Math.cos(b.h), fz = Math.sin(b.h);
-    // 1) odstęp od auta z przodu (boty i gracz)
+    // 1) odstęp od auta z przodu (boty i gracz) oraz od pieszych na jezdni
     let target = E.slow ? b.vmax * 0.7 : b.vmax;
-    const check = (ox, oz, ov, oh) => {
-      const dx = ox - b.x, dz = oz - b.z, along = dx * fx + dz * fz, lat = Math.abs(-dx * fz + dz * fx);
+    for (const o of this.bots) {
+      if (o === b || Math.abs(o.x - b.x) > 16 || Math.abs(o.z - b.z) > 16) continue;
+      const dx = o.x - b.x, dz = o.z - b.z, along = dx * fx + dz * fz;
+      if (along <= 0 || along >= 16 || Math.abs(-dx * fz + dz * fx) >= 1.8) continue;
       // tylko auto jadące w podobnym kierunku (albo tuż przed maską) — bez zakleszczeń czołowych
-      const same = oh === undefined || Math.cos(oh - b.h) > 0.2 || along < CAR_L + 0.8;
-      if (same && along > 0 && along < 16 && lat < 1.8) {
-        const gap = along - CAR_L - 1.2;
-        target = Math.min(target, Math.max(0, gap * 1.1 + Math.max(0, ov) * 0.5));
+      if (Math.cos(o.h - b.h) > 0.2 || along < (b.len + o.len) / 2 + 0.8) {
+        const gap = along - (b.len + o.len) / 2 - 1.2;
+        target = Math.min(target, Math.max(0, gap * 1.1 + Math.max(0, o.v) * 0.5));
       }
-    };
-    for (const o of this.bots) if (o !== b && Math.abs(o.x - b.x) < 16 && Math.abs(o.z - b.z) < 16) check(o.x, o.z, o.v, o.h);
-    if (car) check(car.pos.x, car.pos.z, Math.abs(car.v));
+    }
+    if (car) {
+      const dx = car.pos.x - b.x, dz = car.pos.z - b.z, along = dx * fx + dz * fz;
+      if (along > 0 && along < 16 && Math.abs(-dx * fz + dz * fx) < 1.8) target = Math.min(target, Math.max(0, (along - (b.len + car.L) / 2 - 1.2) * 1.1 + Math.max(0, Math.abs(car.v)) * 0.5));
+    }
+    if (this.peds) {
+      const d = this.peds.ahead(b.x, b.z, fx, fz, 11, 1.7);
+      if (d >= 0) target = Math.min(target, Math.max(0, (d - b.len / 2 - 1.6) * 1.2));
+    }
+    if (b.bump > 0) { b.bump -= dt; target = Math.min(target, 0); }
     // 2) skrzyżowanie: pierwszeństwo ma ten, kto pierwszy je zajął
     const left = E.len - b.s;
     const N = G.nodes[next];
@@ -252,11 +331,14 @@ export class Traffic {
       target = Math.min(target, 12 - da * 5.5);
     }
     b.wait = b.v < 0.3 ? b.wait + dt : 0;
-    if (b.wait > 12) { target = Math.max(target, 2.5); if (b.wait > 15) b.wait = 0; } // cierpliwość się kończy
+    if (b.wait > 12) { target = Math.max(target, 2.5); if (b.bump > 0) b.bump = 0; if (b.wait > 15) b.wait = 0; } // cierpliwość się kończy
     const acc = target > b.v ? 3.5 : -7.5;
     b.v = Math.max(0, b.v + acc * dt);
     if (target < b.v && target < 0.3) b.v = Math.max(0, b.v - 10 * dt);
     const step = b.v * dt;
+    // koła: obrót od przebytej drogi
+    const K = CAR_KINDS[b.kind];
+    b.sf += step / K.rf; b.sr += step / K.rr;
     // 3) ruch: prosto po pasie albo łuk przez skrzyżowanie
     if (b.turn) {
       const T = b.turn;
@@ -273,6 +355,7 @@ export class Traffic {
         const x = u * u * T.p0[0] + 2 * u * t * T.c[0] + t * t * T.p2[0], z = u * u * T.p0[1] + 2 * u * t * T.c[1] + t * t * T.p2[1];
         const dx = 2 * u * (T.c[0] - T.p0[0]) + 2 * t * (T.p2[0] - T.c[0]), dz = 2 * u * (T.c[1] - T.p0[1]) + 2 * t * (T.p2[1] - T.c[1]);
         b.x = x; b.z = z; b.h = Math.atan2(dz, dx);
+        this.steerOf(b, dt);
         return;
       }
     }
@@ -290,6 +373,7 @@ export class Traffic {
           const p = this.lanePoint(b.edge, b.path[0], 0);
           b.x = p[0]; b.z = p[1]; b.h = p[2];
         }
+        b.hPrev = b.h;
         return;
       }
       const nextE = this.edgeBetween(b.path[1], b.path[2]);
@@ -305,44 +389,129 @@ export class Traffic {
     }
     const p = this.lanePoint(b.edge, b.path[0], b.s);
     b.x = p[0]; b.z = p[1]; b.h = p[2];
+    this.steerOf(b, dt);
   }
 
-  render(car) {
-    for (const v of this.variants) v.n = 0;
-    const T = this.city.terrain;
+  // kąt skrętu przednich kół z tempa zmiany kursu (model rowerowy), wygładzony
+  steerOf(b, dt) {
+    let dh = b.h - b.hPrev;
+    if (dh > Math.PI) dh -= Math.PI * 2; else if (dh < -Math.PI) dh += Math.PI * 2;
+    b.hPrev = b.h;
+    const yr = dt > 0 ? dh / dt : 0;
+    const t = Math.atan2(b.wb * yr, Math.max(2, b.v));
+    b.steer += (Math.max(-0.5, Math.min(0.5, t)) - b.steer) * Math.min(1, dt * 8);
+  }
+
+  render(dt, car, P) {
+    for (const k in this.sets) this.sets[k].n = 0;
+    this.wheelSets.spoke.n = 0; this.wheelSets.solid.n = 0;
+    const T = this.city.terrain, { m, q, e, v3, sc, tint } = this;
     let bi = 0;
     for (const b of this.bots) {
-      const V = this.variants[b.variant];
+      const dx = b.x - P[0], dz = b.z - P[1];
+      const far = dx * dx + dz * dz > 260 * 260;
       const onBridge = this.grid.type(b.x, b.z) === 5;
       const y = onBridge ? T.bankY + 0.07 : T.height(b.x, b.z) + 0.06;
-      this.e.set(0, -b.h, 0);
-      this.q.setFromEuler(this.e);
-      this.v3.set(b.x, y, b.z);
-      this.m.compose(this.v3, this.q, this.one);
-      for (const im of V.parts) im.setMatrixAt(V.n, this.m);
-      V.n++;
-      this.v3.y = y + 0.03;
-      this.m.compose(this.v3, this.q, this.one);
-      this.blobs.setMatrixAt(bi++, this.m);
+      const ch = Math.cos(b.h), sh = Math.sin(b.h);
+      b.y = y;
+      if (b.drv) this.seat(b, ch, sh, y);
+      if (far) continue;
+      const K = CAR_KINDS[b.kind], S = this.sets[b.kind];
+      // karoseria + kolor lakieru
+      q.setFromEuler(e.set(0, -b.h, 0));
+      v3.set(b.x, y, b.z);
+      sc.set(1, 1, 1);
+      m.compose(v3, q, sc);
+      for (const im of S.parts) im.setMatrixAt(S.n, m);
+      tint.setRGB(b.rgb[0], b.rgb[1], b.rgb[2]);
+      S.color.setColorAt(S.n, tint);
+      S.n++;
+      // koła: pozycja z nominalnych punktów, obrót od drogi, skręt przednich
+      const solid = K.solid, W = this.wheelSets[solid ? 'solid' : 'spoke'], nom = solid ? WHEEL_NOMINAL.solid : WHEEL_NOMINAL.spoke;
+      const half = K.Wd / 2 - 0.1, xf = K.L - K.front - K.L / 2, xr = K.rear - K.L / 2;
+      for (let i = 0; i < 4; i++) {
+        const front = i < 2, lx = front ? xf : xr, lz = (i & 1 ? 1 : -1) * half, r = front ? K.rf : K.rr;
+        q.setFromEuler(e.set(0, -(b.h + (front ? b.steer : 0)), -(front ? b.sf : b.sr), 'YXZ'));
+        v3.set(b.x + ch * lx - sh * lz, y + r, b.z + sh * lx + ch * lz);
+        sc.setScalar(r / nom);
+        m.compose(v3, q, sc);
+        for (const im of W.parts) im.setMatrixAt(W.n, m);
+        W.n++;
+      }
+      // cień-plama
+      v3.set(b.x, y + 0.03, b.z);
+      q.setFromEuler(e.set(0, -b.h, 0));
+      sc.set(b.len + 1.0, 1, K.Wd + 0.8);
+      m.compose(v3, q, sc);
+      this.blobs.setMatrixAt(bi++, m);
     }
     if (car) {
-      this.e.set(0, -car.heading, 0);
-      this.q.setFromEuler(this.e);
-      this.v3.set(car.pos.x, car.pos.y + 0.03, car.pos.z);
-      this.m.compose(this.v3, this.q, this.one);
-      this.blobs.setMatrixAt(bi++, this.m);
+      v3.set(car.pos.x, car.pos.y + 0.03, car.pos.z);
+      q.setFromEuler(e.set(0, -car.heading, 0));
+      sc.set(car.L + 1.0, 1, car.W + 0.8);
+      m.compose(v3, q, sc);
+      this.blobs.setMatrixAt(bi++, m);
     }
     this.blobs.count = bi;
     this.blobs.instanceMatrix.needsUpdate = true;
-    for (const v of this.variants)
-      for (const im of v.parts) {
-        im.count = v.n;
-        im.instanceMatrix.needsUpdate = true;
-      }
+    for (const k in this.sets) {
+      const S = this.sets[k];
+      for (const im of S.parts) { im.count = S.n; im.visible = S.n > 0; im.instanceMatrix.needsUpdate = true; }
+      S.color.instanceColor.needsUpdate = true;
+    }
+    for (const k of ['spoke', 'solid']) {
+      const W = this.wheelSets[k];
+      for (const im of W.parts) { im.count = W.n; im.visible = W.n > 0; im.instanceMatrix.needsUpdate = true; }
+    }
   }
 
-  // przeszkody dla auta gracza
+  // kierowca siedzi w aucie: pozycja z kotwicy modułu, kurs zgodny z autem
+  seat(b, ch, sh, y) {
+    const a = this.kit.anchors(b.kind).driver, d = b.drv;
+    d.x = b.x + ch * a[0] - sh * a[2];
+    d.z = b.z + sh * a[0] + ch * a[2];
+    d.y = y + a[1] - 0.12;
+    d.yaw = b.h;
+    d.speed = b.v;
+    d.steer = b.steer;
+  }
+
+  // przeszkody dla auta gracza (bufor wielokrotnego użytku — bez alokacji w każdej klatce)
   near(x, z, r) {
-    return this.bots.filter((b) => Math.abs(b.x - x) < r && Math.abs(b.z - z) < r);
+    const out = this.nearBuf;
+    out.length = 0;
+    for (const b of this.bots) if (Math.abs(b.x - x) < r && Math.abs(b.z - z) < r) out.push(b);
+    return out;
+  }
+
+  // promień → najbliższe auto-bot (OBB w układzie auta); zwraca { t, bot } albo null
+  raycast(ox, oy, oz, dx, dy, dz, maxT) {
+    let best = null;
+    for (const b of this.bots) {
+      const rx = b.x - ox, rz = b.z - oz;
+      if (rx * rx + rz * rz > (maxT + 4) * (maxT + 4)) continue;
+      const ch = Math.cos(b.h), sh = Math.sin(b.h);
+      // promień w układzie auta: x wzdłuż, z w poprzek
+      const px = (ox - b.x) * ch + (oz - b.z) * sh, pz = -(ox - b.x) * sh + (oz - b.z) * ch;
+      const vx = dx * ch + dz * sh, vz = -dx * sh + dz * ch;
+      const K = CAR_KINDS[b.kind];
+      let t0 = 0, t1 = maxT;
+      const slab = (p, v, lo, hi) => {
+        if (Math.abs(v) < 1e-9) return p >= lo && p <= hi;
+        let a = (lo - p) / v, c = (hi - p) / v;
+        if (a > c) { const tmp = a; a = c; c = tmp; }
+        t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+        return t0 <= t1;
+      };
+      if (!slab(px, vx, -b.len / 2, b.len / 2) || !slab(oy - b.y, dy, 0.3, 1.9) || !slab(pz, vz, -K.Wd / 2, K.Wd / 2)) continue;
+      if (!best || t0 < best.t) best = { t: t0, bot: b };
+    }
+    return best;
+  }
+
+  // trafienie: kierowca "wciska gaz" — ucieka, ale przez chwilę stoi w szoku
+  shot(b) {
+    b.bump = 1.5;
+    b.vmax = Math.min(14, b.vmax * 1.25);
   }
 }

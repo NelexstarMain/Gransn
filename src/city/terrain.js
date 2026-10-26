@@ -60,7 +60,8 @@ export class Terrain {
 
   // najbliższy punkt na osi rzeki
   river(x, z) {
-    let best = { d: 1e9 };
+    // pętla bez alokacji: obiekt wyniku powstaje raz, na końcu
+    let bd = 1e9, bi = 0, bt = 0, bpx = 0, bpz = 0;
     const P = this.pts;
     for (let i = 0; i < P.length - 1; i++) {
       const a = P[i], b = P[i + 1];
@@ -68,12 +69,26 @@ export class Terrain {
       const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
       const px = a[0] + dx * t, pz = a[1] + dz * t;
       const d = Math.hypot(x - px, z - pz);
-      if (d < best.d) best = { d, px, pz, seg: i, t, tx: dx, tz: dz };
+      if (d < bd) { bd = d; bi = i; bt = t; bpx = px; bpz = pz; }
     }
-    const l = best.d || 1;
-    best.nx = (x - best.px) / l;
-    best.nz = (z - best.pz) / l;
-    return best;
+    const a = P[bi], b = P[bi + 1], l = bd || 1;
+    return { d: bd, px: bpx, pz: bpz, seg: bi, t: bt, tx: b[0] - a[0], tz: b[1] - a[1], nx: (x - bpx) / l, nz: (z - bpz) / l };
+  }
+
+  // sama odległość od osi rzeki — tańsza od river() (bez obiektu wyniku, a pierwiastek
+  // tylko raz: odcinki porównujemy po kwadratach odległości)
+  riverDist(x, z) {
+    let bd = 1e18, bx = 0, bz = 0;
+    const P = this.pts;
+    for (let i = 0; i < P.length - 1; i++) {
+      const a = P[i], b = P[i + 1];
+      const dx = b[0] - a[0], dz = b[1] - a[1];
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+      const ex = x - (a[0] + dx * t), ez = z - (a[1] + dz * t);
+      const d2 = ex * ex + ez * ez;
+      if (d2 < bd) { bd = d2; bx = ex; bz = ez; }
+    }
+    return Math.hypot(bx, bz);
   }
 
   hills(x, z) {
@@ -84,7 +99,7 @@ export class Terrain {
     let h = this.hills(x, z);
     const c = this.inland(x, z);
     const land = sstep(-25, 75, c);
-    const d = this.river(x, z).d;
+    const d = this.riverDist(x, z);
     h = this.bankY + (h - this.bankY) * sstep(this.hw + 6, this.hw + 120, d);
     // plaża i dno morza
     h = this.seaY - 4 + (h - this.seaY + 4) * land;
@@ -103,7 +118,7 @@ export class Terrain {
   }
 
   inRiver(x, z, margin = 0) {
-    return this.river(x, z).d < this.hw + margin;
+    return this.riverDist(x, z) < this.hw + margin;
   }
 
   // punkt w korycie → rzut na najbliższy brzeg

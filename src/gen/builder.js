@@ -9,7 +9,7 @@ import { noise3 } from '../core/noise.js';
 // Parametry szumu i cieniowania per materiał.
 //  wob   — amplituda drobnego szumu 3D (m), fala ~2 m: nierówny tynk
 //  bump  — pionowy szum nawierzchni (m)
-//  ao    — przyciemnienie przy ziemi
+//  ao    — przyciemnienie przy ziemi (aoH = wysokość, na której zanika; domyślnie 3,4 m)
 //  dirt  — plamy brudu w skali kilku metrów
 //  ground — nawierzchnia: bez "pochylenia" budynków
 // Wszystkie materiały budynków dostają TEN SAM szum (W) — plakat, rama okna
@@ -29,6 +29,9 @@ export const MATDEF = {
   screen: { wob: W },
   poster: { wob: W, ao: 1, dirt: 0.5 },
   paint: { ao: 1 },
+  body: { ao: 1, aoH: 1.5 },   // lakier karoserii: łagodne ściemnienie przy progu
+  tail: {},
+  cloth: { ground: 1 },       // ubrania ludzi: bez szumu i AO (części mają przeguby w początku układu)
   bark: { ao: 1, dirt: 1 },
   cobble: { bump: 0.04, dirt: 1.8, ground: 1 },
   grass: { bump: 0.03, dirt: 2.2, ground: 1 },
@@ -77,13 +80,22 @@ export class Builder {
     this.tints[mat] = rgb;
   }
 
+  // Bufory rosną podwajaniem (typowane tablice zamiast tablic JS: mniej śmieci dla GC,
+  // a finish() nie konwertuje milionów liczb jedna po drugiej).
   _bucket(mat) {
     let bk = this.buckets.get(mat);
     if (!bk) {
-      bk = { p: [], n: [], uv: [], c: [], i: [], count: 0 };
+      bk = { p: new Float32Array(768), n: new Int8Array(768), uv: new Float32Array(512), c: new Uint8Array(768), i: new Uint32Array(768), count: 0, ni: 0, cap: 256 };
       this.buckets.set(mat, bk);
     }
     return bk;
+  }
+
+  _grow(bk) {
+    const cap = bk.cap * 2;
+    const g = (A, k) => { const B = new A.constructor(cap * k); B.set(A); return B; };
+    bk.p = g(bk.p, 3); bk.n = g(bk.n, 3); bk.uv = g(bk.uv, 2); bk.c = g(bk.c, 3); bk.i = g(bk.i, 3);
+    bk.cap = cap;
   }
 
   // Wielokąt (3 lub 4 punkty) w lokalnych metrach komórki.
@@ -172,10 +184,14 @@ export class Builder {
     tx /= tl; tz /= tl;
 
     const bk = this._bucket(mat);
+    if (bk.count + cnt > bk.cap) this._grow(bk);
     const base = bk.count;
     const tint = o.tint || this.tints[mat] || WHITE;
     const shade0 = o.shade ?? 1;
     const uvs = o.uvScale || 1;
+    // kolor liniowy raz na wielokąt (wcześniej Math.pow na każdy wierzchołek)
+    const lr = lin(tint[0]), lg = lin(tint[1]), lb = lin(tint[2]);
+    const BP = bk.p, BN = bk.n, BU = bk.uv, BC = bk.c;
 
     for (let v = 0; v < cnt; v++) {
       const qx = Q[v * 3], qy = Q[v * 3 + 1], qz = Q[v * 3 + 2];
@@ -198,30 +214,32 @@ export class Builder {
       if (def.bump && !o.flat) {
         y += def.bump * (noise3(qx * 0.17, 0.5, qz * 0.17) * 0.7 + noise3(qx * 0.9, 1.5, qz * 0.9) * 0.3);
       }
-      bk.p.push(x, y, z);
-      bk.n.push(Math.round(N[v * 3] * 127), Math.round(N[v * 3 + 1] * 127), Math.round(N[v * 3 + 2] * 127));
+      const vi = base + v, v3 = vi * 3;
+      BP[v3] = x; BP[v3 + 1] = y; BP[v3 + 2] = z;
+      BN[v3] = Math.round(N[v * 3] * 127); BN[v3 + 1] = Math.round(N[v * 3 + 1] * 127); BN[v3 + 2] = Math.round(N[v * 3 + 2] * 127);
 
-      if (o.uv) bk.uv.push(o.uv[v][0], o.uv[v][1]);
-      else if (horiz) bk.uv.push(qx * uvs, qz * uvs);
-      else bk.uv.push((qx * tx + qz * tz) * uvs, qy * uvs);
+      if (o.uv) { BU[vi * 2] = o.uv[v][0]; BU[vi * 2 + 1] = o.uv[v][1]; }
+      else if (horiz) { BU[vi * 2] = qx * uvs; BU[vi * 2 + 1] = qz * uvs; }
+      else { BU[vi * 2] = (qx * tx + qz * tz) * uvs; BU[vi * 2 + 1] = qy * uvs; }
 
       let s = shade0;
-      if (def.ao) s *= 0.55 + 0.45 * smooth(rel / 3.4);
+      if (def.ao) s *= 0.55 + 0.45 * smooth(rel / (def.aoH || 3.4));
       if (def.dirt) {
         const d = noise3(qx * 0.11, qy * 0.23, qz * 0.11) + 0.5 * noise3(qx * 0.5, qy * 0.5, qz * 0.5);
         s *= 1 + 0.13 * def.dirt * d;
       }
-      bk.c.push(
-        Math.min(255, Math.max(0, Math.round(lin(tint[0]) * s * 255))),
-        Math.min(255, Math.max(0, Math.round(lin(tint[1]) * s * 255))),
-        Math.min(255, Math.max(0, Math.round(lin(tint[2]) * s * 255))),
-      );
+      BC[v3] = Math.min(255, Math.max(0, Math.round(lr * s * 255)));
+      BC[v3 + 1] = Math.min(255, Math.max(0, Math.round(lg * s * 255)));
+      BC[v3 + 2] = Math.min(255, Math.max(0, Math.round(lb * s * 255)));
     }
+    const I = bk.i;
+    let ii = bk.ni;
     if (cnt === 4) {
-      if (rev) bk.i.push(base, base + 2, base + 1, base, base + 3, base + 2);
-      else bk.i.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    } else if (rev) bk.i.push(base, base + 2, base + 1);
-    else bk.i.push(base, base + 1, base + 2);
+      if (rev) { I[ii++] = base; I[ii++] = base + 2; I[ii++] = base + 1; I[ii++] = base; I[ii++] = base + 3; I[ii++] = base + 2; }
+      else { I[ii++] = base; I[ii++] = base + 1; I[ii++] = base + 2; I[ii++] = base; I[ii++] = base + 2; I[ii++] = base + 3; }
+    } else if (rev) { I[ii++] = base; I[ii++] = base + 2; I[ii++] = base + 1; }
+    else { I[ii++] = base; I[ii++] = base + 1; I[ii++] = base + 2; }
+    bk.ni = ii;
     bk.count += cnt;
   }
 
@@ -319,11 +337,11 @@ export class Builder {
     for (const [mat, bk] of this.buckets) {
       if (!bk.count) continue;
       const m = {
-        p: new Float32Array(bk.p),
-        n: new Int8Array(bk.n),
-        uv: new Float32Array(bk.uv),
-        c: new Uint8Array(bk.c),
-        i: new Uint32Array(bk.i),
+        p: bk.p.slice(0, bk.count * 3),
+        n: bk.n.slice(0, bk.count * 3),
+        uv: bk.uv.slice(0, bk.count * 2),
+        c: bk.c.slice(0, bk.count * 3),
+        i: bk.i.slice(0, bk.ni),
       };
       mats[mat] = m;
       transfer.push(m.p.buffer, m.n.buffer, m.uv.buffer, m.c.buffer, m.i.buffer);

@@ -34,6 +34,12 @@ export async function createMaterials() {
     gravel: std({ ...tex(T.gravel, 1.2), roughness: 0.95 }),
     asphalt: std({ map: T.asphalt.map, normalMap: T.asphalt.normalMap, roughness: 0.8 }),
     paint: std({ roughness: 0.28, metalness: 0.3, envMapIntensity: 1.3 }),
+    // lakier karoserii: barwiony per egzemplarz (instanceColor) albo wierzchołkami
+    body: std({ roughness: 0.24, metalness: 0.35, envMapIntensity: 1.4 }),
+    // tylne światła (w aucie gracza klonowane, żeby zapalać przy hamowaniu)
+    tail: std({ color: 0x3a0c08, emissive: 0xff2a14, emissiveIntensity: 0.35, roughness: 0.4 }),
+    // tkaniny i skóra ludzi: matowe, barwione instanceColor
+    cloth: std({ roughness: 0.92, metalness: 0 }),
     tile: std({ ...tex(T.tile, 1.2, 0.9), roughness: 0.75, normalScale: new THREE.Vector2(1.4, 1.4) }),
     wood: std({ roughness: 0.65 }),
     metal: std({ roughness: 0.5, metalness: 0.45 }),
