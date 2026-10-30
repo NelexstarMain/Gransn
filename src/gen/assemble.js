@@ -15,12 +15,22 @@ import { RoadNet } from '../city/roadnet.js';
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 
-// Zniszczenia budynku: ziarno (bajt) i stopień 0..7 — własne dla każdego budynku
-// (ministerstwo zadbane, kamienice i cegła starsze, modernizm czysty)
+// Zniszczenia budynku: jeden z 20 rodzajów (render/wear.js, GLSL_PROFILE) i stopień 0..7.
+// Rodzaj mówi, które z cech (zacieki, wilgoć, płaty, pasy, wżery, łaty, pęknięcia, brud) w ogóle
+// się pojawiają i jak mocno — część budynków jest czysta, część ma tylko zacieki, część jest ruiną.
+// Bajt ziarna = rodzaj + 20 · losowe przesunięcie (0..11).
+const WEAR_BASE = [0, 1, 1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 4, 5, 6, 5, 5, 5, 4, 7];
+const WEAR_POOL = {
+  ministry: [[0, 4], [1, 4], [2, 2]],
+  modern: [[0, 4], [1, 3], [2, 3], [3, 2], [11, 1]],
+  any: [[0, 2], [1, 2], [2, 3], [3, 3], [4, 3], [5, 2], [6, 2], [7, 2], [8, 2], [9, 2], [10, 2], [11, 2], [12, 2], [13, 2], [14, 1], [15, 2], [16, 2], [17, 2], [18, 3], [19, 1]],
+};
 function wearOf(seed, bid, info) {
-  const u = hash(seed, bid, 313) / 4294967296;
-  const bias = info.zone === 2 ? -0.32 : info.style === 'modern' ? -0.15 : info.style === 'ornate' || info.style === 'classic' ? 0.1 : info.style === 'brick' ? 0.05 : 0;
-  return { s: hash(seed, bid, 4242) & 255, d: Math.max(0, Math.min(7, Math.floor((u * 0.95 + bias) * 8))) };
+  const r = new Rng(hash(seed, bid, 313));
+  const pool = info.zone === 2 ? WEAR_POOL.ministry : info.style === 'modern' ? WEAR_POOL.modern : WEAR_POOL.any;
+  const arch = r.weighted(pool);
+  const d = Math.max(0, Math.min(7, WEAR_BASE[arch] + r.int(-1, 1)));
+  return { s: arch + 20 * r.int(0, 11), d };
 }
 
 function place(b, name, cage, W, H, D, p) {

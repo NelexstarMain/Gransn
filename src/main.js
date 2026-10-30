@@ -32,6 +32,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = !LOW;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false; // mapa cienia odświeżana ręcznie (co 2. klatkę, gdy FPS spada)
 $('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -147,7 +148,8 @@ async function start() {
   job.say('W/S gaz i hamulec, A/D skręt. Zatrzymaj się przy pasażerze w żółtym kółku.', 7);
 
   const clock = new THREE.Clock();
-  let fpsAcc = 0, fpsN = 0, fps = 0, streamAcc = 0;
+  let fpsAcc = 0, fpsN = 0, fps = 60, streamAcc = 0, frameNo = 0, prCool = 3;
+  const prMax = Math.min(devicePixelRatio, LOW ? 1 : 1.5), prMin = 0.6;
   const tmp = new THREE.Vector3();
   function frame() {
     const dt = Math.min(0.05, clock.getDelta());
@@ -177,9 +179,20 @@ async function start() {
     atmo.update(camera.position);
     telescreen.update(dt);
     M.water.normalMap.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
+    // cień: pełna częstotliwość, a przy spadku FPS co drugą klatkę
+    if (frameNo++ % (fps < 50 ? 2 : 1) === 0) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
     fpsAcc += dt; fpsN++;
-    if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+    if (fpsAcc > 0.5) {
+      fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0;
+      // dynamiczna rozdzielczość: przy niskim FPS zmniejsza się wewnętrzna rozdzielczość, gdy wraca zapas — rośnie
+      prCool -= 0.5;
+      if (playing && prCool <= 0) {
+        const pr = renderer.getPixelRatio();
+        const next = fps < 42 ? Math.max(prMin, pr - 0.1) : fps > 57 ? Math.min(prMax, pr + 0.05) : pr;
+        if (Math.abs(next - pr) > 1e-3) { renderer.setPixelRatio(next); renderer.setSize(innerWidth, innerHeight); prCool = 2; }
+      }
+    }
     const ri = renderer.info.render;
     const info = `${fps.toFixed(0)} FPS · fragmenty: ${streamer.loaded}/${city.chunks.length} · ${(ri.triangles / 1e6).toFixed(2)} M tri · draw ${ri.calls}${player.fly ? ' · LOT' : ''}`;
     hud.update(dt, { pos: active, yaw: car.active ? carYaw() : player.yaw }, info, job, car, camera);

@@ -177,6 +177,8 @@ vec3 wBump(vec3 P, vec3 N, float h){
 // większa. Ubytki mają GŁĘBIĘ: promień oka jest marszowany w głąb ubytku (paralaksa), więc cegła
 // siedzi głęboko pod tynkiem, widać grubość tynku na krawędzi, a wnętrze jest zacienione.
 export const GLSL_FACADE = /* glsl */ `
+varying vec4 vProfA;
+varying vec4 vProfB;
 float wHole(vec3 q, vec4 k, vec3 bo, out vec2 info){
   vec4 a = wV(q * 0.9 + bo);
   vec4 r = wV(q * 5.0 + bo.zxy);
@@ -214,6 +216,8 @@ vec3 wFacade(vec3 col, out float hgt, out float rgh){
   float hasWin = kk > 0.5 ? 1.0 : 0.0;
   float amt = 0.3 + 0.7 * dmg;
   vec3 P = vWP;
+  vec4 pa = vProfA, pb = vProfB;
+  float dcam = length(P - cameraPosition);
 
   // pola 3D (ciągłe przez narożniki) i drobne ziarno 2D
   vec4 nB = wV(P * 0.25 + bo3);
@@ -239,12 +243,12 @@ vec3 wFacade(vec3 col, out float hgt, out float rgh){
 
   float S = max(max(sideS * (0.2 + 0.8 * rv), tongue * (0.3 + 0.7 * rv)), corn * (0.25 + 0.75 * rv) * 0.9);
   S = max(S, band * 0.6);
-  S = clamp(S * amt * 1.5 * (0.6 + 0.8 * hot) + damp * amt * 0.9, 0.0, 1.0);
+  S = clamp(S * pa.x * amt * 1.5 * (0.6 + 0.8 * hot) + damp * pa.y * amt * 0.9, 0.0, 1.0);
   S *= 0.7 + 0.6 * tideN;
 
-  col *= 1.0 + (nB.r - 0.5) * 0.22 * amt - 0.04;
+  col *= 1.0 + (nB.r - 0.5) * 0.22 * amt * pb.w - 0.04;
   col *= mix(vec3(1.0), vec3(0.42, 0.39, 0.34), S);
-  col = mix(col, col * vec3(0.62, 0.72, 0.5), damp * amt * smoothstep(0.6, 0.95, tideN) * 0.4);
+  col = mix(col, col * vec3(0.62, 0.72, 0.5), damp * amt * smoothstep(0.6, 0.95, tideN) * 0.4 * pb.w);
 
   // narożniki okien: stąd rozchodzą się pęknięcia i odpada tynk
   vec2 c1 = vec2(axo, ly - sillY);
@@ -256,23 +260,30 @@ vec3 wFacade(vec3 col, out float hgt, out float rgh){
     float hotMul = mix(0.15, 3.0, hot);
     float prox = corner + isT * smoothstep(Hm - 0.9, Hm, ly) + isG * (1.0 - smoothstep(0.0, 1.4, ly));
     float stripZone = isT * smoothstep(Hm - 1.2, Hm, ly) + isG * (1.0 - smoothstep(0.0, 1.2, ly));
+    // drobne ubytki (pasy, wżery) tylko z bliska; rodzaj budynku mnoży pokrycie każdego z nich
     vec4 hk = vec4(
-      clamp((0.005 + 0.15 * dmg * dmg) * hotMul + 0.11 * prox * (0.15 + dmg * dmg), 0.0, 0.7),
-      clamp((0.01 + 0.12 * dmg * dmg) * hotMul * (0.4 + 1.2 * stripZone), 0.0, 0.5),
-      clamp((0.01 + 0.2 * dmg) * hotMul * 0.5, 0.0, 0.35),
+      clamp(((0.005 + 0.15 * dmg * dmg) * hotMul + 0.11 * prox * (0.15 + dmg * dmg)) * pa.z, 0.0, 0.7),
+      dcam < 45.0 ? clamp((0.01 + 0.12 * dmg * dmg) * hotMul * (0.4 + 1.2 * stripZone) * pa.w, 0.0, 0.5) : 0.0,
+      dcam < 45.0 ? clamp((0.01 + 0.2 * dmg) * hotMul * 0.5 * pb.x, 0.0, 0.35) : 0.0,
       wh11(seed + 0.5) > 0.5 ? 1.0 : 0.0);
     vec3 Vw = normalize(P - cameraPosition);
     vec3 Nw = normalize(vWN);
     float vn = max(-dot(Vw, Nw), 0.25);
     vec3 sh = (Vw - Nw * dot(Vw, Nw)) / vn;
     vec3 tg = normalize(vec3(Nw.z, 0.0, -Nw.x) + vec3(0.0001, 0.0, 0.0));
-    vec2 inf;
-    float h0 = wHole(P, hk, bo3, inf);
-    float rim = smoothstep(1.0 - hk.x - 0.045, 1.0 - hk.x, inf.x) * (1.0 - inf.y);
+    vec2 inf = vec2(0.0);
+    float h0 = 0.0;
+    float rim = 0.0;
+    // budynek bez ubytków (rodzaj "czysty", "tylko zacieki"...) pomija całe pole
+    if (hk.x + hk.y + hk.z > 0.004) {
+      h0 = wHole(P, hk, bo3, inf);
+      rim = smoothstep(1.0 - hk.x - 0.045, 1.0 - hk.x, inf.x) * (1.0 - inf.y);
+    }
     if (h0 > 0.02) {
       vec3 qh = P;
       float hq = h0;
       #ifndef WEAR_LOW
+        if (dcam < 30.0)   // paralaksa tylko z bliska
         for (int i = 1; i <= 4; i++) {
           float f = float(i) * 0.25;
           vec3 q = P + sh * (f * 0.02);   // ubytek ma do 2 cm głębokości
@@ -305,7 +316,7 @@ vec3 wFacade(vec3 col, out float hgt, out float rgh){
     // łaty z cementu: prostokąty przy własnej siatce budynku
     vec2 gp = vec2(vWUV.x / 0.95, vWUV.y / 0.6) + bo3.xy * 0.37;
     vec2 gi = floor(gp), gf = fract(gp);
-    float pr = clamp(0.008 + 0.05 * dmg * hotMul + 0.04 * corner, 0.0, 0.3);
+    float pr = dcam < 70.0 ? clamp((0.008 + 0.05 * dmg * hotMul + 0.04 * corner) * pb.y, 0.0, 0.3) : 0.0;
     vec2 r0 = 0.06 + 0.25 * wh22(gi + 3.0), r1 = 1.0 - 0.06 - 0.25 * wh22(gi + 9.0);
     vec2 inr = step(r0, gf) * step(gf, r1);
     float rep = step(1.0 - pr, wh21(gi + seed * 1.7)) * inr.x * inr.y * (h0 > 0.02 ? 0.0 : 1.0);
@@ -316,16 +327,18 @@ vec3 wFacade(vec3 col, out float hgt, out float rgh){
     rgh += rep * 0.05;
   #endif
   #ifdef WEAR_BRICK
-    float salt = damp * smoothstep(0.45, 0.85, nF.a) * (0.4 + 0.6 * dmg);
+    float salt = damp * smoothstep(0.45, 0.85, nF.a) * (0.4 + 0.6 * dmg) * pb.w;
     col = mix(col, wlin(vec3(0.78, 0.76, 0.68)) * (0.8 + 0.3 * nF.a), salt * 0.6);
     col *= 1.0 - band * 0.2;
   #endif
 
-  float cb = texture2D(wearTex, vWUV * 0.66 + bo * 2.3).b;
-  float crk = 1.0 - smoothstep(0.0, 0.1, cb);
-  float cm = (0.06 + cornerW) * dmg * dmg;
-  col *= 1.0 - crk * clamp(cm, 0.0, 1.0) * 0.6;
-  hgt -= crk * clamp(cm, 0.0, 1.0) * 0.004;
+  if (dcam < 60.0 && pb.z > 0.05) {
+    float cb = texture2D(wearTex, vWUV * 0.66 + bo * 2.3).b;
+    float crk = 1.0 - smoothstep(0.0, 0.1, cb);
+    float cm = clamp((0.06 + cornerW) * dmg * dmg * pb.z, 0.0, 1.0);
+    col *= 1.0 - crk * cm * 0.6;
+    hgt -= crk * cm * 0.004;
+  }
 
   rgh -= S * 0.18;
   return col;
@@ -538,12 +551,42 @@ vec3 wSlab(vec3 base, out float hgt, out float rgh){
 }
 `;
 
+
+// 20 rodzajów zniszczeń budynku. Rodzaj = ziarno mod 20. Każdy ma 8 wag:
+// A = (zacieki, wilgoć, duże płaty, pasy), B = (wżery, łaty cementowe, pęknięcia, brud/glony).
+// Liczone w vertex shaderze, więc we fragmencie nic to nie kosztuje.
+export const GLSL_PROFILE = /* glsl */ `
+void wProfile(float k, out vec4 a, out vec4 b){
+  a = vec4(1.0); b = vec4(1.0);
+  if (k < 0.5) { a = vec4(0.1, 0.1, 0.0, 0.0); b = vec4(0.0, 0.0, 0.1, 0.2); }
+  else if (k < 1.5) { a = vec4(0.2, 0.1, 0.0, 0.0); b = vec4(0.0, 1.6, 0.2, 0.1); }
+  else if (k < 2.5) { a = vec4(1.2, 0.3, 0.0, 0.0); b = vec4(0.0, 0.0, 0.0, 0.6); }
+  else if (k < 3.5) { a = vec4(0.6, 0.2, 0.0, 0.0); b = vec4(0.0, 0.0, 0.3, 1.4); }
+  else if (k < 4.5) { a = vec4(1.6, 0.5, 0.1, 0.0); b = vec4(0.0, 0.0, 0.3, 0.8); }
+  else if (k < 5.5) { a = vec4(1.0, 0.3, 0.0, 0.8); b = vec4(0.0, 0.0, 0.3, 1.8); }
+  else if (k < 6.5) { a = vec4(0.4, 1.8, 0.3, 0.3); b = vec4(0.3, 0.0, 0.3, 0.6); }
+  else if (k < 7.5) { a = vec4(0.6, 1.6, 0.0, 0.0); b = vec4(0.4, 0.0, 0.2, 2.0); }
+  else if (k < 8.5) { a = vec4(0.4, 1.0, 1.0, 0.3); b = vec4(0.0, 0.0, 0.5, 0.6); }
+  else if (k < 9.5) { a = vec4(0.6, 0.4, 0.2, 1.8); b = vec4(0.4, 0.0, 0.4, 0.8); }
+  else if (k < 10.5) { a = vec4(0.5, 0.3, 0.2, 0.2); b = vec4(2.0, 0.0, 0.6, 0.8); }
+  else if (k < 11.5) { a = vec4(0.6, 0.4, 0.4, 0.0); b = vec4(0.2, 2.2, 0.5, 0.8); }
+  else if (k < 12.5) { a = vec4(0.5, 0.3, 0.3, 0.0); b = vec4(0.0, 0.3, 2.0, 0.8); }
+  else if (k < 13.5) { a = vec4(0.6, 0.5, 1.6, 0.3); b = vec4(0.3, 0.3, 0.7, 0.8); }
+  else if (k < 14.5) { a = vec4(0.8, 0.8, 2.2, 0.8); b = vec4(0.8, 0.5, 1.2, 1.2); }
+  else if (k < 15.5) { a = vec4(0.7, 0.5, 1.0, 0.4); b = vec4(0.3, 1.6, 0.8, 1.0); }
+  else if (k < 16.5) { a = vec4(1.4, 1.8, 0.8, 0.6); b = vec4(0.5, 0.3, 0.8, 1.6); }
+  else if (k < 17.5) { a = vec4(0.9, 0.5, 0.4, 0.3); b = vec4(1.6, 0.4, 1.5, 1.2); }
+  else if (k < 18.5) { a = vec4(1.0, 1.0, 0.8, 0.6); b = vec4(0.6, 0.6, 0.8, 1.0); }
+  else { a = vec4(1.4, 1.4, 2.0, 1.6); b = vec4(1.6, 1.2, 1.6, 1.6); }
+}
+`;
+
 // ── doklejenie do materiału three.js ─────────────────────────────────────────
 // kind: 'plaster' | 'brick' | 'stone' | 'tile' | 'sheet' | 'metal' | 'wood' | 'cobble' | 'slab' | 'asphalt'
 const KINDS = {
-  plaster: { fn: GLSL_FACADE, call: 'wFacade', attr: true, defs: { WEAR_PLASTER: 1 } },
-  brick: { fn: GLSL_FACADE, call: 'wFacade', attr: true, defs: { WEAR_BRICK: 1 } },
-  stone: { fn: GLSL_FACADE, call: 'wFacade', attr: true, defs: { WEAR_STONE: 1 } },
+  plaster: { fn: GLSL_FACADE, call: 'wFacade', attr: true, prof: true, defs: { WEAR_PLASTER: 1 } },
+  brick: { fn: GLSL_FACADE, call: 'wFacade', attr: true, prof: true, defs: { WEAR_BRICK: 1 } },
+  stone: { fn: GLSL_FACADE, call: 'wFacade', attr: true, prof: true, defs: { WEAR_STONE: 1 } },
   tile: { fn: GLSL_ROOF, call: 'wRoof', attr: true, defs: {} },
   sheet: { fn: GLSL_ROOF, call: 'wRoof', attr: true, defs: { WEAR_SHEET: 1 } },
   metal: { fn: GLSL_PROP, call: 'wProp', attr: false, defs: { WEAR_METAL: 1 } },
@@ -563,9 +606,11 @@ export function applyWear(material, kind, wearTex, wearVol, low = false) {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
 varying vec4 vWear; varying vec2 vWUV; varying vec3 vWP; varying vec3 vWN;
-${K.attr ? 'attribute vec4 wear;' : ''}`)
+${K.attr ? 'attribute vec4 wear;' : ''}
+${K.prof ? 'varying vec4 vProfA; varying vec4 vProfB;' + GLSL_PROFILE : ''}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-vWUV = uv; vWP = position; vWN = normal; vWear = ${K.attr ? 'wear' : 'vec4(0.0)'};`);
+vWUV = uv; vWP = position; vWN = normal; vWear = ${K.attr ? 'wear' : 'vec4(0.0)'};
+${K.prof ? 'wProfile(mod(floor(wear.z * 255.0 + 0.5), 20.0), vProfA, vProfB);' : ''}`);
     const use = `float wHgt = 0.0, wRgh = 1.0; diffuseColor.rgb = ${K.call}(diffuseColor.rgb, wHgt, wRgh);`;
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${GLSL_COMMON}\n${K.fn}`)

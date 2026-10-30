@@ -109,6 +109,8 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 
 - `Builder.setWear(rola, zniszczenie 0..7, ziarno, yo)` ustawia stan budynku; `win(hw)` w `windowCore` mówi shaderowi, gdzie jest okno. `MATDEF[mat].wear` = materiał ma atrybut `wear`.
 - Bruk: UV w „kostkach” (1 = rząd ≈ 15 cm) ze współrzędnych świata, `wear.x` = liczba rzędów między krawężnikami. Płyty: `wear.x` = kąt najbliższej jezdni. LOD bruku to osobny materiał `cobblelod` (zwykła tekstura).
+- Rodzaje zniszczeń: 20 profili (`GLSL_PROFILE` w wear.js, tabela `WEAR_POOL`/`WEAR_BASE` w assemble.js). Bajt ziarna = rodzaj + 20·losowe; profil mówi, które cechy w ogóle występują (zacieki, wilgoć, płaty, pasy, wżery, łaty, pęknięcia, brud). Czyste budynki pomijają w shaderze całe pola ubytków.
+- Oszczędności w shaderze: paralaksa tylko do 30 m, pasy/wżery do 45 m, pęknięcia do 60 m, łaty do 70 m. W grze: dynamiczna rozdzielczość (0,6–1,5), cień odświeżany co 2. klatkę przy FPS < 50.
 - Odcinki jezdni mają różnicę wysokości 4 mm × (i % 3), żeby na skrzyżowaniach wzory bruku nie migotały.
 - Shadery są sprawdzane bez przeglądarki: składanie pełnego shadera three.js na atrapie GL + `glslangValidator` oraz podgląd w headless-GL (`gl` + xvfb, WebGL1). Skrypty były w katalogu tymczasowym, nie w repo.
 - Nie zweryfikowane w prawdziwej przeglądarce: wydajność klatki, pamięć GPU (~200 MB na pełny detal), `BatchedMesh` z cieniami.
