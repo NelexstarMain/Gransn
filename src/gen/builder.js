@@ -15,12 +15,14 @@ import { noise3 } from '../core/noise.js';
 // Wszystkie materiały budynków dostają TEN SAM szum (W) — plakat, rama okna
 // i tynk przesuwają się identycznie, więc nic nie "wchodzi" w ścianę.
 const W = 0.032;
+//  wear  — materiał ma atrybut `wear` (4 bajty) dla shadera zniszczeń / bruku
+//  wearRaw — `wear` to surowe bajty (bruk, płyty), nie stan zniszczeń budynku
 export const MATDEF = {
-  plaster: { wob: W, ao: 1, dirt: 1 },
-  brick: { wob: W, ao: 1, dirt: 1 },
-  stone: { wob: W, ao: 1, dirt: 1 },
-  roof: { wob: W, dirt: 1 },
-  tile: { wob: W, dirt: 1 },
+  plaster: { wob: W, ao: 1, dirt: 1, wear: 1 },
+  brick: { wob: W, ao: 1, dirt: 1, wear: 1 },
+  stone: { wob: W, ao: 1, dirt: 1, wear: 1 },
+  roof: { wob: W, dirt: 1, wear: 1 },
+  tile: { wob: W, dirt: 1, wear: 1 },
   wood: { wob: W, ao: 1 },
   metal: { wob: W, ao: 1 },
   glass: { wob: W },
@@ -30,13 +32,14 @@ export const MATDEF = {
   poster: { wob: W, ao: 1, dirt: 0.5 },
   paint: { ao: 1 },
   bark: { ao: 1, dirt: 1 },
-  cobble: { bump: 0.04, dirt: 1.8, ground: 1 },
+  cobble: { bump: 0.04, dirt: 1.8, ground: 1, wear: 1, wearRaw: 1 },
+  cobblelod: { dirt: 1.8, ground: 1 },
   grass: { bump: 0.03, dirt: 2.2, ground: 1 },
   sand: { bump: 0.03, dirt: 1.2, ground: 1 },
   gravel: { dirt: 1.5 },
   asphalt: { dirt: 1 },
   leaf: { wob: 0.5, dirt: 2.5 },
-  slab: { bump: 0.008, dirt: 1.2, ground: 1 },
+  slab: { bump: 0.008, dirt: 1.2, ground: 1, wear: 1, wearRaw: 1 },
   curb: { dirt: 1, ground: 1 },
   lod: { wob: W, ao: 1, dirt: 1 },
   lodroof: { wob: W, dirt: 1 },
@@ -57,6 +60,11 @@ export class Builder {
     this.W = this.H = this.D = 1;
     this.tints = Object.create(null);
     this.ground = () => 0; // wysokość terenu (x,z) — pochylenie i AO liczone względem gruntu
+    // stan zniszczeń budynku (shader fasad): rola piętra, stopień zniszczenia, ziarno, okno
+    this.wr = 0; this.wd = 3; this.ws = 0; this.wk = 0; this.wyo = 0;
+    this._lx = new Float64Array(4);
+    this._ly = new Float64Array(4);
+    this._hasLoc = false;
     this._Q = new Float64Array(12);
     this._N = new Float64Array(12);
     this._t = [0, 0, 0];
@@ -70,7 +78,23 @@ export class Builder {
     this.W = W || 1;
     this.H = H || 1;
     this.D = D || 1;
+    this.wk = 0;
     return this;
+  }
+
+  // rola: 0 piętro, 1 parter, 2 pod gzymsem (+3 = parter pod gzymsem); dmg 0..7; seed 0..255;
+  // yo — przesunięcie wysokości (gzyms leży nad ścianą)
+  setWear(role, dmg, seed, yo = 0) {
+    this.wr = role; this.wd = dmg; this.ws = seed; this.wyo = yo;
+  }
+
+  clearWear() {
+    this.wr = 0; this.wd = 3; this.ws = 0; this.wyo = 0;
+  }
+
+  // okno w module: połowa szerokości otworu (m) → klasa 1..7
+  win(hw) {
+    this.wk = Math.max(1, Math.min(7, Math.round((hw - 0.3) / 0.075)));
   }
 
   setTint(mat, rgb) {
@@ -80,7 +104,7 @@ export class Builder {
   _bucket(mat) {
     let bk = this.buckets.get(mat);
     if (!bk) {
-      bk = { p: [], n: [], uv: [], c: [], i: [], count: 0 };
+      bk = { p: [], n: [], uv: [], c: [], w: [], i: [], count: 0 };
       this.buckets.set(mat, bk);
     }
     return bk;
@@ -105,10 +129,12 @@ export class Builder {
     if (hint && nx * hint[0] + ny * hint[1] + nz * hint[2] < 0) { nx = -nx; ny = -ny; nz = -nz; }
 
     const { cage, W, H, D } = this;
+    this._hasLoc = true;
     const Q = this._Q, N = this._N, t = this._t, A = this._a, B = this._b, C = this._c;
     for (let v = 0; v < cnt; v++) {
       const p = pts[v];
       const u = p[0] / W, vv = p[1] / H, w = p[2] / D;
+      this._lx[v] = p[0] - W / 2; this._ly[v] = p[1] + this.wyo;
       cage.map(u, vv, w, t);
       Q[v * 3] = t[0]; Q[v * 3 + 1] = t[1]; Q[v * 3 + 2] = t[2];
       cage.jac(u, vv, w, A, B, C);
@@ -128,6 +154,7 @@ export class Builder {
   // Wielokąt bezpośrednio we współrzędnych świata (LOD, nawierzchnie).
   wpoly(mat, pts, hint, o = EMPTY) {
     const cnt = pts.length, Q = this._Q, N = this._N;
+    this._hasLoc = false;
     for (let v = 0; v < cnt; v++) { Q[v * 3] = pts[v][0]; Q[v * 3 + 1] = pts[v][1]; Q[v * 3 + 2] = pts[v][2]; }
     const i2 = cnt === 4 ? 2 : 1, i3 = cnt === 4 ? 3 : 2, j0 = cnt === 4 ? 1 : 0;
     const ax = Q[i2 * 3] - Q[0], ay = Q[i2 * 3 + 1] - Q[1], az = Q[i2 * 3 + 2] - Q[2];
@@ -210,6 +237,14 @@ export class Builder {
       if (def.dirt) {
         const d = noise3(qx * 0.11, qy * 0.23, qz * 0.11) + 0.5 * noise3(qx * 0.5, qy * 0.5, qz * 0.5);
         s *= 1 + 0.13 * def.dirt * d;
+      }
+      if (def.wear) {
+        const rw = o.wear;
+        if (rw) bk.w.push(rw[0], rw[1], rw[2], rw[3]);
+        else if (def.wearRaw) bk.w.push(0, 0, 0, 0);
+        else if (this._hasLoc) {
+          bk.w.push(Math.max(0, Math.min(255, Math.round(128 + this._lx[v] * 16))), Math.max(0, Math.min(255, Math.round(this._ly[v] * 50))), this.ws, this.wr * 64 + this.wd * 8 + this.wk);
+        } else bk.w.push(128, 100, this.ws, this.wr * 64 + this.wd * 8);
       }
       bk.c.push(
         Math.min(255, Math.max(0, Math.round(lin(tint[0]) * s * 255))),
@@ -325,6 +360,7 @@ export class Builder {
         c: new Uint8Array(bk.c),
         i: new Uint32Array(bk.i),
       };
+      if ((MATDEF[mat] || EMPTY).wear) { m.w = new Uint8Array(bk.w); transfer.push(m.w.buffer); }
       mats[mat] = m;
       transfer.push(m.p.buffer, m.n.buffer, m.uv.buffer, m.c.buffer, m.i.buffer);
     }

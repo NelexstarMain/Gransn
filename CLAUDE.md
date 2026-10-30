@@ -65,7 +65,9 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 | `gen/modules.js` | ~45 modułów: ściany, okna (`windowCore`, `glassFrame`), drzwi, witryny, gzymsy, dachy, mosty, nabrzeża, drzewa (rekurencyjne, 4 gatunki), auta (`oldcar`), kioski, budki, przystanki, fontanna, tory, latarnia morska, molo… |
 | `gen/assemble.js` | składanie fragmentu: `buildQuad` (ściany, dachy `roofSpec`, ćwiartki gruntu), `buildRoad` (wstęga, zaokrąglone końce, krawężniki maskowane), rekwizyty, `buildRiver`, `buildChunkLOD`, `buildGroundTile` |
 | `gen/worker.js`, `gen/pool.js` | generacja w Web Workerach. Pula przełącza się na wątek główny, gdy workery nie działają (`?local` wymusza ten tryb). |
-| `game/streaming.js` | fragmenty 80×80 m: detal blisko (170 m, w `?low` 90 m), dalej LOD |
+| `render/wear.js` | zniszczenia w shaderze: zacieki, odpadający tynk (5 rodzajów, głębia przez paralaksę, „gorące miejsca”), pęknięcia, bruk (każda kostka inna, rzędy między krawężnikami), płyty chodnikowe, asfalt, rdza. Pola zniszczeń to funkcja pozycji **3D w świecie** (wolumen 64³), więc płynnie przechodzą przez narożniki. Atrybut wierzchołka `wear` (4 bajty) niesie układ budynku (okno, piętro, zniszczenie, ziarno) |
+| `game/worldmesh.js` | cały świat = po jednym `BatchedMesh` na materiał (≈25 draw calli), przycinanie fragmentów do kadru (też w cieniu), detal↔LOD to flaga widoczności |
+| `game/streaming.js` | przed grą buduje CAŁĄ mapę (detal 80×80 m + LOD) i scala w `WorldMesh`; w grze tylko przełącza widoczność (detal 170 m, LOD dalej, nic za 1150 m). `?low`: detal tylko wokół gracza, z usuwaniem |
 | `game/collision.js` | siatka 0,5 m z typami: GROUND −0,05, ROAD +0,06, WALK +0,15, BRIDGE, SOLID. Jezdnia wypełniana na końcu, więc jest zawsze przejezdna. |
 | `game/vehicle.js` | fizyka taksówki, kolizje z botami, `moduleMesh` (siatka modułu dla obiektów ruchomych) |
 | `game/traffic.js` | graf dróg, A*, boty (pas, łuki Béziera, odstęp, pierwszeństwo/blokada węzła, cierpliwość), rysowanie przez InstancedMesh |
@@ -102,6 +104,14 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 | `npm run check` | ~3400 obiektów, 0 na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 364 budynki |
 | `npm run sim` | 34 auta, ~18 km/h średnio, ~1/3 w korkach, najdłuższe czekanie ~12 s, 0 NaN |
 | `npm run build-world` | 144 fragmenty, ok. 3,0 mln trójkątów, 0 błędów, 0 punktów lądu pod wodą |
+
+## Zniszczenia i bruk (render/wear.js)
+
+- `Builder.setWear(rola, zniszczenie 0..7, ziarno, yo)` ustawia stan budynku; `win(hw)` w `windowCore` mówi shaderowi, gdzie jest okno. `MATDEF[mat].wear` = materiał ma atrybut `wear`.
+- Bruk: UV w „kostkach” (1 = rząd ≈ 15 cm) ze współrzędnych świata, `wear.x` = liczba rzędów między krawężnikami. Płyty: `wear.x` = kąt najbliższej jezdni. LOD bruku to osobny materiał `cobblelod` (zwykła tekstura).
+- Odcinki jezdni mają różnicę wysokości 4 mm × (i % 3), żeby na skrzyżowaniach wzory bruku nie migotały.
+- Shadery są sprawdzane bez przeglądarki: składanie pełnego shadera three.js na atrapie GL + `glslangValidator` oraz podgląd w headless-GL (`gl` + xvfb, WebGL1). Skrypty były w katalogu tymczasowym, nie w repo.
+- Nie zweryfikowane w prawdziwej przeglądarce: wydajność klatki, pamięć GPU (~200 MB na pełny detal), `BatchedMesh` z cieniami.
 
 ## Znane braki i pomysły na dalej
 

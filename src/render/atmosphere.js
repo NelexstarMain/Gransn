@@ -25,7 +25,7 @@ export function createAtmosphere(scene, renderer) {
 
   // kopuła nieba z gradientem (bez mgły)
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(1800, 32, 16),
+    new THREE.SphereGeometry(1300, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,

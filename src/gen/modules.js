@@ -53,6 +53,7 @@ function windowCore(b, W, H, p) {
   const ow = clamp(W * (p.winW || 0.4), 0.7, 1.6);
   const oh = clamp(H * (p.winH || 0.5), 1.1, 2.15);
   const x0 = (W - ow) / 2, x1 = x0 + ow;
+  b.win(ow / 2);
   const y0 = p.ground ? Math.max(1.25, H - oh - 0.9) : clamp(H * 0.27, 0.75, 1.0);
   const y1 = Math.min(y0 + oh, H - 0.32);
   const wm = p.ground ? p.groundMat : p.wallMat;
@@ -229,7 +230,7 @@ export const M = {
       const mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2;
       b.poly(gm, [[a[0], a[1], 0], [c[0], c[1], 0], [c[0], c[1], D], [a[0], a[1], D]], [cx - mx, spring - my, 0], { shade: 0.35 });
     }
-    b.gridY('cobble', 0.1, x0, 0, x1, D, 2, Math.max(1, Math.round(D / 3)), { shade: 0.6, flat: 1 });
+    b.gridY('cobble', 0.1, x0, 0, x1, D, 2, Math.max(1, Math.round(D / 3)), { shade: 0.6, flat: 1, uvScale: 1 / 0.15 });
     // archiwolta
     const R = r + 0.3;
     for (let i = 0; i < N; i++) {
@@ -492,7 +493,7 @@ Object.assign(M, {
     }
     // nawierzchnia
     const sw = Math.min(2.5, D * 0.22), pw = 0.45;
-    b.gridY('cobble', H, 0, sw, W, D - sw, Math.max(1, Math.round(W / 3)), 2, { flat: 1 });
+    b.gridY('cobble', H, 0, sw, W, D - sw, Math.max(1, Math.round(W / 3)), 2, { flat: 1, uvScale: 1 / 0.15 });
     for (const [za, zb, fz] of [[pw, sw, 1], [D - sw, D - pw, -1]]) {
       b.rectY('slab', H + 0.15, 0, za, W, zb, 1);
       const zc = fz > 0 ? zb : za;

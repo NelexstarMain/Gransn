@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/rng.js';
 
-function tileNoise(seed) {
+export function tileNoise(seed) {
   const r = mulberry32(seed);
   const perm = new Uint8Array(256), val = new Float32Array(256);
   for (let i = 0; i < 256; i++) { perm[i] = i; val[i] = r(); }
@@ -85,7 +85,7 @@ function bake(w, h, fn, strength = 2, opts = {}) {
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // Voronoi bezszwowy (komórki G×G)
-function voronoi(G, seed, jitter = 0.85) {
+export function voronoi(G, seed, jitter = 0.85) {
   const r = mulberry32(seed);
   const pts = new Float32Array(G * G * 2), ids = new Float32Array(G * G);
   for (let i = 0; i < G * G; i++) { pts[i * 2] = 0.5 + (r() - 0.5) * jitter; pts[i * 2 + 1] = 0.5 + (r() - 0.5) * jitter; ids[i] = r(); }
@@ -109,25 +109,12 @@ export function createTextures() {
   const T = {};
   const nA = tileNoise(11), nB = tileNoise(23), nC = tileNoise(37);
 
-  // — tynk z odpadającymi łatami (spod spodu cegła) —
+  // — tynk: tylko drobne ziarno; łaty, zacieki i pęknięcia dokłada shader (render/wear.js),
+  //   unikalnie dla każdego budynku, więc kafel 3,2 m nie ma w sobie nic, co by się powtarzało
   T.plaster = bake(512, 512, (u, v) => {
     const n = nA(u, v, 6, 5), f = nB(u, v, 48, 2);
-    const streak = nC(u, v * 0.25 + 0.3, 24, 3);
-    const patch = nB(u + 0.37, v + 0.11, 3, 4);
-    let c = 0.86 + (n - 0.5) * 0.18 + (f - 0.5) * 0.06 - Math.max(0, streak - 0.55) * 0.35;
-    let h = 0.5 + (f - 0.5) * 0.5 + (n - 0.5) * 0.4;
-    const pm = smooth(0.71, 0.73, patch) * 0.85;
-    const rim = smooth(0.68, 0.71, patch) - smooth(0.71, 0.73, patch);
-    c -= rim * 0.08;
-    if (pm > 0) {
-      const row = Math.floor(v * 40), bx = (u * 11.5 + (row % 2) * 0.5) % 1, by = (v * 40) % 1;
-      const mortar = bx < 0.06 || by < 0.15;
-      const br = mortar ? [0.62, 0.6, 0.56] : [0.6 + (nB(u, v, 96, 1) - 0.5) * 0.12, 0.45, 0.39];
-      const cc = [c, c * 0.98, c * 0.93];
-      const m = pm;
-      return [cc[0] * (1 - m) + br[0] * m, cc[1] * (1 - m) + br[1] * m, cc[2] * (1 - m) + br[2] * m, h * (1 - m) + (mortar ? 0.0 : 0.25) * m];
-    }
-    return [c, c * 0.98, c * 0.93, h];
+    const c = 0.88 + (n - 0.5) * 0.12 + (f - 0.5) * 0.06;
+    return [c, c * 0.98, c * 0.93, 0.5 + (f - 0.5) * 0.5 + (n - 0.5) * 0.4];
   }, 3);
 
   // — cegła (4 cegły × 12 warstw na kafel 1.04 × 0.9 m) —
@@ -177,24 +164,6 @@ export function createTextures() {
     ];
   }, 6);
 
-  // — płyty chodnikowe 50×50 cm z pęknięciami —
-  const crack = tileNoise(91);
-  T.slab = bake(512, 512, (u, v) => {
-    const tx = u * 4, ty = v * 4, ix = Math.floor(tx), iy = Math.floor(ty);
-    const fx = tx - ix, fy = ty - iy;
-    const gap = Math.min(fx, 1 - fx, fy, 1 - fy);
-    const sid = Math.abs(Math.sin(ix * 91.7 + iy * 47.3) * 43758.5453) % 1;
-    const n = nA(u, v, 16, 4), fine = nB(u, v, 128, 1);
-    const cr = Math.abs(crack(u, v, 6, 3) - 0.5);
-    const isCrack = sid > 0.7 && cr < 0.004;
-    let c = 0.62 + (sid - 0.5) * 0.1 + (n - 0.5) * 0.14 + (fine - 0.5) * 0.05;
-    let h = 0.7 + (fine - 0.5) * 0.15 + (fx - 0.5) * (sid - 0.5) * 0.15;
-    if (gap < 0.012) { c *= 0.45; h = 0.1; }
-    else if (gap < 0.03) { h -= (0.03 - gap) * 8; }
-    if (isCrack) { c *= 0.8; h -= 0.2; }
-    return [c, c * 0.985, c * 0.95, h];
-  }, 5);
-
   // — granit krawężnika —
   T.curb = bake(256, 256, (u, v) => {
     const n = nA(u, v, 8, 3), sp = nB(u, v, 128, 1);
@@ -202,14 +171,13 @@ export function createTextures() {
     return [c, c, c * 1.02, n * 0.3 + sp * 0.2];
   }, 2);
 
-  // — blacha na rąbek stojący —
+  // — blacha na rąbek stojący (rdza i mech: shader)
   T.roof = bake(512, 512, (u, v) => {
     const sx = (u * 4) % 1;
     const seam = Math.exp(-Math.pow((sx - 0.5) / 0.03, 2));
-    const n = nA(u, v, 6, 4), rust = nC(u * 1.0, v * 0.3, 8, 4);
-    const r = smooth(0.55, 0.75, rust);
-    const base = 0.48 + (n - 0.5) * 0.12;
-    return [base + r * 0.12, base - r * 0.06, base - r * 0.12, 0.3 + seam * 0.7 + (n - 0.5) * 0.1];
+    const n = nA(u, v, 6, 4);
+    const base = 0.5 + (n - 0.5) * 0.12;
+    return [base, base - 0.02, base - 0.04, 0.3 + seam * 0.7 + (n - 0.5) * 0.1];
   }, 4);
 
   // — trawa: źdźbła z szumu, plamy suchej trawy i koniczyny —

@@ -6,7 +6,7 @@ import { createMaterials } from './render/materials.js';
 import { createAtmosphere } from './render/atmosphere.js';
 import { CollisionGrid } from './game/collision.js';
 import { Player } from './game/player.js';
-import { Streamer, buildMeshes } from './game/streaming.js';
+import { Streamer } from './game/streaming.js';
 import { Hud } from './game/hud.js';
 import { Vehicle } from './game/vehicle.js';
 import { TaxiJob } from './game/taxi.js';
@@ -35,7 +35,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 2200);
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 1500);
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -47,7 +47,7 @@ async function start() {
   await new Promise((r) => setTimeout(r, 30));
   const city = generateCity(SEED);
   const grid = new CollisionGrid(city);
-  const { M, telescreen } = await createMaterials();
+  const { M, telescreen } = await createMaterials({ low: LOW });
   const atmo = createAtmosphere(scene, renderer);
 
   // morze dookoła wyspy
@@ -58,7 +58,7 @@ async function start() {
   scene.add(sea);
 
   const pool = new WorkerPool(params.has('local') ? 0 : Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1)), city);
-  const streamer = new Streamer(scene, city, pool, M, LOW);
+  const streamer = new Streamer(scene, city, pool, M, { low: LOW, shadows: !LOW, groundTiles: GROUND_TILES });
   const player = new Player(camera, grid, renderer.domElement);
   player.spawn(city.spawn.x, city.spawn.z, city.spawn.yaw);
   player.update(0);
@@ -81,30 +81,23 @@ async function start() {
   water.receiveShadow = true;
   scene.add(water);
 
-  // Wszystko ładuje się w tle, według odległości od gracza: najpierw okolica,
-  // potem reszta miasta. Do gry można wejść w każdej chwili.
-  const near = (x, z) => Math.hypot(x - player.pos.x, z - player.pos.z);
-  pool.run({ seed: SEED, kind: 'river' }, 5).then((mats) => scene.add(buildMeshes(mats, M)));
-  const tileSize = (2 * city.half) / GROUND_TILES;
-  for (let tz = 0; tz < GROUND_TILES; tz++)
-    for (let tx = 0; tx < GROUND_TILES; tx++) {
-      const cx = -city.half + (tx + 0.5) * tileSize, cz = -city.half + (tz + 0.5) * tileSize;
-      pool.run({ seed: SEED, kind: 'ground', tx, tz }, near(cx, cz) - 400).then((mats) => scene.add(buildMeshes(mats, M)));
-    }
-  streamer.update(player.pos);
-  streamer.loadLOD();
-  document.body.classList.add('ready');
-  const total = pool.busy;
-  const progressTimer = setInterval(() => {
-    const left = pool.busy;
-    setProgress(1 - left / Math.max(1, total), left ? `Budowanie miasta… (${left} zadań, możesz już wejść)` : 'Gotowe. Klienci czekają!');
-    if (!left) clearInterval(progressTimer);
-  }, 250);
+  // Przed grą cała mapa buduje się w workerach i scala w kilka siatek (jedna na materiał).
+  // Przycisk startu pojawia się dopiero, gdy wszystko jest gotowe i shadery skompilowane.
+  let ready = false;
+  streamer.load(player.pos, setProgress).then(async () => {
+    setProgress(1, 'Scalanie świata i kompilacja shaderów…');
+    try { await renderer.compileAsync(scene, camera); } catch { /* kompilacja przy pierwszej klatce */ }
+    streamer.seal();
+    ready = true;
+    setProgress(1, 'Gotowe. Klienci czekają!');
+    document.body.classList.add('ready');
+  });
 
   const overlay = $('overlay');
   // Wejście do gry nie zależy od Pointer Lock (w ramce / na telefonie bywa zablokowany)
   let playing = false, hadLock = false;
   const enter = () => {
+    if (!ready) return;
     playing = true;
     overlay.style.display = 'none';
     try {
@@ -116,7 +109,7 @@ async function start() {
   overlay.addEventListener('click', enter);
   overlay.addEventListener('touchend', (e) => { e.preventDefault(); enter(); });
   addEventListener('keydown', (e) => {
-    if (!playing && (e.code === 'Enter' || e.code === 'Space')) enter();
+    if (!playing && ready && (e.code === 'Enter' || e.code === 'Space')) enter();
     else if (playing && e.code === 'KeyP') pause();
   });
   document.addEventListener('pointerlockchange', () => {
@@ -187,7 +180,8 @@ async function start() {
     renderer.render(scene, camera);
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
-    const info = `${fps.toFixed(0)} FPS · fragmenty: ${streamer.loaded}/${city.chunks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${renderer.info.render.calls}${player.fly ? ' · LOT' : ''}`;
+    const ri = renderer.info.render;
+    const info = `${fps.toFixed(0)} FPS · fragmenty: ${streamer.loaded}/${city.chunks.length} · ${(ri.triangles / 1e6).toFixed(2)} M tri · draw ${ri.calls}${player.fly ? ' · LOT' : ''}`;
     hud.update(dt, { pos: active, yaw: car.active ? carYaw() : player.yaw }, info, job, car, camera);
     if (!TEST) requestAnimationFrame(frame);
   }
