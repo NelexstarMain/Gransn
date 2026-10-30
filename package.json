@@ -15,7 +15,8 @@
     "smoke": "node scripts/smoke-game.mjs",
     "hash": "node scripts/hash-world.mjs",
     "model": "node scripts/preview-model.mjs",
-    "photo": "node scripts/photo.mjs"
+    "photo": "node scripts/photo.mjs",
+    "design": "node scripts/check-design.mjs"
   },
   "dependencies": {
     "three": "0.170.0"

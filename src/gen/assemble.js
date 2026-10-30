@@ -6,11 +6,14 @@
 import { Builder } from './builder.js';
 import { Cage } from './cage.js';
 import { M } from './modules.js';
+import './fragments.js';
+import { programOf, panelPlan } from './facade.js';
+import { facadesOf } from '../city/facades.js';
 import { SHOP_SIGNS, POSTERS } from './atlas.js';
 import { PROPS, moduleOf } from '../city/props.js';
 import { Rng, hash } from '../core/rng.js';
 import { HALF } from '../city/layout.js';
-import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
+import { levelY, filled, quadGeom, wallPlan, designOf, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
 import { CAR_KINDS, PARKED_KINDS } from './vehicles.js';
 import { polyDist } from '../city/routes.js';
@@ -244,7 +247,7 @@ function buildQuad(b, city, q) {
     const Qi = quarterInfo(G, i);
     if (g.TY[a] === T_BLD) {
       const zone = g.ZN[a];
-      const info = buildingInfo(seed, g.BID[a], zone);
+      const info = designOf(city, g.BID[a], zone);
       const top = g.H[a];
       setTints(b, info);
       for (let L = 0; L < top; L++) {
@@ -296,7 +299,6 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
   const y0 = levelY(L), y1 = levelY(L + 1), H = y1 - y0;
   const cage = cage4(T, null, pts, NONE, y0, y1);
   const hh = hash(city.seed, a, nb, q, L);
-  const plan = wallPlan(city, a, nb, q, side, L);
   const house = info.zone === Z_HOUSES;
   const p = {
     style: info.style, wallMat: info.wallMat, groundMat: info.groundMat || info.wallMat,
@@ -306,18 +308,31 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
     simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4], winW: info.winW, winH: info.winH, curtain: info.curtain, awning: info.awning,
     endKind: ek.kind, cornerOwner: ek.owner,
   };
-  let mod;
-  if (W < 1.25) mod = 'wall';
-  else if (L === 0) { mod = plan.mod; p.ground = true; }
-  else if (info.zone === 2) mod = 'ornate';
-  else if (plan.balcony && !house) mod = 'balcony';
-  else mod = info.style === 'ornate' ? 'ornate' : info.style === 'modern' ? 'modern' : 'window';
-  if (mod === 'shop' && W < 2.4) mod = 'window';
-  if (mod === 'door' && W < 1.8) mod = 'wall';
+  // fasada z fragmentów (okna o stałej szerokości, wejścia, balkony, narożniki);
+  // Ministerstwo i styl modernistyczny zostają przy starych modułach
+  const seg = info.zone !== 2 && info.style !== 'modern' ? facadesOf(city).at(a, nb, q, side, L) : null;
+  let mod, plan;
+  if (seg && W >= 1.25) {
+    plan = panelPlan(city, info, programOf(city, g.BID[a], info), seg, L, top, W, H, p.simple, hash(city.seed, a, nb, q * 2 + side, L) / 4294967296);
+    mod = plan.mod;
+    if (L === 0) p.ground = true;
+    p.spec = plan.spec;
+    if (mod === 'shop' && W < 2.4) mod = 'wall';
+  } else {
+    plan = wallPlan(city, a, nb, q, side, L);
+    if (W < 1.25) mod = 'wall';
+    else if (L === 0) { mod = plan.mod; p.ground = true; }
+    else if (info.zone === 2) mod = 'ornate';
+    else if (plan.balcony && !house) mod = 'balcony';
+    else mod = info.style === 'ornate' ? 'ornate' : info.style === 'modern' ? 'modern' : 'window';
+    if (mod === 'shop' && W < 2.4) mod = 'window';
+    if (mod === 'door' && W < 1.8) mod = 'wall';
+    plan.string = L === 1 && info.zone === 1;
+  }
   place(b, mod, cage, W, H, D, p);
   if (L === 0 && plan.poster) place(b, 'poster', cage, W, H, D, { name: POSTERS[hh % POSTERS.length], y: 0.9, w: Math.min(W * 0.6, 1.2) });
   // gzyms nad parterem kamienicy
-  if (L === 1 && info.zone === 1 && !filled(g, nb, 0)) place(b, 'string', cage4(T, null, pts, NONE, y0, y0 + 0.32), W, 0.32, D, p);
+  if (plan.string && !filled(g, nb, 0)) place(b, 'string', cage4(T, null, pts, NONE, y0, y0 + 0.32), W, 0.32, D, p);
   // okap / gzyms wieńczący — wszystkie budynki mają tę samą wysokość okapu (0,5 m),
   // więc dachy sąsiadów zawsze stykają się bez szczelin
   if (L === top - 1) {
@@ -344,10 +359,41 @@ function roofQuarter(b, city, info, G, i, top) {
   const pts = roofSpec(city, G, i, top, info);
   b.wpoly(info.roofMat || 'roof', pts.map(([p, h]) => [p[0], T.height(p[0], p[1]) + base + h, p[1]]), [0, 1, 0], { tint: info.roofTint });
   const hv = pts[0][1];
+  if (info.dormers && hv >= 1.7) roofDormers(b, city, info, G, i, top, base);
   if (hv > 2.2 && hash(city.seed, a, 77) / 4294967296 < 0.12) {
     const pv = G.p[i];
     b.cell(cage4(T, null, boxPts(pv, [1, 0], [0, 1], 1, 1), NONE, base, base + 1), 1, 1, 1);
     M.chimney(b, 0.5, 0.5, hv - 1.2, hv + 1.3, { chimneyTint: [0.6, 0.45, 0.4] });
+  }
+}
+
+// Lukarny na krawędziach okapu: w osi odcinka ściany, czyli nad oknami ostatniego piętra.
+// Połać to trójkąt (środek krawędzi, środek czworokąta, punkt narożny): wysokość rośnie
+// liniowo od okapu do kalenicy, stąd nachylenie s = R / odległość punktu od okapu.
+function roofDormers(b, city, info, G, i, top, base) {
+  const g = city.grid, T = city.terrain, V = G.v, a = V[i], R = info.ridge, vp = G.p[i];
+  for (const side of [0, 1]) {
+    const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
+    if (filled(g, nb, top - 1)) continue;
+    const f0 = side === 0 ? G.m[i] : G.m[(i + 3) % 4], c = G.c, W = dist(f0, c);
+    if (W < 2.0 || hash(city.seed, a, G.v[(i + 2) % 4], side, 78) / 4294967296 > info.dormerRate) continue;
+    const e = [(c[0] - f0[0]) / W, (c[1] - f0[1]) / W];
+    let n = [-e[1], e[0]];
+    const run = (vp[0] - f0[0]) * n[0] + (vp[1] - f0[1]) * n[1];
+    if (run < 0) n = [-n[0], -n[1]];
+    const depthToApex = Math.abs(run);
+    if (depthToApex < 1.8) continue;
+    const s = R / depthToApex, set = 0.35, wd = info.zone === Z_HOUSES ? 1.1 : 1.3;
+    const Hd = Math.max(1.2, Math.min(1.75, R * 0.9 - s * set)), Dd = Math.min(depthToApex * 0.8, Hd / s + 0.3);
+    const P = [(f0[0] + c[0]) / 2 + n[0] * set, (f0[1] + c[1]) / 2 + n[1] * set];
+    const F0 = [P[0] - e[0] * wd / 2, P[1] - e[1] * wd / 2], F1 = [P[0] + e[0] * wd / 2, P[1] + e[1] * wd / 2];
+    const B0 = [F0[0] + n[0] * Dd, F0[1] + n[1] * Dd], B1 = [F1[0] + n[0] * Dd, F1[1] + n[1] * Dd];
+    const yb = base + s * set;
+    const hh = hash(city.seed, a, side, 79);
+    place(b, 'dormer', cage4(T, null, [F0, F1, B0, B1], NONE, yb, yb + Hd), wd, Hd, Dd, {
+      wallMat: info.wallMat, roofMat: info.roofMat || 'roof', roofTint: info.roofTint, frameTint: info.frameTint,
+      glassTint: GLASS[hh % GLASS.length], curtain: info.curtain, style: info.style, metalTint: [0.2, 0.22, 0.21],
+    });
   }
 }
 
@@ -570,7 +616,7 @@ export function buildChunkLOD(city, id) {
         }
         continue;
       }
-      const info = buildingInfo(city.seed, g.BID[a], g.ZN[a]);
+      const info = designOf(city, g.BID[a], g.ZN[a]);
       const top = g.H[a];
       for (const side of [0, 1]) {
         const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];

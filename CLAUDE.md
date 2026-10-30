@@ -25,12 +25,13 @@ node scripts/seeds.mjs 1 60 [--build]   # sprawdza wiele ziaren naraz (jezdnie, 
 node scripts/audit-roads.mjs 1 40 [--where]  # audyt sieci ulic: przecięcia, wyspy, ślepe uliczki, mosty
 node scripts/sim-film.mjs 1984  # symulacja trybu filmowego (autopilot 150 s, boty, utknięcia)
 node scripts/map.mjs 1984 [--props]     # plan miasta z góry (PNG): drogi, budynki, rzeka, mosty, tory
+npm run design         # projekt budynków i fasad: determinizm, najlepsza z N, fragmenty w panelach, różnorodność
 ```
 
 ## Jak pracować z tym użytkownikiem (WAŻNE)
 
 - **Język:** pisze po polsku, często dyktując głosem, z literówkami („wieksze”, „zrub”). Odpowiadaj po polsku, zwięźle, bez żargonu. Gdy coś jest niejasne, interpretuj w duchu wcześniejszych próśb (patrz Historia).
-- **NIE uruchamiaj testów w przeglądarce** (Playwright/Chromium). Użytkownik wprost tego zabronił i przerywa takie procesy (kod 137). Weryfikuj przez `npm run check`, `sim`, `sim-peds`, `build-world`, `smoke`, `node scripts/boot-test.mjs` i `npx vite build`. Wygląd sprawdzaj `npm run photo` (świat i rekwizyty) oraz `npm run model` (auta, ludzie, karabin): to programowe rastery w Node, nie przeglądarka; oglądaj PNG-i narzędziem Read. To przybliżenie GPU (światło, cień, tekstury, mgła, ACES), nie kopia piksel w piksel. W raporcie uczciwie pisz, czego nie dało się sprawdzić w prawdziwym WebGL (światło, cienie, FPS).
+- **NIE uruchamiaj testów w przeglądarce** (Playwright/Chromium). Użytkownik wprost tego zabronił i przerywa takie procesy (kod 137). Weryfikuj przez `npm run check`, `sim`, `sim-peds`, `build-world`, `design`, `smoke`, `node scripts/boot-test.mjs` i `npx vite build`. Wygląd sprawdzaj `npm run photo` (świat i rekwizyty) oraz `npm run model` (auta, ludzie, karabin): to programowe rastery w Node, nie przeglądarka; oglądaj PNG-i narzędziem Read. To przybliżenie GPU (światło, cień, tekstury, mgła, ACES), nie kopia piksel w piksel. W raporcie uczciwie pisz, czego nie dało się sprawdzić w prawdziwym WebGL (światło, cienie, FPS).
 - **Robi przerwy i wraca z nową listą.** Często powtarza wcześniejszą wiadomość w całości, zanim doda nowe punkty. Najpierw upewnij się, że stare punkty są zrobione.
 - **Po każdej zmianie:**
   1. Commit na gałęzi przydzielonej w poleceniu sesji (równoległe sesje mają różne gałęzie, np. `ccr-ecc3ed84-ivhb3i`, `ccr-82241717-wn3zfe`, `ccr-a540e01c-2z335y`), z opisem po polsku i trailerami z system-reminder.
@@ -68,6 +69,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 16. Z mostu nie dało się zjechać: koryto rzeki (SOLID) i końce ulic zasypywały komórki pokładu 1–3 m od krawędzi mostu. Teraz `collision.js` wypełnia mosty (prostokąt + ulice z `bridge`) NA KOŃCU, po korycie. Test: skrypt jazdy po osi każdego mostu sprawdza `solid()` jak `Vehicle.blocked`.
 17. Ustawienia gracza (`game/settings.js`, przycisk ⚙ pod minimapą, klawisz O, przycisk w menu startowym): jakość (Niska/Średnia/Wysoka/Ultra = rozdzielczość + cienie + zasięg detali), cienie (wył./1024/2048/4096), FOV, czułość, ciemność kolorów (`GRADE_UNIFORM` w `materials.js`, 0 = bez gradingu), jasność, mgła. Zapis w localStorage (`gransn.settings.v2`). Domyślnie „Wysoka” (res 1,5, cienie 2048, detale 170 m) także na telefonie; `?low` wpływa już tylko na liczbę botów. Otwarcie panelu wstrzymuje grę, zamknięcie wznawia.
 12. Większe miasto, mniej ulic: `HALF` 460 → 520 (ląd ~0,44 km²), ziarna Voronoi co 66 m (było 58), w `roads.js` rzadsze odgałęzienia (Voronoi: co 40–58 m, szansa 0,4; ulice: kontynuacja przy gęstości > 0,24, boczne > 0,38 i 0,26). Gęstość ulic spadła z ~38 do ~30 km/km².
+18. Budynki: generowanie zastąpiło „losowy fragment co ~2,5 m”. Użytkownik chciał metody jak najlepszej (prace: Wonka 2003 i Müller 2006 — gramatyki podziałów; Talton 2011 i Ritchie 2015 — sterowanie przez próbkowanie i ocenę; Bao 2013 — warianty fasady z relacji). Efekt: **najlepsza z N prób etapami** (bryła → styl → program fasady) i **fasada z fragmentów w metrach**, nie z jednakowych komórek (`fragments.js`, `facade.js`). Użytkownik zaznaczył, że budynek nie ma być siatką komórek, tylko zbiorem fragmentów różnej wielkości.
 
 ## Architektura (src/)
 
@@ -86,15 +88,19 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 | `city/bridges.js` | MOSTY z segmentów 5 m (`SEG`): `makeBridge`, `bridgeSegments`, `onBridge`. Most jest prosty, prostopadły do rzeki, segmenty stykają się krawędź w krawędź. Miejski 2 segmenty szerokości, autostrada 3, kolejowy 1 (`br.rail`). Moduł `bridgeseg`. |
 | `city/props.js` | REJESTR REKWIZYTÓW (rozmiar, odcisk `r`, kolizja `solid`, priorytet, orientacja, limit) i tabele stref `ZONES`. Dodajesz rekwizyt: wpis tu + moduł w `gen/propmods.js` + (opcjonalnie) wariant w `VARIANT` w `assemble.js` |
 | `render/layers.js` | KOLEJNOŚĆ WARSTW nawierzchni (wysokość, renderOrder, polygonOffset z jednej tabeli `SURFACE`) |
-| `city/grid.js` | nieregularna siatka czworokątów (Stålberg), `buildingInfo` (gramatyka brył + palety HSL), `classifyGrid`, `raised`, `wallPlan`, `decorate` (1 obiekt na punkt), `makeChunks` |
+| `city/grid.js` | nieregularna siatka czworokątów (Stålberg), `buildingInfo(seed, bid, zone, k)` (jedna próba z gramatyki brył + palety HSL), `classifyGrid` (działki, wybór projektu → `grid.design`), `designOf`, `raised`, `wallPlan` (tylko Ministerstwo i styl modernistyczny), `decorate` (1 obiekt na punkt), `makeChunks` |
+| `city/design.js` | **najlepsza z N prób etapami**: `lotStats` (wymiary działki), `chooseDesign` (5 prób bryły, potem 4 próby stylu); ocena: smukłość względem działki, ciągłość wysokości z sąsiadami, kontrast dachu/ściany/opaski, odległość odcieni od sąsiadów |
+| `city/facades.js` | `buildFacades`/`facadesOf(city)`: odcinki ścian (środek krawędzi → środek czworokąta) łączone w fasady; narożniki wypukłe/wklęsłe, styk kamienic (`party`), klucz kolumny `segKey` (ten sam na każdym piętrze) |
 | `gen/cage.js` | trójliniowa deformacja kostki (FFD) + poprawne normalne |
 | `gen/builder.js` | budowa geometrii: szum zależny od pozycji w świecie, pochylenie, AO, UV w metrach. `MATDEF` (stała `W`: **jeden szum dla wszystkich materiałów budynków**, inaczej plakaty i ramy „chowają się” w ścianie) |
 | `gen/propmods.js` | ~45 nowych modułów rekwizytów (hydrant, słup ogłoszeniowy, stragany, altana, wiatrak, łódź…), dopinane do `M` przez `installProps` |
-| `gen/modules.js` | ~45 modułów: ściany, okna (`windowCore`, `glassFrame`), drzwi, witryny, gzymsy, dachy, mosty, nabrzeża, drzewa (rekurencyjne, 4 gatunki), kioski, budki, przystanki, fontanna, tory, latarnia morska, molo… Auta (`oldcar`, `carwheel`) dokleja `Object.assign(M, vehicleModules)` z `vehicles.js` |
+| `gen/modules.js` | ~45 modułów: ściany, okna (`windowParts`, `surround`, `glassFrame`), drzwi (`doorParts`), balkony (`balconyParts`), witryny, gzymsy, dachy, mosty, nabrzeża, drzewa (rekurencyjne, 4 gatunki), kioski, budki, przystanki, fontanna, tory, latarnia morska, molo… Auta (`oldcar`, `carwheel`) dokleja `Object.assign(M, vehicleModules)` z `vehicles.js` |
 | `gen/vehicles.js` | 6 typów aut (`CAR_KINDS`): tourer, taxi, sedan, van, truck, roadster. Gładkie „skóry” (`skin`, `ringX`, `lofted`, `rbox`) z superelips i policzonymi normalnymi, koło (`wheel`), błotniki, maska, chłodnica, lampy, kotwice kierowcy i pasażera (`carAnchors`). Parametr `q` = poziom detalu |
 | `gen/people.js` | części ciała (`PEOPLE_PARTS`) z przegubem w początku układu: korpus (kurtka/płaszcz/suknia), głowa, fryzury, nakrycia głowy, ręce, nogi, buty. Materiał `cloth`, kolor z instanceColor |
 | `gen/weapons.js` | karabin z zamkiem (`rifle`, `bolt`) i ręce w widoku z pierwszej osoby (`arms`) |
-| `gen/assemble.js` | składanie fragmentu: `buildQuad` (ściany, dachy `roofSpec`, ćwiartki gruntu), `buildRoad` (wstęga, zaokrąglone końce, krawężniki maskowane), rekwizyty, `buildRiver`, `buildChunkLOD`, `buildGroundTile` |
+| `gen/fragments.js` | fragmenty fasady w metrach i moduły `panel` oraz `dormer`: okno (opaski `plain/lintel/band/ped/segm/cornice`, łuk, okiennice, kwiaty, kraty), drzwi (prostokątne i z łukiem), balkon (kuta/tralki/pełny), francuski balkon, wykusz, boniowanie narożne, lizena. `panel` rysuje ścianę z dowolną liczbą otworów (`wallHoles`) |
+| `gen/facade.js` | `programOf` (program budynku: wymiary okien, opaski, balkony, wykusz, wejście, sklepy; najlepsza z 6 prób) i `panelPlan` (lista fragmentów jednego panelu wg klasy piętra: parter / piano nobile / środkowe / attyka) |
+| `gen/assemble.js` | składanie fragmentu: `buildQuad` (ściany, dachy `roofSpec`, lukarny `roofDormers`, ćwiartki gruntu), `buildRoad` (wstęga, zaokrąglone końce, krawężniki maskowane), rekwizyty, `buildRiver`, `buildChunkLOD`, `buildGroundTile` |
 | `gen/worker.js`, `gen/pool.js` | generacja w Web Workerach. Pula przełącza się na wątek główny, gdy workery nie działają (`?local` wymusza ten tryb). |
 | `game/streaming.js` | fragmenty 80×80 m: detal blisko (170 m, w `?low` 90 m), dalej LOD |
 | `game/collision.js` | siatka 0,5 m z typami: GROUND −0,05, ROAD +0,06, WALK +0,15, BRIDGE, SOLID. Jezdnia wypełniana na końcu, więc jest zawsze przejezdna. |
@@ -130,10 +136,12 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
   | krawężnik | +0,16 |
 
 - **Jezdnia:** `rw` to 3,0 (uliczki P&M), 3,4 lub 4,2 (ulice Voronoi), 4,0 (główne P&M), 5,5 (autostrada), 3,5 (most). Punkt siatki jest pusty, jeśli `clearance < 5,2`, więc ściany zawsze są poza jezdnią.
+- **Fasada z fragmentów:** okno ma stałą szerokość w metrach w całym budynku (`prog.w`), a nie ułamek odcinka; kolumny okien i balkonów leżą jedna nad drugą (klucz `segKey` bez piętra). Piętra mają klasy: `g` parter, `n` piano nobile (L=1 w kamienicy), `m` środkowe, `t` ostatnie przy ≥4 piętrach. Wejście stoi blisko środka fasady od ulicy i ma bogatszą oś nad sobą; balkony i wykusz są nad nim lub na innej kolumnie od ulicy.
+- **Projekt budynku liczy się raz:** `classifyGrid` wybiera `grid.design` (bryła + styl) i `programOf` wybiera program fasady. Wszędzie bierz `designOf(city, bid, zone)`, nie `buildingInfo` — inaczej ćwiartki jednego budynku dostaną różne style. Próba `k` używa `hash(seed, bid, 717, k)`, więc wynik jest deterministyczny.
 - **Rekwizyty:** jeden na punkt siatki. Muszą trzymać odstęp od jezdni (`clearance`), od budynków (`bldDist`) i od siebie (`free`). Drzewo zamiast wchodzić w dom zmniejsza się.
 - **Determinizm:** to samo `generateCity(seed)` liczy się w każdym workerze. Wszystko losowe idzie przez `hash`/`Rng`.
 - **Wydajność:** cała wyspa ma ok. 6 mln trójkątów (detal plus LOD). Auta-boty i ludzie są instancjonowani. Odbicia pochodzą z PMREM liczonego raz. Nie dodawaj postprocessingu, który kosztuje FPS. Mapa cieni odświeża się co drugą klatkę, rozdzielczość dopasowuje się do FPS (mnożnik `Settings.autoScale` 0,6…1 razy rozdzielczość z menu; wyłącza go pole „Automatyczna rozdzielczość”, a w trybie filmowym i przy otwartych ustawieniach stoi w miejscu), HUD odświeża się ok. 8 Hz, nowe fragmenty świata trafiają do sceny po jednym na klatkę (`Streamer.defer/tick`).
-- **Optymalizacja generatora musi zachować geometrię co do bitu:** przed zmianą w `noise.js`, `builder.js`, `terrain.js` zapisz `npm run hash` (aktualnie seed 1984 = `4086ba8`, po scaleniu z gałęzią `ccr-82241717-wn3zfe`; skrót zmienia się tylko, gdy celowo zmieniasz wygląd świata, np. zaparkowane auta), po zmianie generatora skrót ma się zgadzać.
+- **Optymalizacja generatora musi zachować geometrię co do bitu:** przed zmianą w `noise.js`, `builder.js`, `terrain.js` zapisz `npm run hash` (aktualnie seed 1984 = `ebc1249f`, po fasadach z fragmentów, lukarnach i wyborze najlepszej z N prób; wcześniej `4086ba8`; skrót zmienia się tylko, gdy celowo zmieniasz wygląd świata, np. zaparkowane auta), po zmianie generatora skrót ma się zgadzać.
 - **Układ współrzędnych modeli ruchomych:** x = przód, y = góra, z = prawa strona (kierowca siedzi po lewej, z < 0). Kurs `heading` to kąt kierunku jazdy w płaszczyźnie (x, z): przód = (cos, sin), prawa = (−sin, cos); `mesh.rotation.y = −heading`.
 - **Auta w świecie i w grze to ten sam moduł** (`oldcar`). Lakier to materiał `body` (kolor z wierzchołków albo z `instanceColor`), tylne światła `tail`, ludzie `cloth`. Zaparkowane auta mają stałą stopkę 3,6 × 1,7 m (klatka ściska moduł do ≤5%), więc typy parkowane (`PARKED_KINDS`) mają nominalną długość 3,6–3,85 m.
 - **Piesi nie używają `Math.random`** w symulacji (Rng z ziarnem); efekty cząsteczkowe mogą.
@@ -142,9 +150,10 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 
 | narzędzie | wynik |
 |---|---|
-| `npm run check` | 3563 obiekty, 0 na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 835 budynków, 1139 odcinków ulic |
+| `npm run check` | 3520 obiektów, 0 na jezdni, 0 nakładań, 0 ścian na jezdni, najwęższa jezdnia 6 m, 835 budynków, 1139 odcinków ulic |
 | `npm run sim` | 34 auta, ~18 km/h średnio, ~39% stoi (korki to cecha gry), najdłuższe czekanie ~12 s, 0 NaN |
-| `npm run build-world` | 169 fragmentów, ok. 6,15 mln trójkątów (detal + LOD łącznie), 0 błędów, 0 punktów lądu pod wodą; ~28 s (bez optymalizacji generatora było ~44 s) |
+| `npm run build-world` | 169 fragmentów, ok. 6,10 mln trójkątów (detal + LOD łącznie; przed fasadami z fragmentów 6,15 mln), 0 błędów, 0 punktów lądu pod wodą; ~28 s (bez optymalizacji generatora było ~44 s) |
+| `npm run design` | determinizm OK; najlepsza z N: zbliżone kolory sąsiadów 43,8% → 29,3% (paleta dzielnicowa trzyma sąsiadów blisko), ten sam styl 29% → 23%; 24 298 paneli, 0 fragmentów poza panelem i 0 nakładających się otworów; 353 kombinacje na 835 budynków |
 | `npm run sim-peds` | 60 pieszych, 0 w budynkach, 0 w wodzie, 0 NaN, ~17% pozycji na jezdni (przejścia i narożniki), 0,26 ms na krok |
 | `npm run smoke` | 0 wyjątków i 0 NaN: jazda, kurs z pasażerem, wysiadanie, strzały (8/8 trafień przy wolnej linii), potrącenie |
 | `node scripts/boot-test.mjs` | prawdziwy `main.js` (z ustawieniami i trybem filmowym) rusza i przechodzi scenariusz bez błędów |
@@ -176,6 +185,9 @@ Fizyka taksówki (płaska płyta): 0–50 km/h w ~4,1 s, maksimum ~62 km/h, hamo
 - Karabin nie zostawia śladów po kulach, a hit-scan zakłada budynki do 18 m wysokości.
 - Wygląd aut, ludzi i karabinu sprawdzono tylko rasteryzatorem programowym (`npm run model`), nie w prawdziwym WebGL: światło, cienie i FPS na urządzeniu użytkownika nie były widziane.
 - LOD nie ma rekwizytów (lamp, ławek), drzewa w LOD to proste ostrosłupy.
+- Dachy to wciąż ostrosłupy z lukarnami (bez kalenic i dachów dwuspadowych); lukarny stoją w osi odcinka ściany.
+- Fasady: nie ma okien parami ani balkonów ciągłych na dwa przęsła. Szwy między panelami mają mikroszczeliny (T-złącza przy szumie `wob`), jak wcześniej.
+- Większość „budynków” to 1–2 punkty siatki (409 z 835): wąskie kamienice w szeregu. Samotne słupki dostają niski dach, ale same działki nie są łączone.
 - UV dachów: rzut z góry lub z boku, więc rzędy dachówek nie zawsze idą wzdłuż połaci.
 - Pasażer siada w aucie przez `car.mesh.add`. Przy wysiadaniu jest usuwany. Działa, ale wsiadanie nie ma animacji.
 - `?low` włącza się automatycznie na telefonach i przy ≤4 rdzeniach lub ≤4 GB RAM.
