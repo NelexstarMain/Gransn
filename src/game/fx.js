@@ -92,28 +92,26 @@ export class CarFX {
       const fx = Math.cos(car.heading), fz = Math.sin(car.heading), rx = -fz, rz = fx;
       const thr = keys.has('KeyW') || keys.has('ArrowUp');
       this.acc += dt;
-      // dym z rury wydechowej (z tyłu, po lewej)
-      const rate = thr ? 0.03 : 0.12;
+      // dym z rury wydechowej (z tyłu, po prawej burcie — tam jest tłumik)
+      const rate = thr ? 0.03 : 0.12, half = car.L / 2;
       if (this.acc > rate) {
         this.acc = 0;
-        const ex = car.pos.x - fx * 1.9 - rx * 0.45, ez = car.pos.z - fz * 1.9 - rz * 0.45;
+        const ex = car.pos.x - fx * (half + 0.1) + rx * 0.72, ez = car.pos.z - fz * (half + 0.1) + rz * 0.72;
         const gr = 0.55 + Math.random() * 0.1;
         this.emit(ex, car.pos.y + 0.45, ez, -fx * 0.6 + (Math.random() - 0.5) * 0.4, 0.5 + Math.random() * 0.4, -fz * 0.6 + (Math.random() - 0.5) * 0.4, thr ? 0.5 : 0.32, thr ? 2.2 : 1.6, gr, gr, gr, thr ? 0.5 : 0.3);
       }
-      // nawierzchnia pod kołami
-      const near = this.city.roads.nearest(car.pos.x, car.pos.z);
-      const onDirt = near && near.c < 0.3 && near.s.mat === 'dirt';
-      const offRoad = !near || near.c > 0.5;
+      // nawierzchnia pod kołami (liczy ją pojazd)
+      const onDirt = car.surface === 'dirt';
       const sp = Math.abs(car.v);
-      if ((onDirt || (offRoad && grid.type(car.pos.x, car.pos.z) === 0)) && sp > 4 && Math.random() < sp / 30) {
+      if ((onDirt || car.surface === 'grass') && sp > 4 && Math.random() < sp / 30) {
         for (const sd of [-0.75, 0.75]) {
           this.emit(car.pos.x - fx * 1.3 + rx * sd, car.pos.y + 0.2, car.pos.z - fz * 1.3 + rz * sd, -fx * sp * 0.08 + (Math.random() - 0.5), 0.4 + Math.random() * 0.6, -fz * sp * 0.08 + (Math.random() - 0.5), 0.7, 1.8, 0.62, 0.52, 0.4, 0.35);
         }
       }
-      // ślady opon: poślizg (ręczny / ostry skręt / mocne hamowanie) albo grunt
-      const brake = (keys.has('KeyS') || keys.has('ArrowDown')) && car.v > 6;
-      const skid = (keys.has('Space') && sp > 3) || (Math.abs(car.steer) > 0.7 && sp > 9) || brake;
-      const wheels = [-0.73, 0.73].map((sd) => [car.pos.x - fx * 1.2 + rx * sd, car.pos.z - fz * 1.2 + rz * sd]);
+      // ślady opon: poślizg (liczy go pojazd: ręczny, boczny poślizg, blokowanie kół) albo grunt
+      const skid = car.skid;
+      const back = half - 0.68, tw = car.W / 2 - 0.1;
+      const wheels = [-tw, tw].map((sd) => [car.pos.x - fx * back + rx * sd, car.pos.z - fz * back + rz * sd]);
       if ((skid || onDirt) && sp > 1.5) {
         if (this.lastW) {
           const d = Math.hypot(wheels[0][0] - this.lastW[0][0], wheels[0][1] - this.lastW[0][1]);

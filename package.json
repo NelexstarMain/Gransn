@@ -10,12 +10,19 @@
     "preview": "vite preview",
     "check": "node scripts/check-world.mjs",
     "sim": "node scripts/sim-traffic.mjs",
-    "build-world": "node scripts/build-all.mjs"
+    "build-world": "node scripts/build-all.mjs",
+    "sim-peds": "node scripts/sim-peds.mjs",
+    "smoke": "node scripts/smoke-game.mjs",
+    "hash": "node scripts/hash-world.mjs",
+    "model": "node scripts/preview-model.mjs",
+    "photo": "node scripts/photo.mjs",
+    "design": "node scripts/check-design.mjs"
   },
   "dependencies": {
     "three": "0.170.0"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "0.1.65",
     "vite": "6.0.7"
   }
 }
