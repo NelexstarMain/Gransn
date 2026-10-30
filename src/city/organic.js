@@ -84,7 +84,7 @@ export function organicStreets(streets, T, seed) {
     }
   });
   // węzeł-złącze: skrzyżowanie, koniec albo zmiana rodzaju ulicy
-  const keep = (s) => s.bridge || s.type === 'H';
+  const keep = (s) => s.bridge || s.type === 'H' || s.main || s.planned; // ulice główne i planowe zostają, jak je ułożył plan
   const bridgeNode = new Set();
   streets.forEach((s) => { if (s.bridge) { bridgeNode.add(key(s.a)); bridgeNode.add(key(s.b)); } });
   const joint = (k) => {

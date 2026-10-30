@@ -19,6 +19,7 @@ import { polyDist } from './routes.js';
 import { PROPS, PRIO, pickKind } from './props.js';
 import { onBridge } from './bridges.js';
 import { lotStats, chooseDesign } from './design.js';
+import { KINDS, KIND_ID } from './town.js';
 
 export const LEVEL0 = 3.8, LEVEL = 3.2;
 export const levelY = (L) => (L <= 0 ? 0 : LEVEL0 + (L - 1) * LEVEL);
@@ -196,11 +197,13 @@ const LS = 11;
 export const lotCenter = (bid) => [(Math.floor(bid / 4096) - 2048 + 0.5) * LS, ((bid % 4096) - 2048 + 0.5) * LS];
 
 // ── generator budynku: typ bryły (gramatyka kształtu) + kolory + detale ─────
-export function buildingInfo(seed, bid, zone, k = 0) {
+export function buildingInfo(seed, bid, zone, k = 0, ctx = null) {
   const r = new Rng(k ? hash(seed, bid, 717, k) : hash(seed, bid, 717));
   if (zone === Z_MINISTRY) return { zone, style: 'ornate', shape: 'block', tint: [0.86, 0.74, 0.56], trim: [0.95, 0.92, 0.84], wallMat: 'plaster', groundMat: 'stone', roofTint: [0.32, 0.5, 0.42], frameTint: [0.92, 0.9, 0.85], doorTint: [0.36, 0.24, 0.14], ce: 0.5, ridge: 3.2, garden: false, variant: 0, winW: 0.42, winH: 0.55, roofMat: 'roof', curtain: [0.6, 0.15, 0.12], r };
   const tenement = zone === Z_TENEMENT;
-  const [cx, cz] = lotCenter(bid), dc = Math.hypot(cx, cz);
+  const [cx, cz] = lotCenter(bid), dc = ctx ? ctx.dc : Math.hypot(cx, cz);
+  // dzielnica: Stare Miasto (niższe, gęste, podcienia przy rynku), Śródmieście XIX w., wille w ogrodach
+  const kind = ctx ? ctx.kind : null, old = kind === 'old', villa = kind === 'villa', industrial = kind === 'industrial', front = !!ctx && ctx.dRyn < 30;
   // dzielnica: wolnozmienny szum → pozycja w palecie; budynek odchyla się od niej o ±2 wpisy
   const dn = Math.max(0, Math.min(1, 0.5 + 0.75 * noise3(cx / 170 + 7.7, 0.5, cz / 170 - 3.1) + 0.3 * noise3(cx / 60, 1.5, cz / 60)));
   const pos = dn * (WALLS.length - 1) + r.float(-2.1, 2.1);
@@ -209,17 +212,18 @@ export function buildingInfo(seed, bid, zone, k = 0) {
   const tint = hsl(hue, Math.max(0.04, ws + r.float(-0.05, 0.05)), Math.min(0.94, wl + r.float(-0.04, 0.04)));
   const trim = hsl(hue, 0.14, r.chance(0.8) ? 0.88 : 0.42);
   const style = tenement
-    ? r.weighted([['classic', 4], ['ornate', 3], ['plain', 3], ['brick', 2], ['modern', 0.6]])
-    : r.weighted([['house', 6], ['ornate', 1.2], ['brick', 1.2]]);
+    ? r.weighted(old ? [['classic', 4], ['ornate', 2.6], ['plain', 3], ['brick', 2.2]] : [['classic', 4], ['ornate', 3], ['plain', 3], ['brick', 2], ['modern', 0.6]])
+    : r.weighted(industrial ? [['brick', 8], ['house', 1]] : villa ? [['house', 2.4], ['ornate', 2.6], ['brick', 2.6]] : [['house', 6], ['ornate', 1.2], ['brick', 1.2]]);
   const shape = tenement
-    ? r.weighted([['block', 3.4], ['stepped', 1.8], ['tower', 0.45], ['crenel', 1.4], ['arcade', 1]])
-    : r.weighted([['block', 3], ['villa', 2], ['tower', 0.4], ['L', 2]]);
+    ? r.weighted(old ? [['block', 3.4], ['stepped', 1.2], ['tower', 0.3], ['crenel', 1.3], ['arcade', front ? 3.4 : 1]] : [['block', 3.4], ['stepped', 1.8], ['tower', 0.45], ['crenel', 1.4], ['arcade', 1]])
+    : r.weighted(industrial ? [['block', 4], ['L', 2.5]] : villa ? [['block', 1], ['villa', 4.4], ['tower', 0.7], ['L', 2.2]] : [['block', 3], ['villa', 2], ['tower', 0.4], ['L', 2]]);
   const roofTint = r.weighted(ROOFS).map((c) => Math.min(1, c * r.float(0.88, 1.12)));
-  // wysokość maleje od rynku ku obrzeżom, sąsiednie działki różnią się najwyżej o jedno piętro
-  const base = 6.3 - 3.3 * Math.min(1, dc / 320);
+  // wysokość maleje od rynku ku obrzeżom, sąsiednie działki różnią się najwyżej o jedno piętro;
+  // Stare Miasto jest niższe niż śródmieście z XIX w., a pierzeje rynku o piętro wyższe
+  const base = old ? 3.3 - 0.7 * Math.min(1, dc / 260) + (front ? 0.9 : 0) : 5.4 - 2.2 * Math.min(1, dc / 340);
   return {
     zone, style, shape, tint, trim, roofTint, hue,
-    levels: tenement ? Math.max(3, Math.min(7, Math.round(base + r.float(-1.1, 1.1)))) : r.weighted([[1, 2], [2, 5], [3, 2]]),
+    levels: tenement ? Math.max(old ? 2 : 3, Math.min(old ? 5 : 7, Math.round(base + r.float(-1.1, 1.1)))) : industrial ? r.weighted([[2, 3], [3, 3], [4, 1.2]]) : villa ? r.weighted([[1, 0.6], [2, 4], [3, 3]]) : r.weighted([[1, 2], [2, 5], [3, 2]]),
     wallMat: style === 'brick' ? 'brick' : 'plaster',
     groundMat: style === 'brick' ? 'brick' : tenement && r.chance(0.5) ? 'stone' : 'plaster',
     frameTint: r.weighted(FRAMES), doorTint: hsl(...r.pick(DOORS)),
@@ -229,7 +233,7 @@ export function buildingInfo(seed, bid, zone, k = 0) {
     ridge: style === 'modern' ? 0 : tenement ? r.float(1.8, 3.4) : r.float(2.4, 4.4),
     winW: r.float(0.32, 0.5), winH: r.float(0.44, 0.6),
     bars: tenement && r.chance(0.3), shops: tenement ? r.chance(0.6) : r.chance(0.08),
-    garden: !tenement && r.chance(0.24), variant: r.int(0, 1),
+    garden: !tenement && !industrial && r.chance(villa ? 0.46 : 0.24), variant: r.int(0, 1),
     roofMat: !tenement || r.chance(0.45) ? 'tile' : 'roof',
     curtain: hsl(r.float(0, 360), r.float(0.25, 0.5), r.float(0.35, 0.6)),
     awning: r.chance(0.7) ? hsl(...r.pick(AWNINGS)) : null,
@@ -247,13 +251,16 @@ export function designOf(city, bid, zone) {
 }
 
 export function classifyGrid(city) {
-  const { grid, terrain: T, seed, roads } = city;
+  const { grid, terrain: T, seed, roads, plan } = city;
   const { X, Z, N, quads } = grid;
-  const H = new Uint8Array(N), TY = new Uint8Array(N), ZN = new Uint8Array(N), ARCH = new Uint8Array(N);
+  const H = new Uint8Array(N), TY = new Uint8Array(N), ZN = new Uint8Array(N), ARCH = new Uint8Array(N), KIND = new Uint8Array(N);
   const BID = new Int32Array(N), CL = new Float32Array(N);
   const seedAt = bucketize(city.seedList, 70, (s) => [s.x - 140, s.z - 140, s.x + 140, s.z + 140]);
   const plaza = city.blocks.find((b) => b.kind === 'plaza');
   const tiers = plaza.ministry.tiers;
+  // odległość od krawędzi rynku (pierzeje rynku są wyższe i z podcieniami)
+  const ryPoly = plan ? plan.rynek.poly : null;
+  const ryDist = (x, z) => { let d = 1e18; for (let i = 0; i < ryPoly.length; i++) d = Math.min(d, segDist(x, z, { a: ryPoly[i], b: ryPoly[(i + 1) % ryPoly.length] })); return d; };
   const lots = new Map();
   for (let v = 0; v < N; v++) {
     const x = X[v], z = Z[v];
@@ -261,8 +268,11 @@ export function classifyGrid(city) {
     CL[v] = roads.clearance(x, z);
     let ns = null, nd = 1e18;
     for (const s of seedAt(x, z)) { const d = (s.x - x) ** 2 + (s.z - z) ** 2; if (d < nd) { nd = d; ns = s; } }
-    const kind = ns ? ns.kind : 'houses';
-    ZN[v] = kind === 'tenement' ? Z_TENEMENT : kind === 'nature' ? Z_NATURE : Z_HOUSES;
+    // rodzaj dzielnicy: z planu (rynek i planty wycięte geometrycznie), inaczej z najbliższego ziarna
+    const kind = (plan && plan.overrideKind(x, z)) || (ns ? ns.kind : 'houses');
+    const KD = KINDS[kind] || KINDS.houses;
+    KIND[v] = KIND_ID[kind] ?? KIND_ID.houses;
+    ZN[v] = KD.zone === 'tenement' ? Z_TENEMENT : KD.zone === 'nature' ? Z_NATURE : Z_HOUSES;
     if (inl < 0 || Math.abs(x) > city.half - 4 || Math.abs(z) > city.half - 4) { TY[v] = T_WATER; continue; }
     const rd = T.river(x, z).d;
     if (rd < T.hw) { TY[v] = T_WATER; continue; } // koryto (także ujście): bez chodnika, drzew, pasażerów
@@ -279,14 +289,17 @@ export function classifyGrid(city) {
     }
     if (onBridge) continue;
     if (kind === 'plaza') {
-      const dc = Math.max(Math.abs(x - T.plaza.x), Math.abs(z - T.plaza.z));
+      // ratusz w środku rynku: kwadrat obrócony razem z planem
+      if (plan && plan.hall.none) { TY[v] = T_PLAZA; continue; } // rynek bez ratusza (fontanna pośrodku)
+      const [pu, pv] = plan ? plan.F.l(x, z) : [x - T.plaza.x, z - T.plaza.z];
+      const dc = Math.max(Math.abs(pu - (plan ? plan.hall.u : 0)), Math.abs(pv - (plan ? plan.hall.v : 0)));
       if (dc < tiers[0] * 0.32) { TY[v] = T_BLD; ZN[v] = Z_MINISTRY; BID[v] = -1; H[v] = dc < 5.5 ? 11 : 3; }
       else TY[v] = T_PLAZA;
       continue;
     }
-    if (kind === 'park' || kind === 'nature') { TY[v] = T_PARK; continue; }
+    if (kind === 'park' || kind === 'nature' || kind === 'planty' || kind === 'church' || kind === 'cemetery') { TY[v] = T_PARK; continue; }
     const zone = ZN[v];
-    if (CL[v] > (zone === Z_TENEMENT ? 18 : 13)) { TY[v] = T_COURT; continue; }
+    if (CL[v] > KD.court) { TY[v] = T_COURT; continue; }
     // działka = najbliższy punkt rozedrganej siatki co 11 m
     const gx = Math.floor(x / LS), gz = Math.floor(z / LS);
     let best = 1e18, bid = 0;
@@ -299,7 +312,7 @@ export function classifyGrid(city) {
       }
     BID[v] = bid;
     TY[v] = T_BLD;
-    if (!lots.has(bid)) lots.set(bid, { zone, verts: [] });
+    if (!lots.has(bid)) lots.set(bid, { zone, kind, verts: [] });
     lots.get(bid).verts.push(v);
   }
 
@@ -332,7 +345,9 @@ export function classifyGrid(city) {
       if ((hash(seed, v, 11) / 4294967296) < 0.03) h += 1;
       return Math.max(1, Math.min(14, h));
     };
-    const { info, hmax, gain } = chooseDesign((k) => buildingInfo(seed, bid, lot.zone, k), (c) => vs.map((v) => heightOf(c, v)), st, decided);
+    // kontekst dzielnicy: rodzaj i odległość od środka rynku (wysokość i styl zależą od dzielnicy, nie od (0,0))
+    const ctx = { kind: lot.kind, dc: Math.hypot(st.cx - T.plaza.x, st.cz - T.plaza.z), dRyn: plan ? ryDist(st.cx, st.cz) : 1e9 };
+    const { info, hmax, gain } = chooseDesign((k) => buildingInfo(seed, bid, lot.zone, k, ctx), (c) => vs.map((v) => heightOf(c, v)), st, decided);
     design.set(bid, info);
     stats.lots++; stats.massGain += gain.mass; stats.styleGain += gain.style;
     if (info.garden) { for (const v of vs) TY[v] = T_GARDEN; continue; }
@@ -382,7 +397,7 @@ export function classifyGrid(city) {
     for (let v = 0; v < N; v++)
       if (TY[v] === T_BLD && ARCH[v] && !nb[v].some((n) => TY[n] === T_BLD && H[n] >= 1 && !ARCH[n])) ARCH[v] = 0;
   }
-  grid.H = H; grid.TY = TY; grid.ZN = ZN; grid.BID = BID; grid.ARCH = ARCH; grid.CL = CL;
+  grid.H = H; grid.TY = TY; grid.ZN = ZN; grid.BID = BID; grid.ARCH = ARCH; grid.CL = CL; grid.KIND = KIND;
   // ratusz: najwyższe punkty to wieża — dostaje hełm z zegarami (M.townhall)
   let hTop = 0;
   const tower = new Set();
@@ -540,7 +555,10 @@ export function decorate(city) {
     put(bb.p, r);
     return true;
   });
-  for (const ex of city.extras) put(ex.p, Math.min(ex.clear, 10));
+  for (const ex of city.extras) {
+    if (ex.kind === 'church') for (const k of [-0.32, 0, 0.32]) put([ex.p[0] + ex.e[0] * ex.W * k, ex.p[1] + ex.e[1] * ex.W * k], 7.5);
+    else put(ex.p, Math.min(ex.clear, 10));
+  }
 
   // kolumny podcieni (prześwity typu "arcade")
   const used = new Uint8Array(g.N);
@@ -561,7 +579,7 @@ export function decorate(city) {
     let zone = null;
     if (t === T_STREET && town && g.nearBld[v] && cl < 4) zone = 'walk';
     else if (t === T_PLAZA) zone = 'plaza';
-    else if (t === T_PARK && town) zone = 'park';
+    else if (t === T_PARK && town) zone = g.KIND[v] === KIND_ID.cemetery ? 'cemetery' : 'park';
     else if (wild && t !== T_BEACH) zone = cl > 1.4 && cl < 4.5 && hv < 0.35 ? 'edge' : 'wild';
     else if (t === T_BEACH) zone = 'beach';
     else if (t === T_COURT) zone = 'court';

@@ -127,8 +127,14 @@ const clearShot = (t) => {
   return false;
 };
 for (let n = 0; n < 8; n++) {
-  const t = peds.walkers.find((x) => x.mode !== 'down' && Math.hypot(x.h.x - player.pos.x, x.h.z - player.pos.z) < 80 && x.mode !== 'wait');
-  if (!t) break;
+  let t = peds.walkers.find((x) => x.mode !== 'down' && Math.hypot(x.h.x - player.pos.x, x.h.z - player.pos.z) < 80 && x.mode !== 'wait');
+  if (!t) {
+    // układ miasta bywa różny: gdy nikt nie chodzi w pobliżu, strzelec przenosi się do najbliższego pieszego
+    t = peds.walkers.find((x) => x.mode !== 'down' && x.mode !== 'wait');
+    if (!t) break;
+    player.spawn(t.h.x + 6, t.h.z, 0);
+    for (let i = 0; i < 20; i++) frame(true);
+  }
   t.mode = 'pause'; t.modeT = 0; t.pauseLen = 99; t.h.speed = 0; // stoi w miejscu
   if (!clearShot(t)) continue;
   for (let i = 0; i < 40; i++) frame(true);

@@ -42,6 +42,12 @@ export class CollisionGrid {
       this.fill([[f.a[0] + nx, f.a[1] + nz], [f.b[0] + nx, f.b[1] + nz], [f.b[0] - nx, f.b[1] - nz], [f.a[0] - nx, f.a[1] - nz]], SOLID);
     }
     for (const po of city.posts || []) this.disc(po.p[0], po.p[1], 0.25);
+    // kościół: prostokąt budynku (z zapasem na przypory)
+    for (const ex of city.extras) {
+      if (ex.kind !== 'church') continue;
+      const P = (a, c) => [ex.p[0] + ex.e[0] * a + ex.n[0] * c, ex.p[1] + ex.e[1] * a + ex.n[1] * c], hw = ex.W / 2 + 0.6, hd = ex.D / 2 + 0.6;
+      this.fill([P(-hw, -hd), P(hw, -hd), P(hw, hd), P(-hw, hd)], SOLID);
+    }
     for (const m of city.monuments) {
       const r = m.kind === 'fountain' ? 4.4 : 2.2, [x, z] = m.p;
       this.fill([[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]], SOLID);

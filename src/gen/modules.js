@@ -1228,6 +1228,140 @@ function cubeSphere(b, mat, c, R, n, o) {
       }
 }
 
+// ── komin fabryczny: stożkowy trzon z cegły, pasy i żeliwny wieniec ──────────
+Object.assign(M, {
+  factorychimney(b, W, H, D, p) {
+    const cx = W / 2, cz = D / 2, br = { tint: [0.6, 0.31, 0.22] }, st = { tint: [0.62, 0.6, 0.56] }, dk = { tint: [0.14, 0.13, 0.13] };
+    b.cyl('stone', cx, cz, -1.2, 1.6, 1.85, 1.7, 12, st, 'Y');
+    const seg = 12, n = Math.max(6, Math.round(H / 2.2));
+    for (let i = 0; i < n; i++) {
+      const y0 = 1.6 + ((H - 3.2) * i) / n, y1 = 1.6 + ((H - 3.2) * (i + 1)) / n;
+      const r = (y) => 1.45 - 0.62 * ((y - 1.6) / (H - 3.2));
+      b.cyl('brick', cx, cz, y0, y1, r(y0), r(y1), seg, { tint: [0.6 + (i % 3) * 0.02, 0.31, 0.22], shade: 1 - (i % 2) * 0.04 });
+    }
+    for (const f of [0.7, 0.82]) { const y = 1.6 + (H - 3.2) * f, r = 1.45 - 0.62 * f; b.cyl('stone', cx, cz, y - 0.18, y + 0.1, r + 0.08, r + 0.08, seg, st); }
+    const yt = H - 1.6, rt = 1.45 - 0.62;
+    b.cyl('brick', cx, cz, yt, H - 0.5, rt + 0.1, rt + 0.22, seg, br);
+    b.cyl('stone', cx, cz, H - 0.5, H - 0.25, rt + 0.3, rt + 0.3, seg, st, 'Y');
+    b.cyl('dark', cx, cz, H - 0.25, H - 0.2, rt + 0.1, rt - 0.2, seg, dk);
+    for (const y of [3.5, 9.5, 15.5]) if (y < H - 4) b.cyl('metal', cx, cz, y, y + 0.1, 1.5 - 0.62 * ((y - 1.6) / (H - 3.2)) + 0.05, 1.5 - 0.62 * ((y - 1.6) / (H - 3.2)) + 0.05, seg, dk);
+  },
+});
+
+// ── kościół: nawa z dachem dwuspadowym, wieża z iglicą, wieloboczne prezbiterium ──
+//  Oś budynku wzdłuż x, wieża przy x = 0 (od strony ulicy), prezbiterium przy x = W.
+Object.assign(M, {
+  church(b, W, H, D, p) {
+    const brick = !!p.brick, wm = brick ? 'brick' : 'plaster';
+    const wo = { tint: p.wall || (brick ? [0.6, 0.33, 0.25] : [0.92, 0.88, 0.8]) };
+    const ko = { tint: [0.84, 0.8, 0.7], shade: 0.9 };
+    const ro = { tint: p.roof || [0.3, 0.32, 0.36] };
+    const cu = { tint: p.spire || [0.38, 0.5, 0.44] };
+    const dk = { tint: [0.07, 0.06, 0.06] };
+    const tw = 7.4, tz0 = (D - tw) / 2, tz1 = tz0 + tw, nz0 = 0.6, nz1 = D - 0.6, nx0 = tw, nx1 = W - 6.4;
+    const hn = 10, rise = 5.6, ha = hn - 1.8, ac = D / 2;
+    const hs = Math.min(H * 0.5, 23), hb = hs + 5.4, tipY = H - 1.4;
+    // cztery ściany prostopadłościanu drobną siatką (szum materiału liczony jest w wierzchołkach)
+    const walls = (x0, y0, z0, x1, y1, z1, o, mat = wm, skipX0 = false) => {
+      const nx = Math.max(1, Math.round((x1 - x0) / 0.8)), nz = Math.max(1, Math.round((z1 - z0) / 0.8)), ny = Math.max(1, Math.round((y1 - y0) / 0.8));
+      b.grid(mat, x0, y0, x1, y1, z0, nx, ny, o);
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) b.rectBack(mat, x0 + ((x1 - x0) * i) / nx, y0 + ((y1 - y0) * j) / ny, x0 + ((x1 - x0) * (i + 1)) / nx, y0 + ((y1 - y0) * (j + 1)) / ny, z1, o);
+      if (!skipX0) b.gridX(mat, x0, z0, y0, z1, y1, nz, ny, -1, o);
+      b.gridX(mat, x1, z0, y0, z1, y1, nz, ny, 1, o);
+    };
+    // cokół z kamienia wokół całości
+    b.box('stone', 0, 0, tz0 - 0.15, tw + 0.15, 0.7, tz1 + 0.15, 'xXyYzZ', ko);
+    b.box('stone', nx0, 0, nz0 - 0.15, nx1 + 0.15, 0.7, nz1 + 0.15, 'yYzZ', ko);
+    // ── wieża ──
+    walls(0.1, 0.6, tz0, tw, hs, tz1, wo);
+    for (const [x, z] of [[0, tz0 - 0.25], [0, tz1 - 0.45], [tw - 0.55, tz0 - 0.25], [tw - 0.55, tz1 - 0.45]])
+      b.box('stone', x, 0.6, z, x + 0.65, hs * 0.78, z + 0.7, 'xXyYzZ', ko);
+    for (const y of [hs * 0.34, hs * 0.66, hs]) b.box('stone', -0.05, y - 0.12, tz0 - 0.1, tw + 0.1, y + 0.12, tz1 + 0.1, 'xXyYzZ', ko);
+    // portal od ulicy (ściana x = 0, na zewnątrz −x): łuk ostry z kamiennym obramieniem
+    const cz = D / 2, pw = 1.3, py = 3.4, e = 0.04;
+    b.poly('dark', [[-e, 0.7, cz - pw], [-e, 0.7, cz + pw], [-e, py, cz + pw], [-e, py, cz - pw]], [-1, 0, 0], dk);
+    b.poly('dark', [[-e, py, cz - pw], [-e, py, cz + pw], [-e, py + 1.5, cz]], [-1, 0, 0], dk);
+    b.box('stone', -0.22, 0.7, cz - pw - 0.32, 0.0, py + 0.2, cz - pw, 'xXyYzZ', ko);
+    b.box('stone', -0.22, 0.7, cz + pw, 0.0, py + 0.2, cz + pw + 0.32, 'xXyYzZ', ko);
+    b.poly('stone', [[-0.2, py, cz - pw - 0.32], [-0.2, py, cz + pw + 0.32], [-0.2, py + 1.9, cz]], [-1, 0, 0], ko);
+    // wysokie okno nad portalem + okna strzeliste na pozostałych ścianach trzonu
+    const lancet = (u, v0, v1, w, F, hint) => {
+      const x0 = u - w / 2, x1 = u + w / 2;
+      b.poly('dark', [F(x0, v0), F(x1, v0), F(x1, v1), F(x0, v1)], hint, dk);
+      b.poly('dark', [F(x0, v1), F(x1, v1), F(u, v1 + w * 0.95)], hint, dk);
+    };
+    lancet(cz, py + 3.2, hs * 0.62, 1.1, (u, v) => [-e, v, u], [-1, 0, 0]);
+    lancet(tz0 + tw / 2 - 0.0, hs * 0.74 - 3.2, hs * 0.74, 0.9, (u, v) => [u - tz0 - tw / 2 + tw / 2, v, tz0 - e], [0, 0, -1]);
+    // ── komora dzwonowa: łukowe otwory z żaluzjami ──
+    walls(0.35, hs, tz0 + 0.25, tw - 0.25, hb, tz1 - 0.25, wo);
+    b.box('stone', 0.15, hs - 0.05, tz0 + 0.05, tw - 0.05, hs + 0.28, tz1 - 0.05, 'xXyYzZ', ko);
+    const bo = (F, hint, wi) => { lancet(0, hs + 1.0, hb - 1.7, wi, F, hint); };
+    bo((u, v) => [0.35 - e, v, cz + u], [-1, 0, 0], 1.5);
+    bo((u, v) => [tw - 0.25 + e, v, cz + u], [1, 0, 0], 1.5);
+    bo((u, v) => [tw / 2 + u, v, tz0 + 0.25 - e], [0, 0, -1], 1.5);
+    bo((u, v) => [tw / 2 + u, v, tz1 - 0.25 + e], [0, 0, 1], 1.5);
+    b.box('stone', 0.1, hb - 0.05, tz0 + 0.0, tw - 0.0, hb + 0.3, tz1 - 0.0, 'xXyYzZ', ko);
+    // ── iglica: ośmioboczny hełm z lekkim wybrzuszeniem ──
+    const sx = tw / 2, sz = D / 2, r0 = tw / 2 - 0.2, ymid = hb + (tipY - hb) * 0.45, y0 = hb + 0.3;
+    const ringP = (y, r) => Array.from({ length: 8 }, (_, i) => { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; return [sx + Math.cos(a) * r, y, sz + Math.sin(a) * r]; });
+    const R0 = ringP(y0, r0 * 1.0), R1 = ringP(ymid, r0 * 0.62), R2 = ringP(tipY, 0.04);
+    for (const [lo, hi] of [[R0, R1], [R1, R2]])
+      for (let i = 0; i < 8; i++) {
+        const j = (i + 1) % 8, mx = (lo[i][0] + lo[j][0]) / 2 - sx, mz = (lo[i][2] + lo[j][2]) / 2 - sz;
+        b.poly('roof', [lo[i], lo[j], hi[j], hi[i]], [mx, 0.9, mz], cu);
+      }
+    b.tube('metal', [sx, tipY - 0.2, sz], [sx, H - 0.3, sz], 0.08, 0.05, 6, { tint: [0.85, 0.65, 0.25] });
+    b.box('metal', sx - 0.5, H - 1.0, sz - 0.05, sx + 0.5, H - 0.8, sz + 0.05, 'xXyYzZ', { tint: [0.85, 0.65, 0.25] });
+    b.box('metal', sx - 0.05, H - 1.7, sz - 0.05, sx + 0.05, H - 0.3, sz + 0.05, 'xXyYzZ', { tint: [0.85, 0.65, 0.25] });
+    // ── nawa ──
+    walls(nx0, 0.7, nz0, nx1, hn, nz1, wo, wm, true);
+    const nWin = Math.max(2, Math.floor((nx1 - nx0 - 2) / 3.6)), pitch = (nx1 - nx0) / nWin;
+    for (let i = 0; i < nWin; i++) {
+      const u = nx0 + pitch * (i + 0.5);
+      lancet(u, 2.6, hn - 3.0, 1.2, (uu, v) => [uu, v, nz0 - e], [0, 0, -1]);
+      lancet(u, 2.6, hn - 3.0, 1.2, (uu, v) => [uu, v, nz1 + e], [0, 0, 1]);
+      for (const [z0, z1] of [[nz0, nz0 - 0.18], [nz1, nz1 + 0.18]]) {
+        for (const sg of [-1, 1]) b.box('stone', u + sg * 0.75 - 0.07, 2.5, Math.min(z0, z1), u + sg * 0.75 + 0.07, hn - 2.6, Math.max(z0, z1), 'xXyYzZ', ko);
+      }
+    }
+    // przypory między oknami
+    for (let i = 0; i <= nWin; i++) {
+      const u = nx0 + pitch * i;
+      for (const [z0, z1] of [[nz0 - 0.55, nz0 + 0.05], [nz1 - 0.05, nz1 + 0.55]]) b.box('stone', u - 0.28, 0.6, z0, u + 0.28, hn - 1.6, z1, 'xXyYzZ', ko);
+    }
+    b.box('stone', nx0, hn - 0.05, nz0 - 0.2, nx1, hn + 0.22, nz1 + 0.2, 'xXyYzZ', ko);
+    // dach dwuspadowy z okapem i szczytem od strony prezbiterium
+    const eo = 0.55;
+    b.poly('roof', [[nx0, hn + 0.1, nz0 - eo], [nx1 + 0.4, hn + 0.1, nz0 - eo], [nx1 + 0.4, hn + rise, ac], [nx0, hn + rise, ac]], [0, 1, -0.9], ro);
+    b.poly('roof', [[nx1 + 0.4, hn + 0.1, nz1 + eo], [nx0, hn + 0.1, nz1 + eo], [nx0, hn + rise, ac], [nx1 + 0.4, hn + rise, ac]], [0, 1, 0.9], ro);
+    b.poly(wm, [[nx1 + 0.02, hn, nz0], [nx1 + 0.02, hn, nz1], [nx1 + 0.02, hn + rise - 0.05, ac]], [1, 0, 0], wo);
+    // ── prezbiterium: trzy ściany pod stożkowym dachem ──
+    const A = [[nx1, nz0 + 2.4], [nx1 + 2.6, nz0 + 2.4], [W, ac], [nx1 + 2.6, nz1 - 2.4], [nx1, nz1 - 2.4]];
+    for (let i = 0; i < A.length - 1; i++) {
+      const a = A[i], c = A[i + 1], mx = (a[0] + c[0]) / 2 - (nx1 + 1.5), mz = (a[1] + c[1]) / 2 - ac;
+      const nx = Math.max(1, Math.round(Math.hypot(c[0] - a[0], c[1] - a[1]) / 0.8)), ny = Math.max(1, Math.round((ha - 0.7) / 0.8));
+      for (let u = 0; u < nx; u++) for (let v = 0; v < ny; v++) {
+        const t0 = u / nx, t1 = (u + 1) / nx, y0 = 0.7 + ((ha - 0.7) * v) / ny, y1 = 0.7 + ((ha - 0.7) * (v + 1)) / ny;
+        b.poly(wm, [[a[0] + (c[0] - a[0]) * t0, y0, a[1] + (c[1] - a[1]) * t0], [a[0] + (c[0] - a[0]) * t1, y0, a[1] + (c[1] - a[1]) * t1], [a[0] + (c[0] - a[0]) * t1, y1, a[1] + (c[1] - a[1]) * t1], [a[0] + (c[0] - a[0]) * t0, y1, a[1] + (c[1] - a[1]) * t0]], [mx, 0, mz], wo);
+      }
+      // okno w ścianie prezbiterium
+      const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2], dl = Math.hypot(c[0] - a[0], c[1] - a[1]), tx = (c[0] - a[0]) / dl, tz = (c[1] - a[1]) / dl, ox = mx / (Math.hypot(mx, mz) || 1) * 0.04, oz = mz / (Math.hypot(mx, mz) || 1) * 0.04;
+      if (dl > 2) {
+        const w = 0.55, q = (s, y) => [mid[0] + tx * s + ox, y, mid[1] + tz * s + oz];
+        b.poly('dark', [q(-w, 2.8), q(w, 2.8), q(w, ha - 2.4), q(-w, ha - 2.4)], [mx, 0, mz], dk);
+        b.poly('dark', [q(-w, ha - 2.4), q(w, ha - 2.4), q(0, ha - 2.4 + w * 1.9)], [mx, 0, mz], dk);
+      }
+    }
+    const apex = [nx1 + 1.6, ha + rise * 0.78, ac];
+    for (let i = 0; i < A.length - 1; i++) {
+      const a = A[i], c = A[i + 1], mx = (a[0] + c[0]) / 2 - apex[0], mz = (a[1] + c[1]) / 2 - apex[2];
+      b.poly('roof', [[a[0], ha, a[1]], [c[0], ha, c[1]], apex], [mx, 0.8, mz], ro);
+    }
+    b.poly('roof', [[A[A.length - 1][0], ha, A[A.length - 1][1]], [A[0][0], ha, A[0][1]], apex], [-1, 0.2, 0], ro);
+    b.poly('roof', [[A[0][0], ha, A[0][1]], [A[A.length - 1][0], ha, A[A.length - 1][1]], apex], [-1, 0.2, 0], ro);
+  },
+});
+
 installProps(M, { cubeSphere }); // ~40 nowych rekwizytów (propmods.js)
 
 export function gateWidth(W) {

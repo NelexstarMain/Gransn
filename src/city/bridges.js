@@ -26,6 +26,31 @@ export function riverSite(T, x) {
   return null;
 }
 
+// długość łamanej osi rzeki
+export function riverLength(T) {
+  const P = T.pts;
+  let s = 0;
+  for (let i = 0; i < P.length - 1; i++) s += Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]);
+  return s;
+}
+
+// Punkt osi rzeki w odległości s wzdłuż łuku (rzeka może płynąć w dowolnym kierunku);
+// jak riverSite: odsunięty od wierzchołków łamanej, żeby most leżał na prostym odcinku.
+export function riverSiteAt(T, s) {
+  const P = T.pts;
+  let acc = 0;
+  for (let i = 0; i < P.length - 1; i++) {
+    const a = P[i], b = P[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (s <= acc + len || i === P.length - 2) {
+      const lo = Math.min(MARGIN, len / 2), hi = Math.max(len - MARGIN, len / 2);
+      const t = Math.max(lo, Math.min(hi, s - acc));
+      return { p: lerp2(a, b, t / len), tangent: [(b[0] - a[0]) / len, (b[1] - a[1]) / len], seg: i, s: acc + t };
+    }
+    acc += len;
+  }
+  return null;
+}
+
 // Most prostopadły do rzeki w punkcie site; cols = szerokość w segmentach.
 export function makeBridge(T, site, { cols = 2, highway = false, rail = false, hint = null } = {}) {
   const n = Math.ceil((2 * T.hw) / SEG) + 2; // koryto + po jednym segmencie oparcia na każdym brzegu

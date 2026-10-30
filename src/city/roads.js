@@ -44,9 +44,14 @@ function projT(p, a, b) {
 const VARIANTS = 3; // tyle wariantów L-systemu liczymy; zostaje ten z najlepszym wynikiem audytu
 
 // Jeden przebieg L-systemu (wariant = inne losowanie odgałęzień). Zwraca surowe odcinki.
-function growOnce(seed, T, bridges, center, base, variant) {
+function growOnce(seed, T, bridges, center, base, variant, plan) {
   const rng = new Rng(hash(seed, 1999, variant));
-  const pop = (x, z) => {
+  // gęstość zaludnienia: z planu miasteczka (jądro gęste, za plantami rzadziej) albo, bez planu, z odległości od środka
+  const pop = plan ? (x, z) => {
+    const inl = T.inland(x, z);
+    if (inl < 25 || T.river(x, z).d < T.hw + 4) return 0;
+    return plan.density(x, z) * Math.min(1, inl / 90);
+  } : (x, z) => {
     const inl = T.inland(x, z);
     if (inl < 25 || T.river(x, z).d < T.hw + 4) return 0;
     const dc = Math.hypot(x - center[0], z - center[1]);
@@ -94,15 +99,15 @@ function growOnce(seed, T, bridges, center, base, variant) {
   for (const e of base) {
     if (e.type !== 'H' && Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 6) continue; // autostrada zawsze ciągła
     const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
-    insert({ a: e.a, b: e.b, ang, type: e.type || 'v', rw: e.rw, s0: e.s0 });
+    insert({ a: e.a, b: e.b, ang, type: e.type || 'v', rw: e.rw, s0: e.s0, main: !!e.main, planned: !!e.planned });
     const L = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
     for (let d = 26 + rng.float(0, 14); d < L - 22; d += rng.float(40, 58)) {
       const p = [e.a[0] + Math.cos(ang) * d, e.a[1] + Math.sin(ang) * d];
-      for (const sd of [-1, 1]) if (rng.chance(0.4)) push(mk(p, ang + sd * (Math.PI / 2), 's', 3 + rng.float(0, 4)));
+      for (const sd of [-1, 1]) if (rng.chance(plan ? plan.alleyRate : 0.4)) push(mk(p, ang + sd * (Math.PI / 2), 's', 3 + rng.float(0, 4), { planned: !!e.planned }));
     }
   }
   const r0 = rng.float(0, Math.PI * 2);
-  for (let k = 0; k < 4; k++) {
+  if (!plan) for (let k = 0; k < 4; k++) {
     const ang = r0 + (k * Math.PI) / 2;
     push(mk([center[0] + Math.cos(ang) * 55, center[1] + Math.sin(ang) * 55], ang, 'h', 0));
   }
@@ -111,6 +116,7 @@ function growOnce(seed, T, bridges, center, base, variant) {
   const localConstraints = (s) => {
     if (pop(s.b[0], s.b[1]) <= 0.02 && T.inland(s.b[0], s.b[1]) < 20) return null;
     if (Math.abs(s.b[0]) > T.half - 10 || Math.abs(s.b[1]) > T.half - 10) return null;
+    if (plan && (plan.noGrow(s.b[0], s.b[1]) || plan.noGrow((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2))) return null;
     for (let k = 1; k <= 4; k++) {
       const x = s.a[0] + ((s.b[0] - s.a[0]) * k) / 4, z = s.a[1] + ((s.b[1] - s.a[1]) * k) / 4;
       if (T.river(x, z).d < T.hw + 3 || T.inland(x, z) < 18) return null;
@@ -191,13 +197,13 @@ function growOnce(seed, T, bridges, center, base, variant) {
         const p = pop(end[0] + Math.cos(a) * 120, end[1] + Math.sin(a) * 120);
         if (p > bestP) { bestP = p; bestA = a; }
       }
-      if (bestP > 0.05) out.push(mk(end, bestA, 'h', s.t + 1));
+      if (bestP > 0.05 && !(plan && (s.run || 0) >= 9)) out.push(mk(end, bestA, 'h', s.t + 1, { run: (s.run || 0) + 1 }));
       if (rng.chance(0.06)) out.push(mk(end, s.ang + (rng.chance(0.5) ? 1 : -1) * (Math.PI / 2), 'h', s.t + 1));
       for (const sd of [-1, 1]) if (rng.chance(0.3)) out.push(mk(end, s.ang + sd * (Math.PI / 2), 's', s.t + 6));
     } else {
       const p = pop(end[0], end[1]);
-      if (p > 0.24) out.push(mk(end, s.ang, 's', s.t + 1));
-      for (const sd of [-1, 1]) if (p > 0.38 && rng.chance(0.26)) out.push(mk(end, s.ang + sd * (Math.PI / 2), 's', s.t + 2 + rng.int(0, 2)));
+      if (p > 0.24) out.push(mk(end, s.ang, 's', s.t + 1, { planned: !!s.planned }));
+      for (const sd of [-1, 1]) if (p > 0.38 && rng.chance(0.26)) out.push(mk(end, s.ang + sd * (Math.PI / 2), 's', s.t + 2 + rng.int(0, 2), { planned: !!s.planned }));
     }
     return out;
   };
@@ -214,19 +220,19 @@ function growOnce(seed, T, bridges, center, base, variant) {
   }
   // środek rynku zostaje wolny od jezdni (stoi tam ratusz). Usuwamy dopiero po wzroście sieci,
   // więc reszta miasta wychodzi dokładnie taka sama jak bez tego filtra.
-  const nearCenter = (s) => {
+  const nearCenter = plan ? (s) => plan.noGrow((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2) : (s) => {
     const pc = projT(center, s.a, s.b);
     return (pc.t <= 0 ? Math.hypot(s.a[0] - center[0], s.a[1] - center[1]) : pc.t >= 1 ? Math.hypot(s.b[0] - center[0], s.b[1] - center[1]) : pc.d) < PLAZA_FREE;
   };
-  const out = segs.filter((s) => !s.gen || s.bridge || !nearCenter(s)).map((s) => ({ a: s.a, b: s.b, rw: s.rw, type: s.type, bridge: !!s.bridge, s0: s.s0 || 0, gen: !!s.gen }));
+  const out = segs.filter((s) => !s.gen || s.bridge || !nearCenter(s)).map((s) => ({ a: s.a, b: s.b, rw: s.rw, type: s.type, bridge: !!s.bridge, s0: s.s0 || 0, gen: !!s.gen, main: !!s.main, planned: !!s.planned }));
   return out;
 }
 
 // Kilka wariantów → wykończenie (planaryzacja, spójność, ślepe uliczki…) → audyt → najlepszy.
-export function growRoads(seed, T, bridges, center, base = []) {
+export function growRoads(seed, T, bridges, center, base = [], plan = null) {
   let best = null;
   for (let v = 0; v < VARIANTS; v++) {
-    const net = finalizeNetwork(growOnce(seed, T, bridges, center, base, v), T);
+    const net = finalizeNetwork(growOnce(seed, T, bridges, center, base, v, plan), T);
     const score = auditStreets(net, T).score;
     if (!best || score < best.score) best = { score, net };
   }

@@ -20,6 +20,9 @@ for (let seed = from; seed <= to; seed++) {
     for (let v = 0; v < g.N; v++) if (g.TY[v] === 1 && g.BID[v] >= 0 && !min.has(g.BID[v])) { min.add(g.BID[v]); bld++; }
     row.bld = bld;
     row.townhall = c.extras.some((e) => e.kind === 'townhall');
+    row.plan = c.plan.type; // rynek bez ratusza (fontanna pośrodku) to jeden z wariantów planu
+    row.church = c.extras.some((e) => e.kind === 'church');
+    row.hall = c.plan.hall.none ? 'brak' : c.plan.hall.u || c.plan.hall.v ? 'bok' : 'środek';
     row.props = c.props.length + c.lamps.length + c.trees.length;
     let onRoad = 0;
     for (const p of [...c.lamps, ...c.benches, ...c.props.filter((q) => q.kind !== 'column')]) if (R.clearance(p.p[0], p.p[1]) < 0) onRoad++;
@@ -42,7 +45,7 @@ for (let seed = from; seed <= to; seed++) {
       for (const id of ids) for (const o of [buildChunk(c, id), buildChunkLOD(c, id)]) for (const m of Object.values(o.mats)) { tris += m.i.length / 3; for (const v of m.p) if (!Number.isFinite(v)) { nan++; break; } }
       row.nan = nan; row.kTri = Math.round(tris / 1000);
     }
-    if (onRoad || wallOnRoad || under || !row.bridges || !row.townhall || row.spawnClear > 1 || row.nan) bad++;
+    if (onRoad || wallOnRoad || under || !row.bridges || (!row.townhall && !c.plan.hall.none) || !row.church || row.spawnClear > 1 || row.nan) bad++;
   } catch (e) {
     row.error = String(e.stack).split('\n').slice(0, 3).join(' | ');
     bad++;

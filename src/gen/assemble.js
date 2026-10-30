@@ -115,6 +115,7 @@ const VARIANT = {
   windmill: (r) => ({ tint: r.pick([[0.9, 0.86, 0.78], [0.85, 0.78, 0.66]]), roof: r.pick([[0.3, 0.2, 0.15], [0.4, 0.22, 0.16]]) }),
   rowboat: (r) => ({ hull: r.pick([[0.25, 0.4, 0.55], [0.6, 0.2, 0.18], [0.85, 0.82, 0.72], [0.2, 0.42, 0.3]]) }),
   deckchair: (r) => { const a = r.pick(AWNINGS_); return { c1: a[0], c2: a[1] }; },
+  gravestone: (r) => ({ variant: r.pick([0, 0, 0, 1, 1, 2]), tint: r.pick([[0.55, 0.54, 0.52], [0.36, 0.36, 0.38], [0.64, 0.62, 0.58], [0.45, 0.47, 0.44]]) }),
 };
 
 // parametry wyglądu rekwizytu o danym rodzaju i seedzie (też dla zdjęć studyjnych)
@@ -192,6 +193,10 @@ function buildExtra(b, city, ex) {
     // wieża ratusza: dolne 3,6 m chowa się w dachu, całość ~17 m
     const w = ex.w, H = 17, y0 = levelY(ex.top) + 0.5 - 0.2;
     place(b, 'townhall', cage4(T, null, boxPts(ex.p, [1, 0], [0, 1], w, w), NONE, y0, y0 + H), w, H, w, { hide: 3.6 });
+  } else if (ex.kind === 'factorychimney') {
+    place(b, 'factorychimney', cage4(T, null, boxPts(ex.p, [1, 0], [0, 1], 4, 4), NONE, 0.05, ex.H + 0.05), 4, ex.H, 4, {});
+  } else if (ex.kind === 'church') {
+    place(b, 'church', cage4(T, null, boxPts(ex.p, ex.e, ex.n, ex.W, ex.D), NONE, 0.05, ex.H + 0.05), ex.W, ex.H, ex.D, { brick: ex.brick, wall: ex.wall, roof: ex.roof, spire: ex.spire });
   } else if (ex.kind === 'station') {
     // peron wzdłuż toru + pociąg (lokomotywa i 3 wagony)
     const P = (along, side) => [ex.p[0] + ex.e[0] * along + ex.n[0] * side, ex.p[1] + ex.e[1] * along + ex.n[1] * side];
