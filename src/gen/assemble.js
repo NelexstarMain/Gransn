@@ -344,14 +344,23 @@ function groundQuarter(b, city, G, i, q) {
     const ab = Math.round(((((ang % Math.PI) + Math.PI) % Math.PI) / Math.PI) * 255);
     place(b, 'sidewalk', cage4(T, null, pts, NONE, 0, 0.15), W, 0.15, D, { mat: 'slab', o: { drape: 0.15, wear: [ab, 0, 0, 0] } });
   } else place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat, step: 3, o: mat === 'cobble' ? { drape: 0.15, uvScale: 1 / COBBLE_H } : { drape: 0.15 } });
-  // obrzeża od strony niskich sąsiadów (las, plaża, tory) — bez szczelin na krawędzi
+  // Obrzeża (ścianki) wokół wyniesionej nawierzchni, żeby nie "wisiała" nad terenem:
+  // od strony niskich sąsiadów (las, plaża, tory), wody i jezdni poza miastem (tam nie ma krawężników
+  // z buildRoad). Sięgają głęboko pod teren (0,7 m, nad wodą 1,4 m), więc nawet na spadku widać mur, nie szczelinę.
   for (const [s0, s1, nb] of [[G.m[i], G.c, G.v[(i + 1) % 4]], [G.c, G.m[(i + 3) % 4], G.v[(i + 3) % 4]]]) {
-    if (raised(city, nb) || g.TY[nb] === T_BLD || g.TY[nb] === T_WATER) continue;
+    if (g.TY[nb] === T_BLD) continue;
     const c0 = clampAll(s0), c1 = clampAll(s1);
     if (dist(c0, c1) < 0.2) continue;
+    if (raised(city, nb)) {
+      // ciągła nawierzchnia — ścianka tylko tam, gdzie krawędź przylega do jezdni bez krawężnika
+      const mx = (c0[0] + c1[0]) / 2, mz = (c0[1] + c1[1]) / 2;
+      const nr = roads.nearest(mx, mz);
+      if (!nr || nr.c > 0.6 || nr.s.town) continue;
+    }
+    const depth = g.TY[nb] === T_WATER ? 1.4 : 0.7;
     const inn = G.p[i];
     const k0 = Math.min(0.3, dist(c0, inn) * 0.5) / (dist(c0, inn) || 1), k1 = Math.min(0.3, dist(c1, inn) * 0.5) / (dist(c1, inn) || 1);
-    place(b, 'curb', cage4(T, null, [c0, c1, lerp2(c0, inn, k0), lerp2(c1, inn, k1)], NONE, 0, 0.16), dist(c0, c1), 0.16, 0.3, {});
+    place(b, 'curb', cage4(T, null, [c0, c1, lerp2(c0, inn, k0), lerp2(c1, inn, k1)], NONE, -depth, 0.16), dist(c0, c1), depth + 0.16, 0.3, {});
   }
 }
 
