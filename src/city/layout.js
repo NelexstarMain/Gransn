@@ -11,10 +11,11 @@
 import { Rng, hash } from '../core/rng.js';
 import { makeQuadGrid, classifyGrid, decorate, makeChunks } from './grid.js';
 import { makeRoutes } from './routes.js';
-import { makeBridge, riverSite, onBridge } from './bridges.js';
+import { makeBridge, riverLength, riverSiteAt, onBridge } from './bridges.js';
 import { growRoads } from './roads.js';
 import { RoadNet } from './roadnet.js';
 import { Terrain } from './terrain.js';
+import { makeTownPlan, applyPlan } from './town.js';
 
 export const HALF = 520; // wyspa ~0,45 km² lądu (było 460)
 
@@ -110,32 +111,48 @@ function inradius(poly, c) {
 }
 
 // ── mosty ───────────────────────────────────────────────────────────────────
-// Dwa mosty miejskie: proste, prostopadłe do rzeki, z segmentów po 5 m (bridges.js).
-function makeCityBridges(terrain, rng, avoid = null) {
-  const out = [];
-  const P = terrain.pts, cand = [];
-  for (let x = -HALF; x <= HALF; x += 10) {
-    for (let i = 0; i < P.length - 1; i++) {
-      if (x < P[i][0] || x > P[i + 1][0]) continue;
-      const p = lerp2(P[i], P[i + 1], (x - P[i][0]) / (P[i + 1][0] - P[i][0]));
+// Dwa albo trzy mosty miejskie: proste, prostopadłe do rzeki, z segmentów po 5 m (bridges.js).
+// Główny stoi najbliżej rynku (od niego idzie ulica główna), drugi dalej wzdłuż rzeki (≥ 200 m),
+// trzeci tylko przy rzece płynącej przez miasto.
+function makeCityBridges(terrain, center, rng, avoid = null) {
+  const total = riverLength(terrain);
+  // kandydaci; gdy nic nie pasuje, kryteria się poluzowują (most musi być zawsze)
+  const collect = (inl, margin, avoidD) => {
+    const cand = [];
+    for (let s = 0; s <= total; s += 8) {
+      const site = riverSiteAt(terrain, s);
+      if (!site) continue;
+      const p = site.p;
+      if (Math.abs(p[0]) > HALF - margin || Math.abs(p[1]) > HALF - margin || terrain.inland(p[0], p[1]) <= inl) continue;
       // most miejski nie może stanąć w miejscu mostu autostrady (dwa mosty w jednym miejscu)
-      if (terrain.inland(p[0], p[1]) > 70 && !(avoid && Math.hypot(p[0] - avoid.p[0], p[1] - avoid.p[1]) < 140)) cand.push(x);
+      if (avoid && Math.hypot(p[0] - avoid.p[0], p[1] - avoid.p[1]) < avoidD) continue;
+      cand.push({ site, s: site.s, d: Math.hypot(p[0] - center[0], p[1] - center[1]) });
     }
+    return cand;
+  };
+  let cand = collect(70, 70, 140);
+  if (!cand.length) cand = collect(55, 50, 70);
+  if (!cand.length) cand = collect(40, 40, 0);
+  const chosen = [];
+  const want = terrain.riverMode === 'through' && rng.chance(0.5) ? 3 : 2;
+  while (chosen.length < want) {
+    let best = null;
+    for (const c of cand) {
+      if (chosen.some((o) => Math.abs(o.s - c.s) < 200 || Math.hypot(o.site.p[0] - c.site.p[0], o.site.p[1] - c.site.p[1]) < 190)) continue;
+      const score = c.d * (1 + 0.1 * (hash(c.s | 0, chosen.length, 77) / 4294967296));
+      if (!best || score < best.score) best = { score, c };
+    }
+    if (!best) break;
+    chosen.push(best.c);
   }
-  const xs = cand.length ? [0.2, 0.8].map((f) => cand[Math.floor(f * (cand.length - 1))]) : [];
-  for (const x0 of xs) {
-    const site = riverSite(terrain, x0 + rng.float(-15, 15));
-    if (site) out.push(makeBridge(terrain, site, { cols: 2 }));
-  }
-  return out;
+  return chosen.map((c) => makeBridge(terrain, c.site, { cols: 2 }));
 }
 
 // ── ziarna Voronoi ──────────────────────────────────────────────────────────
-function seedAllowed(x, z, terrain, bridges, center) {
+function seedAllowed(x, z, terrain, bridges) {
   if (Math.abs(x) > HALF - 8 || Math.abs(z) > HALF - 8) return false;
   if (terrain.inland(x, z) < 45) return false;
   if (terrain.river(x, z).d < terrain.hw + 24) return false;
-  if (Math.hypot(x - center[0], z - center[1]) < 95) return false;
   for (const b of bridges) {
     const dx = x - b.p[0], dz = z - b.p[1];
     const along = dx * b.axis[0] + dz * b.axis[1], across = dx * b.perp[0] + dz * b.perp[1];
@@ -144,23 +161,23 @@ function seedAllowed(x, z, terrain, bridges, center) {
   return true;
 }
 
-function placeSeeds(terrain, bridges, center, rng) {
-  const seeds = [{ x: center[0], z: center[1], fixed: true, plaza: true }];
+// ziarna: z planu miasteczka (jądro, przedmieścia, reszta wyspy) + pary „lustrzane” przy mostach,
+// dzięki którym dwusieczna Voronoi to ulica przechodząca płynnie w most
+function placeSeeds(bridges, plan) {
+  const seeds = plan.seeds.slice();
+  const near = (x, z) => {
+    let best = null, bd = 1e18;
+    for (const s of plan.seeds) { if (s.dead) continue; const d = (s.x - x) ** 2 + (s.z - z) ** 2; if (d < bd) { bd = d; best = s; } }
+    return best ? best.kind : 'houses';
+  };
   for (const b of bridges)
     for (const s of [-1, 1])
       for (const d of [30, 85])
         for (const q of [-1, 1]) {
           const along = s * (b.L + d);
-          seeds.push({ x: b.p[0] + b.axis[0] * along + b.perp[0] * 36 * q, z: b.p[1] + b.axis[1] * along + b.perp[1] * 36 * q, fixed: true });
+          const x = b.p[0] + b.axis[0] * along + b.perp[0] * 36 * q, z = b.p[1] + b.axis[1] * along + b.perp[1] * 36 * q;
+          seeds.push({ x, z, fixed: true, kind: near(x, z) });
         }
-  const minD = 66; // rzadsze ulice główne (Voronoi)
-  for (let i = 0; i < 9000; i++) {
-    const x = rng.float(-HALF + 10, HALF - 10), z = rng.float(-HALF + 10, HALF - 10);
-    if (!seedAllowed(x, z, terrain, bridges, center)) continue;
-    let ok = true;
-    for (const s of seeds) if ((s.x - x) ** 2 + (s.z - z) ** 2 < minD * minD) { ok = false; break; }
-    if (ok) seeds.push({ x, z, fixed: false });
-  }
   return seeds;
 }
 
@@ -282,11 +299,16 @@ const SPEC = {
 export function generateCity(seed = 1984) {
   const rng = new Rng(seed);
   const terrain = new Terrain(seed, HALF);
-  const center = [0, 0];
-  terrain.plaza = { x: center[0], z: center[1], r: 70, y: terrain.hills(center[0], center[1]) };
+  const center = terrain.center;
+  // rynek leży płasko; przy rzece na wysokości nabrzeża (inaczej uskok między rynkiem a bulwarem)
+  const rd = terrain.riverDist(center[0], center[1]);
+  const wRiver = 1 - Math.max(0, Math.min(1, (rd - 90) / 110));
+  terrain.plaza = { x: center[0], z: center[1], r: 70, y: terrain.hills(center[0], center[1]) * (1 - wRiver) + terrain.bankY * wRiver };
   const routes = makeRoutes(seed, terrain, []);
-  const bridges = makeCityBridges(terrain, rng, routes.highway.bridge);
-  let seeds = placeSeeds(terrain, bridges, center, rng);
+  const bridges = makeCityBridges(terrain, center, rng, routes.highway.bridge);
+  const plan = makeTownPlan(seed, terrain, bridges, HALF);
+  terrain.plaza.r = Math.max(62, Math.max(plan.rynek.a, plan.rynek.b) * 1.12 + 14);
+  let seeds = placeSeeds(bridges, plan);
 
   let cells = voronoi(seeds);
   for (let it = 0; it < 3; it++) {
@@ -294,7 +316,7 @@ export function generateCity(seed = 1984) {
       const s = seeds[i];
       if (s.fixed || c.length < 3) return;
       const cc = polyCentroid(c);
-      if (seedAllowed(cc[0], cc[1], terrain, bridges, center)) { s.x = cc[0]; s.z = cc[1]; }
+      if (seedAllowed(cc[0], cc[1], terrain, bridges)) { s.x = cc[0]; s.z = cc[1]; }
     });
     cells = voronoi(seeds);
   }
@@ -331,13 +353,22 @@ export function generateCity(seed = 1984) {
       if (va.bank && vb.bank) s = SPEC.bank;
       else if (va.border && vb.border) s = SPEC.border;
       else if (onAxis(va) && onAxis(vb)) s = SPEC.bridge;
-      else s = r.weighted([[SPEC.lane, 2], [SPEC.street, 6], [SPEC.avenue, 1.3]]);
+      else s = r.weighted([[SPEC.lane, 2], [SPEC.street, 6], [SPEC.avenue, 0.5]]);
       specs.set(key, s);
     }
     return s;
   };
 
   const blocks = [];
+  // rynek: wielokąt z planu (wycięty z sieci), z ulicami dookoła; blok pierwszy, żeby HUD i klasyfikacja go znalazły
+  {
+    const P = plan.rynek.poly, pc = polyCentroid(P);
+    const curb = offsetPoly(P, P.map(() => SPEC.street.road)), bl = offsetPoly(P, P.map(() => SPEC.street.road + SPEC.street.walk));
+    const ok = offsetValid(P, curb) && offsetValid(curb, bl);
+    const blk = { id: 0, poly: P, specs: P.map(() => SPEC.street), curb: ok ? curb : P, bline: ok ? bl : P, center: pc, bc: polyCentroid(ok ? bl : P), kind: 'plaza' };
+    fillPlaza(blk, terrain);
+    blocks.push(blk);
+  }
   const seen = new Set();
   const vEdges = [], vSeen = new Set();
   for (const cell of g.cells) {
@@ -351,7 +382,10 @@ export function generateCity(seed = 1984) {
       vSeen.add(key);
       const a = poly[k], b = poly[(k + 1) % n];
       if (terrain.inland(a[0], a[1]) < 30 || terrain.inland(b[0], b[1]) < 30) return;
-      vEdges.push({ a, b, rw: sp[k].road >= 5 ? 4.2 : 3.4 });
+      // szerokość wg dzielnicy: wąskie uliczki Starego Miasta, szersze ulice w rozbudowie z XIX w.
+      const hw0 = hash(seed, Math.round(a[0] * 4), Math.round(a[1] * 4), Math.round(b[0] * 4)) / 4294967296, kd = cell.seed.kind;
+      const rw = sp[k].road >= 5 ? 4.2 : kd === 'old' ? (hw0 < 0.5 ? 3.0 : 3.4) : kd === 'tenement' ? (hw0 < 0.35 ? 4.0 : 3.4) : kd === 'villa' ? 3.6 : kd === 'houses' || kd === 'nature' || kd === 'industrial' ? (hw0 < 0.5 ? 3.0 : 3.4) : 3.4;
+      vEdges.push({ a, b, rw, planned: !!cell.seed.lat });
     });
     cell.ids.forEach((id, k) => {
       const nx = cell.ids[(k + 1) % n], key = id < nx ? `${id}_${nx}` : `${nx}_${id}`;
@@ -362,38 +396,73 @@ export function generateCity(seed = 1984) {
     const bline = offsetPoly(poly, sp.map((s) => s.road + s.walk));
     const ok = offsetValid(poly, curb) && offsetValid(curb, bline);
     const c = polyCentroid(poly);
+    if (cell.seed.dead) continue; // komórka wewnątrz rynku: sam rynek jest blokiem pierwszym
     const blk = { id: blocks.length, poly, specs: sp, curb: ok ? curb : poly, bline: ok ? bline : poly, center: c, bc: polyCentroid(ok ? bline : poly) };
     const br = new Rng(hash(seed, Math.round(c[0] * 10), Math.round(c[1] * 10)));
     const rIn = inradius(blk.bline, blk.bc);
-    const dC = Math.hypot(c[0] - center[0], c[1] - center[1]);
-    if (cell.seed.plaza) blk.kind = 'plaza';
-    else if (!ok || rIn < 13 || polyArea(blk.bline) < 1400 || br.chance(0.1)) blk.kind = 'park';
-    else if (br.chance(Math.max(0.12, Math.min(0.92, 1.3 - dC / 430))) && rIn > 22) blk.kind = 'tenement';
-    else blk.kind = 'houses';
-    // dzika przyroda przy brzegu wyspy
-    if (blk.kind !== 'plaza' && terrain.inland(c[0], c[1]) < 135 && br.chance(0.6)) blk.kind = 'nature';
+    // rodzaj dzielnicy z planu; wąskie albo zdegenerowane komórki i trochę losowych skwerów zamieniają się w park
+    blk.kind = cell.seed.kind || 'houses';
+    const built = blk.kind === 'old' || blk.kind === 'tenement' || blk.kind === 'houses' || blk.kind === 'villa' || blk.kind === 'industrial';
+    if (built && (!ok || rIn < 13 || polyArea(blk.bline) < 1400 || (!cell.seed.fixed && br.chance(0.08)))) blk.kind = 'park';
     cell.seed.kind = blk.kind;
-    if (blk.kind === 'plaza') fillPlaza(blk, terrain);
+    blk.seed = cell.seed;
     blocks.push(blk);
   }
   for (const s of seeds) if (!s.kind) s.kind = 'houses';
 
+  // ── kościół: komórka Starego Miasta albo śródmieścia blisko rynku, duża, zwarta, z dala od rzeki;
+  //  reszta komórki to dziedziniec kościelny (park). Wieża od strony rynku, prezbiterium na drugim końcu.
+  const extras0 = [];
+  {
+    const C0 = plan.F.C;
+    let best = null;
+    for (const blk of blocks) {
+      if (blk.kind !== 'old' && blk.kind !== 'tenement') continue;
+      const A = polyArea(blk.bline), rin = inradius(blk.bline, blk.bc), d = Math.hypot(blk.bc[0] - C0[0], blk.bc[1] - C0[1]);
+      if (A < 2300 || rin < 19 || d < 55 || d > 230) continue;
+      if (terrain.river(blk.bc[0], blk.bc[1]).d < terrain.hw + 38 || terrain.inland(blk.bc[0], blk.bc[1]) < 70) continue;
+      const score = Math.abs(d - 95) * 0.6 + (hash(seed, blk.id, 88) % 1000) / 40 - Math.min(rin, 40);
+      if (!best || score < best.score) best = { score, blk };
+    }
+    if (best) {
+      const blk = best.blk, P = blk.poly, n = P.length;
+      // oś: najdłuższy bok komórki; rozpiętość komórki wzdłuż niej i w poprzek
+      let L0 = 0, u = [1, 0];
+      for (let i = 0; i < n; i++) { const a = P[i], c = P[(i + 1) % n], l = Math.hypot(c[0] - a[0], c[1] - a[1]); if (l > L0) { L0 = l; u = [(c[0] - a[0]) / l, (c[1] - a[1]) / l]; } }
+      let lo = 1e9, hi = -1e9;
+      for (const q of P) { const t = (q[0] - blk.bc[0]) * u[0] + (q[1] - blk.bc[1]) * u[1]; lo = Math.min(lo, t); hi = Math.max(hi, t); }
+      const e = (blk.bc[0] - C0[0]) * u[0] + (blk.bc[1] - C0[1]) * u[1] >= 0 ? u : [-u[0], -u[1]];
+      const hh = hash(seed, blk.id, 89), W = Math.max(26, Math.min(36, hi - lo - 18)), H = 38 + (hh % 9);
+      const brick = (hh >> 4) % 10 < 6;
+      extras0.push({
+        kind: 'church', p: blk.bc, e, n: [-e[1], e[0]], W, D: 12, H, brick,
+        wall: brick ? [[0.6, 0.33, 0.25], [0.55, 0.3, 0.24], [0.66, 0.38, 0.28]][(hh >> 8) % 3] : [[0.92, 0.88, 0.8], [0.9, 0.84, 0.7], [0.94, 0.92, 0.88]][(hh >> 8) % 3],
+        roof: [[0.28, 0.3, 0.34], [0.6, 0.27, 0.2], [0.34, 0.26, 0.2]][(hh >> 12) % 3],
+        spire: [[0.38, 0.5, 0.44], [0.26, 0.28, 0.32], [0.55, 0.3, 0.22]][(hh >> 16) % 3],
+        clear: 20,
+      });
+      blk.kind = 'church';
+      blk.seed.kind = 'church';
+    }
+  }
+
   const monuments = blocks
     .filter((b) => b.kind === 'park' && polyArea(b.bline) > 2500 && terrain.inland(b.bc[0], b.bc[1]) > 40)
     .map((b, i) => ({ p: b.bc, kind: i % 2 ? 'fountain' : 'monument' }));
+  if (plan.hall.none) monuments.push({ p: plan.F.C.slice(), kind: 'fountain' }); // rynek bez ratusza: fontanna pośrodku
   const plaza = blocks.find((b) => b.kind === 'plaza');
-  // billboardy z hasłami Partii wokół Ministerstwa + portret na szczycie
-  // słupy reklamowe wokół rynku
+  // słupy i tablice reklamowe na rynku: po jednym w każdej ćwiartce, między ratuszem a pierzeją
   const billboards = [];
-  const hs0 = plaza.ministry.tiers[0], pc = [terrain.plaza.x, terrain.plaza.z];
+  const RY = plan.rynek, F = plan.F;
   ['war', 'freedom', 'ignorance', 'bb4'].forEach((name, i) => {
-    const a = (i / 4) * Math.PI * 2 + Math.PI / 4, d = [Math.cos(a), Math.sin(a)];
-    const r0 = hs0 * 0.55 + 12;
-    billboards.push({ p: [pc[0] + d[0] * r0, pc[1] + d[1] * r0], n: [-d[0], -d[1]], e: [-d[1], d[0]], name, y: 0, size: name.startsWith('bb') ? [5, 10] : [12, 3] });
+    const su = i % 2 ? 1 : -1, sv = i < 2 ? -1 : 1;
+    const u = su * Math.max(RY.a * 0.5, 12), v = sv * Math.max(RY.b * 0.5, 9);
+    const p = F.w(u, v), d = [p[0] - F.C[0], p[1] - F.C[1]], l = Math.hypot(d[0], d[1]) || 1;
+    billboards.push({ p, n: [-d[0] / l, -d[1] / l], e: [-d[1] / l, d[0] / l], name, y: 0, size: name.startsWith('bb') ? [5, 10] : [12, 3] });
   });
 
-  // start: na środku mostu najbliżej centrum, twarzą w stronę placu
-  const b0 = bridges.reduce((a, b) => (Math.abs(b.p[0]) < Math.abs(a.p[0]) ? b : a), bridges[0]);
+  // start: na środku mostu najbliżej rynku, twarzą w stronę placu
+  const b0 = bridges.reduce((a, b) => (Math.hypot(b.p[0] - center[0], b.p[1] - center[1]) < Math.hypot(a.p[0] - center[0], a.p[1] - center[1]) ? b : a), bridges[0]);
   const toP = [plaza.center[0] - b0.p[0], plaza.center[1] - b0.p[1]];
   const sgn = toP[0] * b0.axis[0] + toP[1] * b0.axis[1] > 0 ? 1 : -1;
   const spawn = { x: b0.p[0] + b0.perp[0] * 2, z: b0.p[1] + b0.perp[1] * 2, yaw: Math.atan2(-b0.axis[0] * sgn, -b0.axis[1] * sgn) };
@@ -425,8 +494,8 @@ export function generateCity(seed = 1984) {
     }
     return hit >= 3;
   };
-  const vKeep = vEdges.filter((e) => !nearHw(e));
-  const streets = growRoads(seed, terrain, bridges, center, [...hwEdges, ...vKeep]);
+  const vKeep = applyPlan(plan, vEdges.filter((e) => !nearHw(e)), terrain);
+  const streets = growRoads(seed, terrain, bridges, center, [...hwEdges, ...vKeep], plan);
   // nawierzchnia: bruk w mieście, ubita droga w lesie, asfalt na autostradzie
   const kindAt = (x, z) => {
     let best = null, bd = 1e18;
@@ -436,7 +505,7 @@ export function generateCity(seed = 1984) {
   for (const st of streets) {
     const mx = (st.a[0] + st.b[0]) / 2, mz = (st.a[1] + st.b[1]) / 2;
     st.mat = kindAt(mx, mz) === 'nature' || terrain.inland(mx, mz) < 40 ? 'dirt' : 'cobble';
-    if (st.type === 'H' || st.bridge) st.mat = 'cobble';
+    if (st.type === 'H' || st.bridge || st.main) st.mat = 'cobble';
     st.town = st.mat === 'cobble' && st.type !== 'H';
   }
   // autostrada nad rzeką: most z segmentów (routes.js) i jezdnia leżąca płasko na jego pokładzie
@@ -447,7 +516,13 @@ export function generateCity(seed = 1984) {
   }
   const roads = new RoadNet(streets);
   const extras = makeExtras(terrain, routes, rng);
-  const city = { seed, blocks, terrain, bridges, spawn, streets, roads, seedList: seeds, monuments, billboards, routes, extras, size: 2 * HALF, half: HALF };
+  // komin fabryczny w środku każdej większej komórki przemysłowej
+  for (const blk of blocks) {
+    if (blk.kind !== 'industrial' || polyArea(blk.bline) < 1800) continue;
+    extras0.push({ kind: 'factorychimney', p: blk.bc, H: 27 + (hash(seed, blk.id, 90) % 11), clear: 7 });
+  }
+  extras.push(...extras0);
+  const city = { seed, blocks, terrain, bridges, spawn, streets, roads, seedList: seeds, monuments, billboards, routes, extras, plan, size: 2 * HALF, half: HALF };
   city.grid = makeQuadGrid(seed, HALF);
   classifyGrid(city);
   decorate(city);
@@ -467,11 +542,13 @@ function makeExtras(T, routes, rng) {
   const out = [];
   const coastPt = (a, inset) => { const r = T.coastR(a) - inset; return [Math.cos(a) * r, Math.sin(a) * r]; };
   const far = (p, d) => routes.highway.pts.every((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) > d) && T.river(p[0], p[1]).d > 60;
-  let la = rng.float(0, Math.PI * 2);
+  // wyspa z zatoką: latarnia na jej cyplu, a molo w głębi zatoki (port)
+  const bay = T.isl && T.isl.bay;
+  let la = bay ? bay.a + bay.w * 1.7 : rng.float(0, Math.PI * 2);
   for (let i = 0; i < 24 && !far(coastPt(la, 6), 80); i++) la += 0.27;
   out.push({ kind: 'lighthouse', p: coastPt(la, 6), clear: 12 });
   for (let k = 0; k < 2; k++) {
-    let a = la + 1.6 + k * 2.2;
+    let a = bay ? bay.a + (k ? 0.2 : -0.2) * bay.w : la + 1.6 + k * 2.2;
     for (let i = 0; i < 24 && !far(coastPt(a, 30), 60); i++) a += 0.2;
     const p = coastPt(a, 30), o = coastPt(a, -60);
     const L = Math.hypot(o[0] - p[0], o[1] - p[1]);

@@ -2,6 +2,7 @@
 // prędkościomierz, nazwa okolicy, komunikaty.
 import { pointInPoly } from '../city/layout.js';
 import { quadGeom, T_BLD } from '../city/grid.js';
+import { KINDS } from '../city/town.js';
 
 export class Hud {
   constructor(city) {
@@ -174,7 +175,8 @@ export class Hud {
 
     if (slow) {
       const here = this.city.blocks.find((b) => pointInPoly(b.poly, view.pos.x, view.pos.z));
-      const name = this.city.terrain.inRiver(view.pos.x, view.pos.z, 2) ? 'Most' : here ? { plaza: 'Rynek', park: 'Park', houses: 'Przedmieście', tenement: 'Śródmieście', nature: 'Las i wydmy' }[here.kind] : 'Wybrzeże';
+      const ov = this.city.plan ? this.city.plan.overrideKind(view.pos.x, view.pos.z) : null;
+      const name = this.city.terrain.inRiver(view.pos.x, view.pos.z, 2) ? 'Most' : ov ? KINDS[ov].name : here ? (KINDS[here.kind] || KINDS.houses).name : 'Wybrzeże';
       this.set(this.clock, 'n', `Gransn · ${name} · wyspa nr ${this.city.seed}`);
       if (info) this.set(this.stats, 'i', info);
     }

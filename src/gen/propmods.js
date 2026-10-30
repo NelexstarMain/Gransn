@@ -643,6 +643,29 @@ export function installProps(M, { cubeSphere }) {
       cubeSphere(b, 'paint', [cx, 1.5, cz - 0.1], [0.07, 0.1, 0.05], 1, { tint: [0.8, 0.7, 0.55] });
     },
 
+    // nagrobek: płyta z łukiem, krzyż albo obelisk na cokole, z kamienną obwódką grobu
+    gravestone(b, W, H, D, p) {
+      const cx = W / 2, cz = D * 0.32, v = p.variant ?? 0, st = { tint: p.tint || [0.55, 0.54, 0.52] };
+      b.box('stone', cx - 0.4, 0, cz - 0.9 + 0.55, cx + 0.4, 0.14, cz + 0.9 + 0.55, 'xXyYzZ', { tint: [0.62, 0.6, 0.57] });
+      b.box('stone', cx - 0.34, 0.14, cz - 0.25, cx + 0.34, 0.34, cz + 0.25, 'xXyYzZ', st);
+      if (v === 0) {
+        b.box('stone', cx - 0.26, 0.34, cz - 0.09, cx + 0.26, 1.1, cz + 0.09, 'xXyYzZ', st);
+        b.cyl('stone', cx, cz, 1.1, 1.1, 0.26, 0.26, 10, st);
+        for (let i = 0; i < 6; i++) {
+          const a0 = Math.PI * (i / 6), a1 = Math.PI * ((i + 1) / 6), r = 0.26;
+          b.poly('stone', [[cx + Math.cos(a0) * r, 1.1 + Math.sin(a0) * 0.17, cz - 0.09], [cx + Math.cos(a1) * r, 1.1 + Math.sin(a1) * 0.17, cz - 0.09], [cx, 1.1, cz - 0.09]], [0, 0, -1], st);
+          b.poly('stone', [[cx + Math.cos(a1) * r, 1.1 + Math.sin(a1) * 0.17, cz + 0.09], [cx + Math.cos(a0) * r, 1.1 + Math.sin(a0) * 0.17, cz + 0.09], [cx, 1.1, cz + 0.09]], [0, 0, 1], st);
+        }
+        b.rect('dark', cx - 0.13, 0.62, cx + 0.13, 0.66, cz - 0.095, { shade: 0.5 });
+      } else if (v === 1) {
+        b.box('stone', cx - 0.07, 0.34, cz - 0.07, cx + 0.07, 1.5, cz + 0.07, 'xXyYzZ', st);
+        b.box('stone', cx - 0.3, 1.0, cz - 0.06, cx + 0.3, 1.14, cz + 0.06, 'xXyYzZ', st);
+      } else {
+        b.box('stone', cx - 0.2, 0.34, cz - 0.2, cx + 0.2, 0.7, cz + 0.2, 'xXyYzZ', st);
+        b.cyl('stone', cx, cz, 0.7, 1.6, 0.14, 0.04, 4, st);
+      }
+    },
+
     // kamień milowy z tabliczką
     milestone(b, W, H, D, p) {
       const cx = W / 2, cz = D / 2;

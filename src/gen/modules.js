@@ -12,12 +12,12 @@ import { vehicleModules } from './vehicles.js';
 import { installProps } from './propmods.js';
 
 
-const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 // ── wspólne helpery ─────────────────────────────────────────────────────────
 // Okno: rama z głębią, podział szyb zależny od stylu, firanki/zasłony.
 // Szkło ma lustrzane odbicia (mapa otoczenia), więc dostaje jasny odcień.
-function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
+export function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
   const ft = 0.07, h = 0.022;
   const fo = { tint: p.frameTint };
   b.rect('glass', x0, y0, x1, y1, z + 0.035, { tint: p.glassTint });
@@ -36,7 +36,7 @@ function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
   b.box(frameMat, x0 + ft, y1 - ft, z - 0.03, x1 - ft, y1, z + 0.03, 'yz', fo);
   // szprosy: kamienice 6 pól, domy 4, modernizm 2
   const cx = (x0 + x1) / 2, ty = y0 + (y1 - y0) * 0.68;
-  const panes = p.style === 'modern' ? 1 : p.style === 'house' || p.ground ? 2 : 3;
+  const panes = p.panes ?? (p.style === 'modern' ? 1 : p.style === 'house' || p.ground ? 2 : 3);
   b.box(frameMat, cx - h * 1.4, y0 + ft, z - 0.02, cx + h * 1.4, y1 - ft, z + 0.02, 'xXz', fo);
   b.box(frameMat, x0 + ft, ty - h, z - 0.02, x1 - ft, ty + h, z + 0.02, 'yYz', fo);
   if (panes >= 2) {
@@ -48,26 +48,52 @@ function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
   }
 }
 
-function plinth(b, segs, mat = 'stone') {
+export function plinth(b, segs, mat = 'stone') {
   for (const [a, c] of segs) if (c - a > 0.02) b.box(mat, a, 0, -0.06, c, 0.5, 0, 'Yz', { shade: 0.8 });
 }
 
-function windowCore(b, W, H, p) {
-  const ow = clamp(W * (p.winW || 0.4), 0.7, 1.6);
-  const oh = clamp(H * (p.winH || 0.5), 1.1, 2.15);
-  const x0 = (W - ow) / 2, x1 = x0 + ow;
-  const y0 = p.ground ? Math.max(1.25, H - oh - 0.9) : clamp(H * 0.27, 0.75, 1.0);
-  const y1 = Math.min(y0 + oh, H - 0.32);
-  const wm = p.ground ? p.groundMat : p.wallMat;
-  b.wallHole(wm, W, H, x0, y0, x1, y1, 0.24);
+// Opaska okna (kamień przy otworze): kind = lintel | band | ped | segm | cornice.
+// Naczółki i gzyms nadokienny leżą na opasce ościeżowej, więc zawierają "lintel".
+export function surround(b, kind, x0, y0, x1, y1, H) {
+  const s = kind === 'band' ? 0.2 : 0.14, pz = kind === 'band' ? -0.055 : -0.035;
+  b.box('stone', x0 - s, y0, pz, x0, y1, 0, 'xXz');
+  b.box('stone', x1, y0, pz, x1 + s, y1, 0, 'xXz');
+  b.box('stone', x0 - s, y1, pz, x1 + s, y1 + s, 0, 'xXyYz');
+  if (kind !== 'ped' && kind !== 'segm' && kind !== 'cornice') return;
+  const cx = (x0 + x1) / 2;
+  if (kind === 'ped') {
+    const base = y1 + 0.16, bx0 = x0 - 0.26, bx1 = x1 + 0.26;
+    const apex = Math.min(base + 0.42, H - 0.04), z = -0.12;
+    b.poly('stone', [[bx0, base, z], [bx1, base, z], [cx, apex, z]], [0, 0, -1]);
+    b.poly('stone', [[bx0, base, z], [cx, apex, z], [cx, apex, 0], [bx0, base, 0]], [-(apex - base), cx - bx0, 0]);
+    b.poly('stone', [[cx, apex, z], [bx1, base, z], [bx1, base, 0], [cx, apex, 0]], [apex - base, bx1 - cx, 0]);
+    b.rectY('stone', base, bx0, z, bx1, 0, -1, { shade: 0.7 });
+  } else if (kind === 'segm') {
+    // naczółek łukowy: wycinek koła nad belkowaniem
+    const base = y1 + 0.16, bx0 = x0 - 0.26, bx1 = x1 + 0.26, z = -0.12, rise = Math.min(0.3, H - 0.04 - base), N = 6;
+    const pt = (i) => [bx0 + ((bx1 - bx0) * i) / N, base + rise * Math.sin((Math.PI * i) / N)];
+    for (let i = 0; i < N; i++) {
+      const a = pt(i), c = pt(i + 1);
+      b.poly('stone', [[a[0], base, z], [c[0], base, z], [c[0], c[1], z], [a[0], a[1], z]], [0, 0, -1]);
+      b.poly('stone', [[a[0], a[1], z], [c[0], c[1], z], [c[0], c[1], 0], [a[0], a[1], 0]], [0, 1, -0.3]);
+    }
+    b.rectY('stone', base, bx0, z, bx1, 0, -1, { shade: 0.7 });
+  } else {
+    const hy = Math.min(y1 + 0.32, H - 0.02);
+    b.box('stone', x0 - 0.3, y1 + 0.14, -0.17, x1 + 0.3, hy, 0, 'xXyYz');
+    b.box('stone', x0 - 0.27, y1 - 0.22, -0.12, x0 - 0.14, y1 + 0.14, 0, 'xXyz');
+    b.box('stone', x1 + 0.14, y1 - 0.22, -0.12, x1 + 0.27, y1 + 0.14, 0, 'xXyz');
+  }
+  if (y0 > 0.75) b.box('stone', x0, Math.max(0.1, y0 - 0.62), -0.03, x1, y0 - 0.12, 0, 'xXyYz');
+  b.box('stone', cx - 0.11, y1 - 0.02, -0.07, cx + 0.11, y1 + 0.2, 0, 'xXYz');
+}
+
+// Wnętrze otworu i wszystko wokół niego (bez ściany): rama z szybą, parapet,
+// opaska, okiennice, kwiaty, kraty. Wymiary w metrach, więc działa w każdym panelu.
+export function windowParts(b, x0, y0, x1, y1, H, p) {
   glassFrame(b, x0, y0, x1, y1, 0.18, p);
   b.box('stone', x0 - 0.07, y0 - 0.07, -0.08, x1 + 0.07, y0, 0.0, 'xXyYz');
-  if (!p.simple) {
-    const s = 0.14;
-    b.box('stone', x0 - s, y0, -0.035, x0, y1, 0, 'xXz');
-    b.box('stone', x1, y0, -0.035, x1 + s, y1, 0, 'xXz');
-    b.box('stone', x0 - s, y1, -0.035, x1 + s, y1 + s, 0, 'xXyYz');
-  }
+  if (!p.simple && p.frame !== 'plain') surround(b, p.frame || 'lintel', x0, y0, x1, y1, H);
   if (p.shutters) {
     const sw = (x1 - x0) / 2, so = { tint: p.shutterTint };
     b.box('wood', x0 - sw - 0.02, y0, -0.06, x0 - 0.02, y1, -0.02, 'xXyYz', so);
@@ -80,15 +106,81 @@ function windowCore(b, W, H, p) {
     const fo = { tint: p.flowers };
     for (let x = x0; x < x1 - 0.1; x += 0.22) b.box('wood', x, y0 + 0.2, -0.3, x + 0.2, y0 + 0.38, -0.1, 'xXYz', fo);
   }
-  if (p.ground) {
-    plinth(b, [[0, W]], 'stone');
-    if (p.bars) {
-      for (let x = x0 + 0.12; x < x1 - 0.06; x += 0.14) b.box('metal', x - 0.012, y0, 0.05, x + 0.012, y1, 0.074, 'xXz');
-      b.box('metal', x0, y0 + 0.25, 0.05, x1, y0 + 0.28, 0.074, 'yYz');
-      b.box('metal', x0, y1 - 0.28, 0.05, x1, y1 - 0.25, 0.074, 'yYz');
-    }
+  if (p.ground && p.bars) {
+    for (let x = x0 + 0.12; x < x1 - 0.06; x += 0.14) b.box('metal', x - 0.012, y0, 0.05, x + 0.012, y1, 0.074, 'xXz');
+    b.box('metal', x0, y0 + 0.25, 0.05, x1, y0 + 0.28, 0.074, 'yYz');
+    b.box('metal', x0, y1 - 0.28, 0.05, x1, y1 - 0.25, 0.074, 'yYz');
   }
+}
+
+function windowCore(b, W, H, p) {
+  const ow = clamp(W * (p.winW || 0.4), 0.7, 1.6);
+  const oh = clamp(H * (p.winH || 0.5), 1.1, 2.15);
+  const x0 = (W - ow) / 2, x1 = x0 + ow;
+  const y0 = p.ground ? Math.max(1.25, H - oh - 0.9) : clamp(H * 0.27, 0.75, 1.0);
+  const y1 = Math.min(y0 + oh, H - 0.32);
+  b.wallHole(p.ground ? p.groundMat : p.wallMat, W, H, x0, y0, x1, y1, 0.24);
+  windowParts(b, x0, y0, x1, y1, H, p);
+  if (p.ground) plinth(b, [[0, W]], 'stone');
   return { x0, x1, y0, y1 };
+}
+
+// Balkon bez ściany: drzwi balkonowe, płyta ze wspornikami i balustrada.
+// p.rail: bars (kuta, domyślna) | balust (kamienne tralki) | solid (pełny parapet)
+export function balconyParts(b, x0, x1, y0, y1, W, p) {
+  b.rect('wood', x0, y0, x1, y0 + 0.9, 0.21, { tint: p.frameTint });
+  glassFrame(b, x0, y0 + 0.9, x1, y1, 0.18, p);
+  const out = p.slab ?? 0.75;
+  const sx0 = Math.max(0.05, x0 - out), sx1 = Math.min(W - 0.05, x1 + out), sz = -1.05;
+  b.box('stone', sx0, -0.18, sz, sx1, 0.02, 0, 'xXyYz');
+  for (const x of [sx0 + 0.15, sx1 - 0.3]) b.box('stone', x, -0.6, -0.75, x + 0.15, -0.18, 0, 'xXyz', { shade: 0.85 });
+  const rt = 1.0, mo = { tint: p.metalTint };
+  if (p.rail === 'solid') {
+    b.box('stone', sx0, 0.02, sz, sx1, rt, sz + 0.1, 'xXyYzZ');
+    b.box('stone', sx0, 0.02, sz, sx0 + 0.1, rt, 0, 'xXYz');
+    b.box('stone', sx1 - 0.1, 0.02, sz, sx1, rt, 0, 'xXYz');
+    return;
+  }
+  const bal = p.rail === 'balust';
+  const post = bal ? 'stone' : 'metal', po = bal ? {} : mo;
+  b.box(post, sx0, rt - 0.04, sz, sx1, rt, sz + 0.05, 'xXyYzZ', po);
+  b.box(post, sx0, rt - 0.04, sz, sx0 + 0.05, rt, 0, 'xXYz', po);
+  b.box(post, sx1 - 0.05, rt - 0.04, sz, sx1, rt, 0, 'xXYz', po);
+  b.box(post, sx0, 0.1, sz, sx1, 0.13, sz + 0.03, 'yYzZ', po);
+  const st = bal ? 0.2 : 0.15, th = bal ? 0.06 : 0.018;
+  for (let x = sx0 + 0.1; x < sx1 - 0.05; x += st) b.box(post, x, 0.02, sz + 0.01, x + th, rt - 0.04, sz + 0.01 + th, 'xXzZ', po);
+  for (let z = sz + 0.15; z < -0.05; z += 0.15) {
+    b.box(post, sx0 + 0.01, 0.02, z, sx0 + 0.03, rt - 0.04, z + 0.018, 'xXzZ', po);
+    b.box(post, sx1 - 0.03, 0.02, z, sx1 - 0.01, rt - 0.04, z + 0.018, 'xXzZ', po);
+  }
+}
+
+// Drzwi bez ściany: skrzydło z płycinami, naświetle, portal, schodek i latarenka.
+export function doorParts(b, x0, x1, y0, y1, W, p) {
+  // latarenka obok drzwi
+  if (x1 + 0.7 < W) {
+    b.box('metal', x1 + 0.45, y1 - 0.35, -0.3, x1 + 0.5, y1 - 0.3, 0, 'yYzZ', { tint: [0.12, 0.12, 0.12] });
+    b.box('light', x1 + 0.38, y1 - 0.8, -0.38, x1 + 0.58, y1 - 0.4, -0.18, 'xXyYzZ', { tint: [1, 0.85, 0.55] });
+    b.box('metal', x1 + 0.35, y1 - 0.4, -0.41, x1 + 0.61, y1 - 0.34, -0.15, 'xXyYzZ', { tint: [0.12, 0.12, 0.12] });
+  }
+  const dy = y0 + (y1 - y0) * 0.74, wo = { tint: p.doorTint };
+  b.rect('wood', x0, y0, x1, dy, 0.4, wo);
+  const cx = (x0 + x1) / 2;
+  b.rect('wood', cx - 0.02, y0, cx + 0.02, dy, 0.385, { tint: p.doorTint, shade: 0.6 });
+  for (const [a, c] of [[x0 + 0.12, cx - 0.1], [cx + 0.1, x1 - 0.12]]) {
+    b.box('wood', a, y0 + 0.25, 0.36, c, y0 + 0.95, 0.4, 'xXyYz', wo);
+    b.box('wood', a, y0 + 1.15, 0.36, c, dy - 0.18, 0.4, 'xXyYz', wo);
+  }
+  glassFrame(b, x0, dy, x1, y1, 0.38, p);
+  b.box('stone', x0 - 0.38, 0.3, -0.1, x0, y1 + 0.05, 0, 'xXz');
+  b.box('stone', x1, 0.3, -0.1, x1 + 0.38, y1 + 0.05, 0, 'xXz');
+  b.box('stone', x0 - 0.52, y1 + 0.05, -0.17, x1 + 0.52, y1 + 0.42, 0, 'xXyYz');
+  b.box('stone', x0 - 0.25, 0, -0.5, x1 + 0.25, 0.3, 0.42, 'xXYz', { shade: 0.9 });
+  // głowice i bazy pilastrów portalu
+  for (const [xa, xb] of [[x0 - 0.46, x0 + 0.04], [x1 - 0.04, x1 + 0.46]]) {
+    b.box('stone', xa, y1 - 0.2, -0.17, xb, y1 + 0.05, 0, 'xXyYz');
+    b.box('stone', xa + 0.02, 0.3, -0.15, xb - 0.02, 0.62, 0, 'xXYz', { shade: 0.9 });
+  }
 }
 
 export const M = {
@@ -121,23 +213,7 @@ export const M = {
 
   // 4. Okno ozdobne — naczółek trójkątny lub gzyms nadokienny + płycina
   ornate(b, W, H, D, p) {
-    const { x0, x1, y0, y1 } = windowCore(b, W, H, p);
-    const cx = (x0 + x1) / 2;
-    if (p.variant === 0) {
-      const base = y1 + 0.16, bx0 = x0 - 0.26, bx1 = x1 + 0.26;
-      const apex = Math.min(base + 0.42, H - 0.04), z = -0.12;
-      b.poly('stone', [[bx0, base, z], [bx1, base, z], [cx, apex, z]], [0, 0, -1]);
-      b.poly('stone', [[bx0, base, z], [cx, apex, z], [cx, apex, 0], [bx0, base, 0]], [-(apex - base), cx - bx0, 0]);
-      b.poly('stone', [[cx, apex, z], [bx1, base, z], [bx1, base, 0], [cx, apex, 0]], [apex - base, bx1 - cx, 0]);
-      b.rectY('stone', base, bx0, z, bx1, 0, -1, { shade: 0.7 });
-    } else {
-      const hy = Math.min(y1 + 0.32, H - 0.02);
-      b.box('stone', x0 - 0.3, y1 + 0.14, -0.17, x1 + 0.3, hy, 0, 'xXyYz');
-      b.box('stone', x0 - 0.27, y1 - 0.22, -0.12, x0 - 0.14, y1 + 0.14, 0, 'xXyz');
-      b.box('stone', x1 + 0.14, y1 - 0.22, -0.12, x1 + 0.27, y1 + 0.14, 0, 'xXyz');
-    }
-    if (y0 > 0.75) b.box('stone', x0, Math.max(0.1, y0 - 0.62), -0.03, x1, y0 - 0.12, 0, 'xXyYz');
-    b.box('stone', cx - 0.11, y1 - 0.02, -0.07, cx + 0.11, y1 + 0.2, 0, 'xXYz');
+    windowCore(b, W, H, { ...p, frame: p.variant === 0 ? 'ped' : 'cornice' });
   },
 
   // 5. Balkon — drzwi balkonowe, płyta, wsporniki, balustrada
@@ -145,21 +221,7 @@ export const M = {
     const ow = clamp(W * 0.36, 0.9, 1.3);
     const x0 = (W - ow) / 2, x1 = x0 + ow, y0 = 0.05, y1 = Math.min(H - 0.35, 2.55);
     b.wallHole(p.wallMat, W, H, x0, y0, x1, y1, 0.24);
-    b.rect('wood', x0, y0, x1, y0 + 0.9, 0.21, { tint: p.frameTint });
-    glassFrame(b, x0, y0 + 0.9, x1, y1, 0.18, p);
-    const sx0 = Math.max(0.05, x0 - 0.75), sx1 = Math.min(W - 0.05, x1 + 0.75), sz = -1.05;
-    b.box('stone', sx0, -0.18, sz, sx1, 0.02, 0, 'xXyYz');
-    for (const x of [sx0 + 0.15, sx1 - 0.3]) b.box('stone', x, -0.6, -0.75, x + 0.15, -0.18, 0, 'xXyz', { shade: 0.85 });
-    const rt = 1.0, mo = { tint: p.metalTint };
-    b.box('metal', sx0, rt - 0.04, sz, sx1, rt, sz + 0.05, 'xXyYzZ', mo);
-    b.box('metal', sx0, rt - 0.04, sz, sx0 + 0.05, rt, 0, 'xXYz', mo);
-    b.box('metal', sx1 - 0.05, rt - 0.04, sz, sx1, rt, 0, 'xXYz', mo);
-    b.box('metal', sx0, 0.1, sz, sx1, 0.13, sz + 0.03, 'yYzZ', mo);
-    for (let x = sx0 + 0.1; x < sx1 - 0.05; x += 0.15) b.box('metal', x, 0.02, sz + 0.01, x + 0.018, rt - 0.04, sz + 0.03, 'xXzZ', mo);
-    for (let z = sz + 0.15; z < -0.05; z += 0.15) {
-      b.box('metal', sx0 + 0.01, 0.02, z, sx0 + 0.03, rt - 0.04, z + 0.018, 'xXzZ', mo);
-      b.box('metal', sx1 - 0.03, 0.02, z, sx1 - 0.01, rt - 0.04, z + 0.018, 'xXzZ', mo);
-    }
+    balconyParts(b, x0, x1, y0, y1, W, p);
   },
 
   // 6. Okno modernistyczne/brutalistyczne — pas szkła, żebra (Ministerstwo)
@@ -179,28 +241,10 @@ export const M = {
   // 7. Drzwi wejściowe z portalem i schodkiem
   door(b, W, H, D, p) {
     const ow = Math.min(1.55, W * 0.5), x0 = (W - ow) / 2, x1 = x0 + ow, y0 = 0.3;
-    const y1 = Math.min(3.1, H - 0.7), gm = p.groundMat;
-    // latarenka obok drzwi
-    if (x1 + 0.7 < W) {
-      b.box('metal', x1 + 0.45, y1 - 0.35, -0.3, x1 + 0.5, y1 - 0.3, 0, 'yYzZ', { tint: [0.12, 0.12, 0.12] });
-      b.box('light', x1 + 0.38, y1 - 0.8, -0.38, x1 + 0.58, y1 - 0.4, -0.18, 'xXyYzZ', { tint: [1, 0.85, 0.55] });
-      b.box('metal', x1 + 0.35, y1 - 0.4, -0.41, x1 + 0.61, y1 - 0.34, -0.15, 'xXyYzZ', { tint: [0.12, 0.12, 0.12] });
-    }
-    b.wallHole(gm, W, H, x0, y0, x1, y1, 0.42);
-    b.rect(gm, x0, 0, x1, y0, -0.0);
-    const dy = y0 + (y1 - y0) * 0.74, wo = { tint: p.doorTint };
-    b.rect('wood', x0, y0, x1, dy, 0.4, wo);
-    const cx = (x0 + x1) / 2;
-    b.rect('wood', cx - 0.02, y0, cx + 0.02, dy, 0.385, { tint: p.doorTint, shade: 0.6 });
-    for (const [a, c] of [[x0 + 0.12, cx - 0.1], [cx + 0.1, x1 - 0.12]]) {
-      b.box('wood', a, y0 + 0.25, 0.36, c, y0 + 0.95, 0.4, 'xXyYz', wo);
-      b.box('wood', a, y0 + 1.15, 0.36, c, dy - 0.18, 0.4, 'xXyYz', wo);
-    }
-    glassFrame(b, x0, dy, x1, y1, 0.38, p);
-    b.box('stone', x0 - 0.38, 0.3, -0.1, x0, y1 + 0.05, 0, 'xXz');
-    b.box('stone', x1, 0.3, -0.1, x1 + 0.38, y1 + 0.05, 0, 'xXz');
-    b.box('stone', x0 - 0.52, y1 + 0.05, -0.17, x1 + 0.52, y1 + 0.42, 0, 'xXyYz');
-    b.box('stone', x0 - 0.25, 0, -0.5, x1 + 0.25, 0.3, 0.42, 'xXYz', { shade: 0.9 });
+    const y1 = Math.min(3.1, H - 0.7);
+    b.wallHole(p.groundMat, W, H, x0, y0, x1, y1, 0.42);
+    b.rect(p.groundMat, x0, 0, x1, y0, -0.0);
+    doorParts(b, x0, x1, y0, y1, W, p);
     plinth(b, [[0, x0 - 0.38], [x1 + 0.38, W]]);
   },
 
@@ -429,6 +473,11 @@ export const M = {
     }
   },
 
+  // 17b. Pas małej kostki (ok. 5 cm) za krawężnikiem — jasny granit przy jezdni
+  sett(b, W, H, D) {
+    b.rectY('sett', H, 0, 0, W, D, 1);
+  },
+
   // 18. Bruk (kocie łby) — nawierzchnia jezdni
   cobble(b, W, H, D, p) {
     const s = p.step || 4;
@@ -643,6 +692,8 @@ Object.assign(M, {
   },
 });
 
+const IRON_FENCE = [[0.12, 0.13, 0.13], [0.15, 0.24, 0.2], [0.2, 0.24, 0.3]];
+
 Object.assign(M, {
   // 28. Okap domu — deska czołowa + wysunięty pas dachu. W wypukłym narożniku dwa pasy
   //     schodzą się w „czapkę”: dwa trójkąty połaci, dwa podsufitki i narożny słupek deski
@@ -656,6 +707,15 @@ Object.assign(M, {
     const g = { tint: [0.45, 0.47, 0.48] };
     const tx1 = p.endKind === 'concave' ? W - 0.62 : W;
     b.tube('metal', [x0, H - 0.4, -0.62], [tx1, H - 0.4, -0.62], 0.075, 0.075, 6, g);
+    // zastrzały pod okapem (drewniane wsporniki, jak w willach z cegły)
+    if (p.brackets) {
+      const n = Math.max(1, Math.round((W - 0.5) / 1.3));
+      for (let i = 0; i < n; i++) {
+        const x = 0.25 + ((i + 0.5) * (W - 0.5)) / n;
+        b.tube('wood', [x, H - 0.95, -0.02], [x, H - 0.36, -0.5], 0.045, 0.045, 4, { tint: [0.28, 0.2, 0.15] });
+        b.box('wood', x - 0.05, H - 0.96, -0.06, x + 0.05, H - 0.5, 0, 'xXz', { tint: [0.28, 0.2, 0.15] });
+      }
+    }
     if (convex) {
       // połać: y = H − 0,3765·(0,3 − z) wzdłuż ściany A i y = H − 0,3765·(0,3 + x − W) wzdłuż B
       const yw = H - 0.113, yo = H - 0.32;
@@ -669,6 +729,28 @@ Object.assign(M, {
       b.tube('metal', [W, H - 0.4, -0.62], [W + 0.62, H - 0.4, -0.62], 0.075, 0.075, 6, g);
       b.tube('metal', [W + 0.62, H - 0.4, -0.62], [W + 0.62, H - 0.4, 0], 0.075, 0.075, 6, g);
     }
+  },
+
+  // 28b. Ogrodzenie ogrodu: kratka z kutego żelaza na ceglanym cokole (odcinek między słupkami).
+  //      x wzdłuż płotu, z = grubość (płot stoi pośrodku). Słupki to osobny moduł `fencepost`.
+  fence(b, W, H, D, p) {
+    const cz = D / 2, brick = { tint: [0.66, 0.34, 0.25] }, iron = { tint: IRON_FENCE[p.iron % 3] };
+    b.box('brick', 0, 0, cz - 0.13, W, 0.4, cz + 0.13, 'yYzZ', brick);
+    b.box('stone', 0, 0.4, cz - 0.16, W, 0.46, cz + 0.16, 'yYzZ');
+    for (let x = 0.3; x < W - 0.2; x += 0.13) {
+      b.box('metal', x, 0.46, cz - 0.013, x + 0.026, 1.5, cz + 0.013, 'xXzZ', iron);
+      b.cyl('metal', x + 0.013, cz, 1.5, 1.62, 0.022, 0.0, 4, iron);
+    }
+    b.box('metal', 0, 0.55, cz - 0.02, W, 0.6, cz + 0.02, 'yYzZ', iron);
+    b.box('metal', 0, 1.36, cz - 0.02, W, 1.41, cz + 0.02, 'yYzZ', iron);
+  },
+  // słupek ogrodzenia: ceglany trzon, kamienna głowica z kulą
+  fencepost(b, W, H, D, p) {
+    const cx = W / 2, cz = D / 2, brick = { tint: [0.66, 0.34, 0.25] };
+    b.box('brick', cx - 0.2, 0, cz - 0.2, cx + 0.2, 1.5, cz + 0.2, 'xXzZ', brick);
+    b.box('stone', cx - 0.25, 1.5, cz - 0.25, cx + 0.25, 1.62, cz + 0.25, 'xXyYzZ');
+    b.box('stone', cx - 0.15, 1.62, cz - 0.15, cx + 0.15, 1.7, cz + 0.15, 'xXyYzZ');
+    b.cyl('stone', cx, cz, 1.7, 1.86, 0.1, 0.0, 8, {});
   },
 
   // 29. Billboard Partii — rama, plakat z dwóch stron, słupy
@@ -1145,6 +1227,140 @@ function cubeSphere(b, mat, c, R, n, o) {
         b.poly(mat, q.map((v) => v.p), null, { ...o, nrm: q.map((v) => v.n) });
       }
 }
+
+// ── komin fabryczny: stożkowy trzon z cegły, pasy i żeliwny wieniec ──────────
+Object.assign(M, {
+  factorychimney(b, W, H, D, p) {
+    const cx = W / 2, cz = D / 2, br = { tint: [0.6, 0.31, 0.22] }, st = { tint: [0.62, 0.6, 0.56] }, dk = { tint: [0.14, 0.13, 0.13] };
+    b.cyl('stone', cx, cz, -1.2, 1.6, 1.85, 1.7, 12, st, 'Y');
+    const seg = 12, n = Math.max(6, Math.round(H / 2.2));
+    for (let i = 0; i < n; i++) {
+      const y0 = 1.6 + ((H - 3.2) * i) / n, y1 = 1.6 + ((H - 3.2) * (i + 1)) / n;
+      const r = (y) => 1.45 - 0.62 * ((y - 1.6) / (H - 3.2));
+      b.cyl('brick', cx, cz, y0, y1, r(y0), r(y1), seg, { tint: [0.6 + (i % 3) * 0.02, 0.31, 0.22], shade: 1 - (i % 2) * 0.04 });
+    }
+    for (const f of [0.7, 0.82]) { const y = 1.6 + (H - 3.2) * f, r = 1.45 - 0.62 * f; b.cyl('stone', cx, cz, y - 0.18, y + 0.1, r + 0.08, r + 0.08, seg, st); }
+    const yt = H - 1.6, rt = 1.45 - 0.62;
+    b.cyl('brick', cx, cz, yt, H - 0.5, rt + 0.1, rt + 0.22, seg, br);
+    b.cyl('stone', cx, cz, H - 0.5, H - 0.25, rt + 0.3, rt + 0.3, seg, st, 'Y');
+    b.cyl('dark', cx, cz, H - 0.25, H - 0.2, rt + 0.1, rt - 0.2, seg, dk);
+    for (const y of [3.5, 9.5, 15.5]) if (y < H - 4) b.cyl('metal', cx, cz, y, y + 0.1, 1.5 - 0.62 * ((y - 1.6) / (H - 3.2)) + 0.05, 1.5 - 0.62 * ((y - 1.6) / (H - 3.2)) + 0.05, seg, dk);
+  },
+});
+
+// ── kościół: nawa z dachem dwuspadowym, wieża z iglicą, wieloboczne prezbiterium ──
+//  Oś budynku wzdłuż x, wieża przy x = 0 (od strony ulicy), prezbiterium przy x = W.
+Object.assign(M, {
+  church(b, W, H, D, p) {
+    const brick = !!p.brick, wm = brick ? 'brick' : 'plaster';
+    const wo = { tint: p.wall || (brick ? [0.6, 0.33, 0.25] : [0.92, 0.88, 0.8]) };
+    const ko = { tint: [0.84, 0.8, 0.7], shade: 0.9 };
+    const ro = { tint: p.roof || [0.3, 0.32, 0.36] };
+    const cu = { tint: p.spire || [0.38, 0.5, 0.44] };
+    const dk = { tint: [0.07, 0.06, 0.06] };
+    const tw = 7.4, tz0 = (D - tw) / 2, tz1 = tz0 + tw, nz0 = 0.6, nz1 = D - 0.6, nx0 = tw, nx1 = W - 6.4;
+    const hn = 10, rise = 5.6, ha = hn - 1.8, ac = D / 2;
+    const hs = Math.min(H * 0.5, 23), hb = hs + 5.4, tipY = H - 1.4;
+    // cztery ściany prostopadłościanu drobną siatką (szum materiału liczony jest w wierzchołkach)
+    const walls = (x0, y0, z0, x1, y1, z1, o, mat = wm, skipX0 = false) => {
+      const nx = Math.max(1, Math.round((x1 - x0) / 0.8)), nz = Math.max(1, Math.round((z1 - z0) / 0.8)), ny = Math.max(1, Math.round((y1 - y0) / 0.8));
+      b.grid(mat, x0, y0, x1, y1, z0, nx, ny, o);
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) b.rectBack(mat, x0 + ((x1 - x0) * i) / nx, y0 + ((y1 - y0) * j) / ny, x0 + ((x1 - x0) * (i + 1)) / nx, y0 + ((y1 - y0) * (j + 1)) / ny, z1, o);
+      if (!skipX0) b.gridX(mat, x0, z0, y0, z1, y1, nz, ny, -1, o);
+      b.gridX(mat, x1, z0, y0, z1, y1, nz, ny, 1, o);
+    };
+    // cokół z kamienia wokół całości
+    b.box('stone', 0, 0, tz0 - 0.15, tw + 0.15, 0.7, tz1 + 0.15, 'xXyYzZ', ko);
+    b.box('stone', nx0, 0, nz0 - 0.15, nx1 + 0.15, 0.7, nz1 + 0.15, 'yYzZ', ko);
+    // ── wieża ──
+    walls(0.1, 0.6, tz0, tw, hs, tz1, wo);
+    for (const [x, z] of [[0, tz0 - 0.25], [0, tz1 - 0.45], [tw - 0.55, tz0 - 0.25], [tw - 0.55, tz1 - 0.45]])
+      b.box('stone', x, 0.6, z, x + 0.65, hs * 0.78, z + 0.7, 'xXyYzZ', ko);
+    for (const y of [hs * 0.34, hs * 0.66, hs]) b.box('stone', -0.05, y - 0.12, tz0 - 0.1, tw + 0.1, y + 0.12, tz1 + 0.1, 'xXyYzZ', ko);
+    // portal od ulicy (ściana x = 0, na zewnątrz −x): łuk ostry z kamiennym obramieniem
+    const cz = D / 2, pw = 1.3, py = 3.4, e = 0.04;
+    b.poly('dark', [[-e, 0.7, cz - pw], [-e, 0.7, cz + pw], [-e, py, cz + pw], [-e, py, cz - pw]], [-1, 0, 0], dk);
+    b.poly('dark', [[-e, py, cz - pw], [-e, py, cz + pw], [-e, py + 1.5, cz]], [-1, 0, 0], dk);
+    b.box('stone', -0.22, 0.7, cz - pw - 0.32, 0.0, py + 0.2, cz - pw, 'xXyYzZ', ko);
+    b.box('stone', -0.22, 0.7, cz + pw, 0.0, py + 0.2, cz + pw + 0.32, 'xXyYzZ', ko);
+    b.poly('stone', [[-0.2, py, cz - pw - 0.32], [-0.2, py, cz + pw + 0.32], [-0.2, py + 1.9, cz]], [-1, 0, 0], ko);
+    // wysokie okno nad portalem + okna strzeliste na pozostałych ścianach trzonu
+    const lancet = (u, v0, v1, w, F, hint) => {
+      const x0 = u - w / 2, x1 = u + w / 2;
+      b.poly('dark', [F(x0, v0), F(x1, v0), F(x1, v1), F(x0, v1)], hint, dk);
+      b.poly('dark', [F(x0, v1), F(x1, v1), F(u, v1 + w * 0.95)], hint, dk);
+    };
+    lancet(cz, py + 3.2, hs * 0.62, 1.1, (u, v) => [-e, v, u], [-1, 0, 0]);
+    lancet(tz0 + tw / 2 - 0.0, hs * 0.74 - 3.2, hs * 0.74, 0.9, (u, v) => [u - tz0 - tw / 2 + tw / 2, v, tz0 - e], [0, 0, -1]);
+    // ── komora dzwonowa: łukowe otwory z żaluzjami ──
+    walls(0.35, hs, tz0 + 0.25, tw - 0.25, hb, tz1 - 0.25, wo);
+    b.box('stone', 0.15, hs - 0.05, tz0 + 0.05, tw - 0.05, hs + 0.28, tz1 - 0.05, 'xXyYzZ', ko);
+    const bo = (F, hint, wi) => { lancet(0, hs + 1.0, hb - 1.7, wi, F, hint); };
+    bo((u, v) => [0.35 - e, v, cz + u], [-1, 0, 0], 1.5);
+    bo((u, v) => [tw - 0.25 + e, v, cz + u], [1, 0, 0], 1.5);
+    bo((u, v) => [tw / 2 + u, v, tz0 + 0.25 - e], [0, 0, -1], 1.5);
+    bo((u, v) => [tw / 2 + u, v, tz1 - 0.25 + e], [0, 0, 1], 1.5);
+    b.box('stone', 0.1, hb - 0.05, tz0 + 0.0, tw - 0.0, hb + 0.3, tz1 - 0.0, 'xXyYzZ', ko);
+    // ── iglica: ośmioboczny hełm z lekkim wybrzuszeniem ──
+    const sx = tw / 2, sz = D / 2, r0 = tw / 2 - 0.2, ymid = hb + (tipY - hb) * 0.45, y0 = hb + 0.3;
+    const ringP = (y, r) => Array.from({ length: 8 }, (_, i) => { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; return [sx + Math.cos(a) * r, y, sz + Math.sin(a) * r]; });
+    const R0 = ringP(y0, r0 * 1.0), R1 = ringP(ymid, r0 * 0.62), R2 = ringP(tipY, 0.04);
+    for (const [lo, hi] of [[R0, R1], [R1, R2]])
+      for (let i = 0; i < 8; i++) {
+        const j = (i + 1) % 8, mx = (lo[i][0] + lo[j][0]) / 2 - sx, mz = (lo[i][2] + lo[j][2]) / 2 - sz;
+        b.poly('roof', [lo[i], lo[j], hi[j], hi[i]], [mx, 0.9, mz], cu);
+      }
+    b.tube('metal', [sx, tipY - 0.2, sz], [sx, H - 0.3, sz], 0.08, 0.05, 6, { tint: [0.85, 0.65, 0.25] });
+    b.box('metal', sx - 0.5, H - 1.0, sz - 0.05, sx + 0.5, H - 0.8, sz + 0.05, 'xXyYzZ', { tint: [0.85, 0.65, 0.25] });
+    b.box('metal', sx - 0.05, H - 1.7, sz - 0.05, sx + 0.05, H - 0.3, sz + 0.05, 'xXyYzZ', { tint: [0.85, 0.65, 0.25] });
+    // ── nawa ──
+    walls(nx0, 0.7, nz0, nx1, hn, nz1, wo, wm, true);
+    const nWin = Math.max(2, Math.floor((nx1 - nx0 - 2) / 3.6)), pitch = (nx1 - nx0) / nWin;
+    for (let i = 0; i < nWin; i++) {
+      const u = nx0 + pitch * (i + 0.5);
+      lancet(u, 2.6, hn - 3.0, 1.2, (uu, v) => [uu, v, nz0 - e], [0, 0, -1]);
+      lancet(u, 2.6, hn - 3.0, 1.2, (uu, v) => [uu, v, nz1 + e], [0, 0, 1]);
+      for (const [z0, z1] of [[nz0, nz0 - 0.18], [nz1, nz1 + 0.18]]) {
+        for (const sg of [-1, 1]) b.box('stone', u + sg * 0.75 - 0.07, 2.5, Math.min(z0, z1), u + sg * 0.75 + 0.07, hn - 2.6, Math.max(z0, z1), 'xXyYzZ', ko);
+      }
+    }
+    // przypory między oknami
+    for (let i = 0; i <= nWin; i++) {
+      const u = nx0 + pitch * i;
+      for (const [z0, z1] of [[nz0 - 0.55, nz0 + 0.05], [nz1 - 0.05, nz1 + 0.55]]) b.box('stone', u - 0.28, 0.6, z0, u + 0.28, hn - 1.6, z1, 'xXyYzZ', ko);
+    }
+    b.box('stone', nx0, hn - 0.05, nz0 - 0.2, nx1, hn + 0.22, nz1 + 0.2, 'xXyYzZ', ko);
+    // dach dwuspadowy z okapem i szczytem od strony prezbiterium
+    const eo = 0.55;
+    b.poly('roof', [[nx0, hn + 0.1, nz0 - eo], [nx1 + 0.4, hn + 0.1, nz0 - eo], [nx1 + 0.4, hn + rise, ac], [nx0, hn + rise, ac]], [0, 1, -0.9], ro);
+    b.poly('roof', [[nx1 + 0.4, hn + 0.1, nz1 + eo], [nx0, hn + 0.1, nz1 + eo], [nx0, hn + rise, ac], [nx1 + 0.4, hn + rise, ac]], [0, 1, 0.9], ro);
+    b.poly(wm, [[nx1 + 0.02, hn, nz0], [nx1 + 0.02, hn, nz1], [nx1 + 0.02, hn + rise - 0.05, ac]], [1, 0, 0], wo);
+    // ── prezbiterium: trzy ściany pod stożkowym dachem ──
+    const A = [[nx1, nz0 + 2.4], [nx1 + 2.6, nz0 + 2.4], [W, ac], [nx1 + 2.6, nz1 - 2.4], [nx1, nz1 - 2.4]];
+    for (let i = 0; i < A.length - 1; i++) {
+      const a = A[i], c = A[i + 1], mx = (a[0] + c[0]) / 2 - (nx1 + 1.5), mz = (a[1] + c[1]) / 2 - ac;
+      const nx = Math.max(1, Math.round(Math.hypot(c[0] - a[0], c[1] - a[1]) / 0.8)), ny = Math.max(1, Math.round((ha - 0.7) / 0.8));
+      for (let u = 0; u < nx; u++) for (let v = 0; v < ny; v++) {
+        const t0 = u / nx, t1 = (u + 1) / nx, y0 = 0.7 + ((ha - 0.7) * v) / ny, y1 = 0.7 + ((ha - 0.7) * (v + 1)) / ny;
+        b.poly(wm, [[a[0] + (c[0] - a[0]) * t0, y0, a[1] + (c[1] - a[1]) * t0], [a[0] + (c[0] - a[0]) * t1, y0, a[1] + (c[1] - a[1]) * t1], [a[0] + (c[0] - a[0]) * t1, y1, a[1] + (c[1] - a[1]) * t1], [a[0] + (c[0] - a[0]) * t0, y1, a[1] + (c[1] - a[1]) * t0]], [mx, 0, mz], wo);
+      }
+      // okno w ścianie prezbiterium
+      const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2], dl = Math.hypot(c[0] - a[0], c[1] - a[1]), tx = (c[0] - a[0]) / dl, tz = (c[1] - a[1]) / dl, ox = mx / (Math.hypot(mx, mz) || 1) * 0.04, oz = mz / (Math.hypot(mx, mz) || 1) * 0.04;
+      if (dl > 2) {
+        const w = 0.55, q = (s, y) => [mid[0] + tx * s + ox, y, mid[1] + tz * s + oz];
+        b.poly('dark', [q(-w, 2.8), q(w, 2.8), q(w, ha - 2.4), q(-w, ha - 2.4)], [mx, 0, mz], dk);
+        b.poly('dark', [q(-w, ha - 2.4), q(w, ha - 2.4), q(0, ha - 2.4 + w * 1.9)], [mx, 0, mz], dk);
+      }
+    }
+    const apex = [nx1 + 1.6, ha + rise * 0.78, ac];
+    for (let i = 0; i < A.length - 1; i++) {
+      const a = A[i], c = A[i + 1], mx = (a[0] + c[0]) / 2 - apex[0], mz = (a[1] + c[1]) / 2 - apex[2];
+      b.poly('roof', [[a[0], ha, a[1]], [c[0], ha, c[1]], apex], [mx, 0.8, mz], ro);
+    }
+    b.poly('roof', [[A[A.length - 1][0], ha, A[A.length - 1][1]], [A[0][0], ha, A[0][1]], apex], [-1, 0.2, 0], ro);
+    b.poly('roof', [[A[0][0], ha, A[0][1]], [A[A.length - 1][0], ha, A[A.length - 1][1]], apex], [-1, 0.2, 0], ro);
+  },
+});
 
 installProps(M, { cubeSphere }); // ~40 nowych rekwizytów (propmods.js)
 

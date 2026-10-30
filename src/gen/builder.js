@@ -19,6 +19,7 @@ export const MATDEF = {
   plaster: { wob: W, ao: 1, dirt: 1 },
   brick: { wob: W, ao: 1, dirt: 1 },
   stone: { wob: W, ao: 1, dirt: 1 },
+  frieze: { wob: W, ao: 1, dirt: 1 },
   roof: { wob: W, dirt: 1 },
   tile: { wob: W, dirt: 1 },
   wood: { wob: W, ao: 1 },
@@ -44,6 +45,7 @@ export const MATDEF = {
   lawn: { bump: 0.03, dirt: 2.2, ground: 1 },
   cobblep: { bump: 0.04, dirt: 1.8, ground: 1 },
   curb: { dirt: 1, ground: 1 },
+  sett: { bump: 0.006, dirt: 1.2, ground: 1 },
   lod: { wob: W, ao: 1, dirt: 1 },
   lodroof: { wob: W, dirt: 1 },
 };

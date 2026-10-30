@@ -15,13 +15,54 @@ export class Terrain {
     this.hw = 17;          // połowa szerokości koryta
     this.bankY = 0;        // poziom bulwarów
     this.waterY = -3.2;    // lustro wody
-    const z0 = r.float(0.3, 0.42) * half * (r.chance(0.5) ? 1 : -1);
-    const n = 9, ph = r.float(0, 6);
-    this.pts = [];
-    for (let i = 0; i <= n; i++) {
-      const x = -half - 90 + ((2 * half + 180) * i) / n;
-      this.pts.push([x, z0 + 40 * Math.sin(i * 0.85 + ph) + r.float(-14, 14)]);
+    this.half = half;
+    this.plaza = null;
+    // ── wyspa: promień brzegu R(θ) z losowymi półwyspami i zatokami; cztery odmiany sylwety:
+    //  blob (jak dawniej), oval (wydłużona), bay (z głęboką zatoką — port), lobes (trójkątna)
+    this.seaY = this.waterY;
+    const kind = r.weighted([['blob', 3], ['oval', 3], ['bay', 2.2], ['lobes', 1.6]]);
+    this.isl = { r0: half * 0.84, ph: [r.float(0, 6), r.float(0, 6), r.float(0, 6)], o: r.float(0, 100), kind, e: 0, te: 0, bay: null, tri: 0, tt: 0 };
+    if (kind === 'oval') { this.isl.e = r.float(0.14, 0.24); this.isl.te = r.float(0, Math.PI); }
+    if (kind === 'bay') this.isl.bay = { a: r.float(0, 2 * Math.PI), w: r.float(0.3, 0.45), d: r.float(0.26, 0.4) };
+    if (kind === 'lobes') { this.isl.tri = r.float(0.1, 0.16); this.isl.tt = r.float(0, 2 * Math.PI); this.isl.e = r.float(0, 0.1); this.isl.te = r.float(0, Math.PI); }
+    // sylweta nie może wyjść poza mapę (najdalszy punkt ≤ 0,93 połowy boku)
+    let maxR = 0;
+    for (let i = 0; i < 360; i++) maxR = Math.max(maxR, this.coastR((i / 360) * Math.PI * 2));
+    if (maxR > 0.93 * half) this.isl.r0 *= (0.93 * half) / maxR;
+
+    // ── rzeka: położenie względem miasta jest jedną z trzech odmian, kierunek dowolny ──
+    //  przez miasto (rynek 80–110 m od osi, mosty tuż obok), obok miasta (150–235 m, przedmieście
+    //  za rzeką) albo w dużym zakolu (rzeka okrąża miasto z jednej strony). Rzeka musi przecinać
+    //  wyspę na długim odcinku lądu (inaczej nie byłoby gdzie postawić mostów): do 14 prób.
+    let best = null;
+    for (let attempt = 0; attempt < 14; attempt++) {
+      const mode = r.weighted([['through', 3.4], ['edge', 4.2], ['bend', 1.8]]);
+      const phi = r.float(0, Math.PI), side = r.chance(0.5) ? 1 : -1;
+      let off, amp, lam;
+      if (mode === 'through') { off = r.float(-45, 45); amp = r.float(22, 46); lam = r.float(520, 820); }
+      else if (mode === 'edge') { off = side * r.float(150, 235); amp = r.float(26, 58); lam = r.float(560, 900); }
+      else { off = side * r.float(70, 125); amp = r.float(85, 125); lam = r.float(960, 1250); }
+      amp = Math.min(amp, 0.085 * lam); // nachylenie ≤ ~30°: brzegi i mosty znoszą takie zakręty
+      const n = 24, ph = r.float(0, 6.28), L = half * 1.5 + 100, pts = [];
+      for (let i = 0; i <= n; i++) {
+        const u = -L + (2 * L * i) / n;
+        const v = off + amp * Math.sin((2 * Math.PI * u) / lam + ph) + (i > 0 && i < n ? r.float(-10, 10) : 0);
+        pts.push([u * Math.cos(phi) - v * Math.sin(phi), u * Math.sin(phi) + v * Math.cos(phi)]);
+      }
+      // ile rzeki leży na lądzie z dala od brzegu i krawędzi mapy (próbkowanie co 10 m)
+      let land = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]), k = Math.ceil(l / 10);
+        for (let j = 0; j < k; j++) {
+          const x = a[0] + ((b[0] - a[0]) * j) / k, z = a[1] + ((b[1] - a[1]) * j) / k;
+          if (Math.abs(x) < half - 90 && Math.abs(z) < half - 90 && this.inland(x, z) > 85) land += l / k;
+        }
+      }
+      if (!best || land > best.land) best = { mode, pts, land };
+      if (land >= 340) break;
     }
+    this.riverMode = best.mode;
+    this.pts = best.pts;
     // brzegi — przesunięcie łamanej z cięciem pod kątem
     this.left = [];
     this.right = [];
@@ -43,11 +84,19 @@ export class Terrain {
     // i kolizje mają tę samą krawędź — nic nie wisi nad wodą i nie ma szczelin.
     this.bankL = this.offsetBank(1);
     this.bankR = this.offsetBank(-1);
-    this.plaza = null;
-    this.half = half;
-    // wyspa: promień brzegu R(θ) z losowymi półwyspami i zatokami
-    this.seaY = this.waterY;
-    this.isl = { r0: half * 0.84, ph: [r.float(0, 6), r.float(0, 6), r.float(0, 6)], o: r.float(0, 100) };
+
+    // ── środek miasta (rynek): przy rzece przez miasto o 80–110 m od jej osi, inaczej blisko
+    //  środka wyspy, ale nie bliżej rzeki niż 130 m
+    const c0 = [r.float(-35, 35), r.float(-35, 35)];
+    if (this.riverMode === 'through') {
+      const rv = this.river(c0[0], c0[1]), tl = Math.hypot(rv.tx, rv.tz) || 1;
+      const s = r.chance(0.5) ? 1 : -1, d = r.float(82, 112);
+      this.center = [rv.px - (rv.tz / tl) * s * d, rv.pz + (rv.tx / tl) * s * d];
+    } else {
+      const rv = this.river(c0[0], c0[1]);
+      this.center = c0;
+      if (rv.d < 130) this.center = [c0[0] + rv.nx * (130 - rv.d), c0[1] + rv.nz * (130 - rv.d)];
+    }
   }
 
   offsetBank(sd) {
@@ -82,11 +131,19 @@ export class Terrain {
   }
 
   coastR(theta) {
-    const { r0, ph, o } = this.isl;
+    const { r0, ph, o, e, te, bay, tri, tt } = this.isl;
     const c = Math.cos(theta), s = Math.sin(theta);
     let k = 0.86 + 0.09 * Math.sin(2 * theta + ph[0]) + 0.06 * Math.sin(3 * theta + ph[1]) + 0.04 * Math.sin(5 * theta + ph[2]);
     k += 0.16 * noise3(c * 1.6 + o, s * 1.6, 0.5) + 0.06 * noise3(c * 5 + o, s * 5, 2.5);
-    return r0 * Math.min(1.12, k);
+    k = Math.min(1.12, k);
+    if (e) k *= 1 + e * Math.cos(2 * (theta - te));
+    if (tri) k *= 1 + tri * Math.cos(3 * (theta - tt));
+    if (bay) {
+      let d = Math.abs(theta - bay.a) % (2 * Math.PI);
+      if (d > Math.PI) d = 2 * Math.PI - d;
+      k -= bay.d * Math.exp(-((d / bay.w) ** 2));
+    }
+    return r0 * k;
   }
 
   // odległość od brzegu (dodatnia na lądzie)
@@ -130,7 +187,7 @@ export class Terrain {
   hills(x, z) {
     let h = 6.5 + 5 * noise3(x / 430 + 11.3, 0.37, z / 430 - 4.1) + 1.8 * noise3(x / 150, 2.1, z / 150);
     // obrzeża wyspy falują mocniej niż centrum: grzbiety i doliny (lasy, wydmy, przedmieścia)
-    const dc = Math.hypot(x, z);
+    const dc = Math.hypot(x - this.center[0], z - this.center[1]);
     const rise = sstep(130, 360, dc);
     if (rise > 0) h += rise * (10.5 * Math.max(0, noise3(x / 210 + 31.7, 1.1, z / 210 + 8.3) + 0.2) + 2.4 * noise3(x / 75 + 5.5, 3.3, z / 75));
     return h;

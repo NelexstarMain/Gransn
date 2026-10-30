@@ -6,11 +6,15 @@
 import { Builder } from './builder.js';
 import { Cage } from './cage.js';
 import { M } from './modules.js';
+import './fragments.js';
+import { programOf, panelPlan } from './facade.js';
+import { facadesOf } from '../city/facades.js';
 import { SHOP_SIGNS, POSTERS } from './atlas.js';
 import { PROPS, moduleOf } from '../city/props.js';
 import { Rng, hash } from '../core/rng.js';
+import { noise3 } from '../core/noise.js';
 import { HALF } from '../city/layout.js';
-import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
+import { levelY, filled, quadGeom, wallPlan, designOf, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
 import { CAR_KINDS, PARKED_KINDS } from './vehicles.js';
 import { polyDist } from '../city/routes.js';
@@ -55,13 +59,24 @@ function placeLamp(b, T, l) {
 
 const LEAF_BY = { oak: [[0.34, 0.48, 0.22], [0.3, 0.42, 0.2], [0.42, 0.5, 0.24]], birch: [[0.5, 0.62, 0.3], [0.56, 0.6, 0.28]], poplar: [[0.3, 0.44, 0.24], [0.36, 0.46, 0.22]], pine: [[0.16, 0.3, 0.18], [0.2, 0.34, 0.2]] };
 
+// Jesień: część drzew (skupiona w dzielnicach, nie losowo co drzewo) ma żółte, pomarańczowe i
+// rdzawe liście, reszta zostaje zielona; iglaste nie zmieniają koloru.
+const AUTUMN = [[0.76, 0.64, 0.18], [0.72, 0.4, 0.12], [0.58, 0.28, 0.1], [0.62, 0.6, 0.2], [0.8, 0.5, 0.14]];
+function leafColor(sp, t, rr) {
+  const green = rr.pick(LEAF_BY[sp]);
+  if (sp === 'pine') return green;
+  const au = noise3(t.p[0] / 110 + 3.1, 0.7, t.p[1] / 110 - 1.7) + 0.5;
+  const chance = 0.1 + 0.6 * Math.max(0, Math.min(1, (au - 0.35) / 0.4));
+  return hash(t.seed || 1, 5) / 4294967296 < chance ? AUTUMN[hash(t.seed || 1, 6) % AUTUMN.length] : green;
+}
+
 function placeTree(b, T, t, r) {
   const sp = t.species || 'oak';
   const s = t.s, W = (sp === 'poplar' ? 4 : sp === 'pine' ? 5 : 7) * s, H = (sp === 'poplar' ? 14 : sp === 'pine' ? 12 : 9) * s;
   const rr = new Rng(t.seed || 1);
   const a = rr.float(0, Math.PI * 2), e = [Math.cos(a), Math.sin(a)], n = [-e[1], e[0]];
   const y = t.y ?? 0;
-  place(b, 'tree', cage4(T, null, boxPts(t.p, e, n, W, W), NONE, y, y + H), W, H, W, { species: sp, seed: t.seed, leaf: rr.pick(LEAF_BY[sp]) });
+  place(b, 'tree', cage4(T, null, boxPts(t.p, e, n, W, W), NONE, y, y + H), W, H, W, { species: sp, seed: t.seed, leaf: leafColor(sp, t, rr) });
 }
 
 const CAR_COLORS = [[0.12, 0.13, 0.15], [0.55, 0.12, 0.1], [0.2, 0.32, 0.24], [0.82, 0.8, 0.72], [0.25, 0.35, 0.55], [0.6, 0.6, 0.62], [0.45, 0.32, 0.2]];
@@ -100,11 +115,19 @@ const VARIANT = {
   windmill: (r) => ({ tint: r.pick([[0.9, 0.86, 0.78], [0.85, 0.78, 0.66]]), roof: r.pick([[0.3, 0.2, 0.15], [0.4, 0.22, 0.16]]) }),
   rowboat: (r) => ({ hull: r.pick([[0.25, 0.4, 0.55], [0.6, 0.2, 0.18], [0.85, 0.82, 0.72], [0.2, 0.42, 0.3]]) }),
   deckchair: (r) => { const a = r.pick(AWNINGS_); return { c1: a[0], c2: a[1] }; },
+  gravestone: (r) => ({ variant: r.pick([0, 0, 0, 1, 1, 2]), tint: r.pick([[0.55, 0.54, 0.52], [0.36, 0.36, 0.38], [0.64, 0.62, 0.58], [0.45, 0.47, 0.44]]) }),
 };
 
 // parametry wyglądu rekwizytu o danym rodzaju i seedzie (też dla zdjęć studyjnych)
 export function propParams(kind, seed = 1) {
   return VARIANT[kind] ? VARIANT[kind](new Rng(seed)) : {};
+}
+
+// ogrodzenie ogrodu: odcinek leży na granicy ćwiartek, kratka jest wyśrodkowana na tej linii
+function placeFence(b, T, f) {
+  const [nx, nz] = f.n, sh = 0.15;
+  const a = [f.a[0] - nx * sh, f.a[1] - nz * sh], c = [f.b[0] - nx * sh, f.b[1] - nz * sh];
+  place(b, 'fence', cage4(T, null, [a, c, [a[0] + nx * 0.3, a[1] + nz * 0.3], [c[0] + nx * 0.3, c[1] + nz * 0.3]], NONE, 0.15, 1.75), dist(f.a, f.b), 1.6, 0.3, { iron: f.iron });
 }
 
 function placeProp(b, T, pr, seed) {
@@ -170,6 +193,10 @@ function buildExtra(b, city, ex) {
     // wieża ratusza: dolne 3,6 m chowa się w dachu, całość ~17 m
     const w = ex.w, H = 17, y0 = levelY(ex.top) + 0.5 - 0.2;
     place(b, 'townhall', cage4(T, null, boxPts(ex.p, [1, 0], [0, 1], w, w), NONE, y0, y0 + H), w, H, w, { hide: 3.6 });
+  } else if (ex.kind === 'factorychimney') {
+    place(b, 'factorychimney', cage4(T, null, boxPts(ex.p, [1, 0], [0, 1], 4, 4), NONE, 0.05, ex.H + 0.05), 4, ex.H, 4, {});
+  } else if (ex.kind === 'church') {
+    place(b, 'church', cage4(T, null, boxPts(ex.p, ex.e, ex.n, ex.W, ex.D), NONE, 0.05, ex.H + 0.05), ex.W, ex.H, ex.D, { brick: ex.brick, wall: ex.wall, roof: ex.roof, spire: ex.spire });
   } else if (ex.kind === 'station') {
     // peron wzdłuż toru + pociąg (lokomotywa i 3 wagony)
     const P = (along, side) => [ex.p[0] + ex.e[0] * along + ex.n[0] * side, ex.p[1] + ex.e[1] * along + ex.n[1] * side];
@@ -219,6 +246,8 @@ export function buildChunk(city, id) {
     else place(b, 'monument', cage4(T, null, boxPts(m.p, [1, 0], [0, 1], 4, 4), NONE, 0.15, 13.15), 4, 13, 4, { poster: 'bb4' });
   }
   for (const pr of ch.props) placeProp(b, T, pr, city.seed);
+  for (const f of ch.fences) placeFence(b, T, f);
+  for (const po of ch.posts) place(b, 'fencepost', cage4(T, null, boxPts(po.p, [1, 0], [0, 1], 0.5, 0.5), NONE, 0.15, 2.05), 0.5, 1.9, 0.5, {});
   for (const i of ch.rail) buildRail(b, city, i);
   for (const ex of ch.extras) buildExtra(b, city, ex);
   for (const bb of ch.billboards) {
@@ -244,7 +273,7 @@ function buildQuad(b, city, q) {
     const Qi = quarterInfo(G, i);
     if (g.TY[a] === T_BLD) {
       const zone = g.ZN[a];
-      const info = buildingInfo(seed, g.BID[a], zone);
+      const info = designOf(city, g.BID[a], zone);
       const top = g.H[a];
       setTints(b, info);
       for (let L = 0; L < top; L++) {
@@ -296,7 +325,6 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
   const y0 = levelY(L), y1 = levelY(L + 1), H = y1 - y0;
   const cage = cage4(T, null, pts, NONE, y0, y1);
   const hh = hash(city.seed, a, nb, q, L);
-  const plan = wallPlan(city, a, nb, q, side, L);
   const house = info.zone === Z_HOUSES;
   const p = {
     style: info.style, wallMat: info.wallMat, groundMat: info.groundMat || info.wallMat,
@@ -304,26 +332,39 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
     shopGlass: [0.3, 0.32, 0.33], variant: info.variant, bars: info.bars, glassTint: GLASS[hh % GLASS.length],
     shutters: info.shutters, shutterTint: info.shutterTint, flowers: L > 0 ? info.flowers : null,
     simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4], winW: info.winW, winH: info.winH, curtain: info.curtain, awning: info.awning,
-    endKind: ek.kind, cornerOwner: ek.owner,
+    endKind: ek.kind, cornerOwner: ek.owner, trim: info.trim, brickTint: info.brickTint,
   };
-  let mod;
-  if (W < 1.25) mod = 'wall';
-  else if (L === 0) { mod = plan.mod; p.ground = true; }
-  else if (info.zone === 2) mod = 'ornate';
-  else if (plan.balcony && !house) mod = 'balcony';
-  else mod = info.style === 'ornate' ? 'ornate' : info.style === 'modern' ? 'modern' : 'window';
-  if (mod === 'shop' && W < 2.4) mod = 'window';
-  if (mod === 'door' && W < 1.8) mod = 'wall';
+  // fasada z fragmentów (okna o stałej szerokości, wejścia, balkony, narożniki);
+  // Ministerstwo i styl modernistyczny zostają przy starych modułach
+  const seg = info.zone !== 2 && info.style !== 'modern' ? facadesOf(city).at(a, nb, q, side, L) : null;
+  let mod, plan;
+  if (seg && W >= 1.25) {
+    plan = panelPlan(city, info, programOf(city, g.BID[a], info), seg, L, top, W, H, p.simple, hash(city.seed, a, nb, q * 2 + side, L) / 4294967296);
+    mod = plan.mod;
+    if (L === 0) p.ground = true;
+    p.spec = plan.spec;
+    if (mod === 'shop' && W < 2.4) mod = 'wall';
+  } else {
+    plan = wallPlan(city, a, nb, q, side, L);
+    if (W < 1.25) mod = 'wall';
+    else if (L === 0) { mod = plan.mod; p.ground = true; }
+    else if (info.zone === 2) mod = 'ornate';
+    else if (plan.balcony && !house) mod = 'balcony';
+    else mod = info.style === 'ornate' ? 'ornate' : info.style === 'modern' ? 'modern' : 'window';
+    if (mod === 'shop' && W < 2.4) mod = 'window';
+    if (mod === 'door' && W < 1.8) mod = 'wall';
+    plan.string = L === 1 && info.zone === 1;
+  }
   place(b, mod, cage, W, H, D, p);
   if (L === 0 && plan.poster) place(b, 'poster', cage, W, H, D, { name: POSTERS[hh % POSTERS.length], y: 0.9, w: Math.min(W * 0.6, 1.2) });
   // gzyms nad parterem kamienicy
-  if (L === 1 && info.zone === 1 && !filled(g, nb, 0)) place(b, 'string', cage4(T, null, pts, NONE, y0, y0 + 0.32), W, 0.32, D, p);
+  if (plan.string && !filled(g, nb, 0)) place(b, 'string', cage4(T, null, pts, NONE, y0, y0 + 0.32), W, 0.32, D, p);
   // okap / gzyms wieńczący — wszystkie budynki mają tę samą wysokość okapu (0,5 m),
   // więc dachy sąsiadów zawsze stykają się bez szczelin
   if (L === top - 1) {
     const ce = info.ce;
     const cg = cage4(T, null, pts, NONE, y1, y1 + ce);
-    if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint, endKind: ek.kind, cornerOwner: ek.owner });
+    if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint, endKind: ek.kind, cornerOwner: ek.owner, brackets: info.style === 'brick' || info.style === 'ornate' || hash(city.seed, g.BID[a], 63) % 100 < 45 });
     else place(b, 'cornice', cg, W, ce, D, { style: info.style === 'modern' ? 'modern' : info.style, consoles: info.style === 'ornate', endKind: ek.kind, cornerOwner: ek.owner });
   }
 }
@@ -344,10 +385,41 @@ function roofQuarter(b, city, info, G, i, top) {
   const pts = roofSpec(city, G, i, top, info);
   b.wpoly(info.roofMat || 'roof', pts.map(([p, h]) => [p[0], T.height(p[0], p[1]) + base + h, p[1]]), [0, 1, 0], { tint: info.roofTint });
   const hv = pts[0][1];
+  if (info.dormers && hv >= 1.7) roofDormers(b, city, info, G, i, top, base);
   if (hv > 2.2 && hash(city.seed, a, 77) / 4294967296 < 0.12) {
     const pv = G.p[i];
     b.cell(cage4(T, null, boxPts(pv, [1, 0], [0, 1], 1, 1), NONE, base, base + 1), 1, 1, 1);
     M.chimney(b, 0.5, 0.5, hv - 1.2, hv + 1.3, { chimneyTint: [0.6, 0.45, 0.4] });
+  }
+}
+
+// Lukarny na krawędziach okapu: w osi odcinka ściany, czyli nad oknami ostatniego piętra.
+// Połać to trójkąt (środek krawędzi, środek czworokąta, punkt narożny): wysokość rośnie
+// liniowo od okapu do kalenicy, stąd nachylenie s = R / odległość punktu od okapu.
+function roofDormers(b, city, info, G, i, top, base) {
+  const g = city.grid, T = city.terrain, V = G.v, a = V[i], R = info.ridge, vp = G.p[i];
+  for (const side of [0, 1]) {
+    const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
+    if (filled(g, nb, top - 1)) continue;
+    const f0 = side === 0 ? G.m[i] : G.m[(i + 3) % 4], c = G.c, W = dist(f0, c);
+    if (W < 2.0 || hash(city.seed, a, G.v[(i + 2) % 4], side, 78) / 4294967296 > info.dormerRate) continue;
+    const e = [(c[0] - f0[0]) / W, (c[1] - f0[1]) / W];
+    let n = [-e[1], e[0]];
+    const run = (vp[0] - f0[0]) * n[0] + (vp[1] - f0[1]) * n[1];
+    if (run < 0) n = [-n[0], -n[1]];
+    const depthToApex = Math.abs(run);
+    if (depthToApex < 1.8) continue;
+    const s = R / depthToApex, set = 0.35, wd = info.zone === Z_HOUSES ? 1.1 : 1.3;
+    const Hd = Math.max(1.2, Math.min(1.75, R * 0.9 - s * set)), Dd = Math.min(depthToApex * 0.8, Hd / s + 0.3);
+    const P = [(f0[0] + c[0]) / 2 + n[0] * set, (f0[1] + c[1]) / 2 + n[1] * set];
+    const F0 = [P[0] - e[0] * wd / 2, P[1] - e[1] * wd / 2], F1 = [P[0] + e[0] * wd / 2, P[1] + e[1] * wd / 2];
+    const B0 = [F0[0] + n[0] * Dd, F0[1] + n[1] * Dd], B1 = [F1[0] + n[0] * Dd, F1[1] + n[1] * Dd];
+    const yb = base + s * set;
+    const hh = hash(city.seed, a, side, 79);
+    place(b, 'dormer', cage4(T, null, [F0, F1, B0, B1], NONE, yb, yb + Hd), wd, Hd, Dd, {
+      wallMat: info.wallMat, roofMat: info.roofMat || 'roof', roofTint: info.roofTint, frameTint: info.frameTint,
+      glassTint: GLASS[hh % GLASS.length], curtain: info.curtain, style: info.style, metalTint: [0.2, 0.22, 0.21],
+    });
   }
 }
 
@@ -423,7 +495,7 @@ function groundQuarter(b, city, G, i, q) {
 }
 
 // ── jezdnia: ciągła wstęga na kafelkach (kapsuła), krawężniki maskowane ─────
-const ROAD_TINT = { cobble: [0.9, 0.88, 0.85], dirt: [0.78, 0.62, 0.46], asphalt: [1, 1, 1] };
+const ROAD_TINT = { cobble: [0.96, 0.95, 0.94], dirt: [0.78, 0.62, 0.46], asphalt: [1, 1, 1] };
 function buildRoad(b, city, s) {
   const T = city.terrain, roads = city.roads;
   const dx = s.b[0] - s.a[0], dz = s.b[1] - s.a[1], L = Math.hypot(dx, dz);
@@ -477,6 +549,10 @@ function buildRoad(b, city, s) {
     if (T.river(m[0], m[1]).d < T.hw + 1) return;
     const bk0 = [c0[0] + out[0] * 0.3, c0[1] + out[1] * 0.3], bk1 = [c1[0] + out[0] * 0.3, c1[1] + out[1] * 0.3];
     place(b, 'curb', cage4(T, null, [c0, c1, bk0, bk1], NONE, 0, 0.16), dist(c0, c1), 0.16, 0.3, {});
+    // pas małej kostki za krawężnikiem; pomijany, gdy wchodziłby w inną jezdnię
+    if (roads.clearance(m[0] + out[0] * 0.6, m[1] + out[1] * 0.6, s) < 0.05) return;
+    const sb0 = [bk0[0] + out[0] * 0.45, bk0[1] + out[1] * 0.45], sb1 = [bk1[0] + out[0] * 0.45, bk1[1] + out[1] * 0.45];
+    place(b, 'sett', cage4(T, null, [bk0, bk1, sb0, sb1], NONE, 0, 0.152), dist(bk0, bk1), 0.152, 0.45, {});
   };
   const nP = Math.max(1, Math.round(L / piece));
   for (const sd of [-1, 1]) {
@@ -570,7 +646,7 @@ export function buildChunkLOD(city, id) {
         }
         continue;
       }
-      const info = buildingInfo(city.seed, g.BID[a], g.ZN[a]);
+      const info = designOf(city, g.BID[a], g.ZN[a]);
       const top = g.H[a];
       for (const side of [0, 1]) {
         const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];

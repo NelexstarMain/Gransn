@@ -120,6 +120,7 @@ function voronoi(G, seed, jitter = 0.85) {
 export function createTextures() {
   const T = {};
   const nA = tileNoise(11), nB = tileNoise(23), nC = tileNoise(37);
+  const LEAVES = [[0.74, 0.46, 0.12], [0.62, 0.33, 0.1], [0.8, 0.64, 0.18], [0.55, 0.4, 0.14]]; // jesienne liście
 
   // — tynk: drobne ziarno, łagodne plamy, zacieki spod parapetów i włosowate pęknięcia
   //   (bez wyrazistych łat — na ścianie powtarzałyby się co kafel)
@@ -164,30 +165,84 @@ export function createTextures() {
     return [c, c * 0.97, c * 0.91, n * 0.5 + f * 0.3 + g * 0.2];
   }, 2);
 
-  // — bruk: kamienie ~12 cm z własnym odcieniem, kopułkami oświetlonymi z lewej góry,
-  //   ciemną fugą z mchem i brudem, plamami zabrudzeń (bez równych, powtarzalnych oczek)
-  const vor = voronoi(10, 77, 0.8);
-  T.cobble = bake(512, 512, (u, v) => {
-    const { d1, d2, id, cx, cy } = vor(u, v);
-    const edge = d2 - d1;
-    const n = nB(u, v, 64, 3), g = nC(u, v, 256, 1), patch = nA(u + 0.21, v + 0.6, 4, 3), moss = nC(u + 0.5, v, 12, 3);
-    const stone = smooth(0.025, 0.14, edge);
-    const dome = Math.max(0, 1 - d1 * 1.15);
-    const fam = id < 0.4 ? [0.55, 0.53, 0.5] : id < 0.75 ? [0.58, 0.53, 0.46] : [0.48, 0.49, 0.5];
-    const vary = 0.85 + 0.32 * ((id * 17.37) % 1);
-    const light = 0.86 + 0.34 * dome + 0.22 * (cx + cy);
-    const soil = 1 - 0.28 * smooth(0.5, 0.8, patch);
-    const k = vary * light * soil * (0.92 + (g - 0.5) * 0.2 + (n - 0.5) * 0.18);
-    const greenJoint = smooth(0.55, 0.78, moss);
-    const jc = [0.12 + greenJoint * 0.04, 0.115 + greenJoint * 0.07, 0.1 + greenJoint * 0.0];
-    const h = stone * (0.35 + dome * 0.65) + (n - 0.5) * 0.06 + (g - 0.5) * 0.05;
-    return [
-      jc[0] + (fam[0] * k - jc[0]) * stone,
-      jc[1] + (fam[1] * k - jc[1]) * stone,
-      jc[2] + (fam[2] * k - jc[2]) * stone,
-      h,
-    ];
-  }, 6);
+  // — bruk: kostki granitowe ~10 cm ułożone w wachlarze, jak na ulicach starych miast:
+  //   jasnoszare, niebieskawe i ciepłe kamienie z własnym odcieniem, ciemna fuga z ziemią
+  //   i mchem, grubsza fuga na granicy wachlarzy, rzadkie jesienne liście. Kafel 3,2 m (4 wachlarze).
+  const fan = voronoi(2, 77, 0.5);
+  const SETTS = [[0.7, 0.71, 0.72], [0.62, 0.65, 0.7], [0.73, 0.71, 0.66], [0.57, 0.59, 0.63], [0.78, 0.77, 0.75], [0.48, 0.5, 0.54]];
+  T.cobble = bake(1024, 1024, (u, v) => {
+    const { d1, d2, id, cx, cy } = fan(u, v);
+    const TILE = 3.2, RHO = 0.1 / TILE, cell = Math.floor(id * 997);
+    const r = d1 / 2, ring = Math.floor(r / RHO), fr = r / RHO - ring;
+    const n = Math.max(4, Math.round(Math.PI * 2 * (ring + 0.5)));
+    const a = (Math.atan2(-cy, -cx) / (Math.PI * 2) + 0.5) * n + ihash(ring + 5, cell) * n;
+    const j0 = Math.floor(a), fa = a - j0, j = ((j0 % n) + n) % n;
+    const sid = ihash(ring * 64 + j, cell + 31), sid2 = ihash(ring * 64 + j, cell + 77);
+    const jw = 0.005 + 0.004 * sid2;                               // połowa szerokości fugi, m
+    let dm = Math.min(Math.min(fr, 1 - fr) * RHO, Math.min(fa, 1 - fa) * ((Math.PI * 2 * r) / n)) * TILE;
+    dm = Math.min(dm, (d2 - d1) * 0.5 * (TILE / 2) + 0.004);       // granica wachlarzy = grubsza fuga
+    const g = nC(u, v, 256, 1), g2 = nB(u + 0.3, v + 0.1, 96, 2), patch = nA(u + 0.21, v + 0.6, 4, 3), moss = nC(u + 0.5, v, 12, 3);
+    const pick = sid < 0.2 ? 0 : sid < 0.4 ? 1 : sid < 0.6 ? 2 : sid < 0.78 ? 3 : sid < 0.92 ? 4 : 5;
+    const stone = smooth(jw, jw + 0.006, dm), dome = smooth(jw, jw + 0.05, dm);
+    const vary = 0.86 + 0.26 * sid2 + (g - 0.5) * 0.14 + (g2 - 0.5) * 0.1;
+    const ao = 0.8 + 0.2 * smooth(jw, jw + 0.03, dm);
+    const soil = 1 - 0.24 * smooth(0.55, 0.8, patch);
+    const col = SETTS[pick].map((c) => c * vary * ao * soil);
+    const gj = smooth(0.55, 0.78, moss);
+    const joint = [0.25 - gj * 0.03, 0.23 + gj * 0.02, 0.2 - gj * 0.02].map((c) => c * (0.8 + 0.4 * g));
+    let rgb = [0, 1, 2].map((k) => joint[k] + (col[k] - joint[k]) * stone);
+    const lf = nB(u + 0.17, v + 0.43, 190, 1);
+    if (lf > 0.972) { const lc = LEAVES[Math.floor(ihash(Math.floor(u * 190), Math.floor(v * 190)) * 4)]; rgb = rgb.map((c, k) => c * 0.25 + lc[k] * 0.75); }
+    return [rgb[0], rgb[1], rgb[2], stone * (0.45 + dome * 0.55) + (g - 0.5) * 0.05];
+  }, 5);
+
+  // — mała kostka (ok. 5 cm) w pasie przy krawężniku: jasny granit, spoiny z ziemią
+  T.sett = bake(512, 512, (u, v) => {
+    const N = 18, ty = v * N, iy = Math.floor(ty), fy = ty - iy;
+    const tx = u * N + Math.floor(ihash(iy, 3) * N), ix = Math.floor(tx), fx = tx - ix;
+    const sid = ihash(ix % N, iy + 11), sid2 = ihash(ix % N, iy + 97);
+    const g = nB(u, v, 128, 1), patch = nA(u + 0.4, v + 0.2, 4, 3);
+    const gap = Math.min(fx, 1 - fx, fy, 1 - fy);
+    const pal = sid < 0.4 ? [0.76, 0.76, 0.74] : sid < 0.7 ? [0.82, 0.8, 0.77] : sid < 0.9 ? [0.7, 0.7, 0.69] : [0.78, 0.74, 0.69];
+    const k = (0.88 + 0.22 * sid2 + (g - 0.5) * 0.12) * (1 - 0.15 * smooth(0.55, 0.8, patch));
+    const stone = smooth(0.05, 0.14, gap);
+    const j = [0.24, 0.22, 0.19];
+    return [j[0] + (pal[0] * k - j[0]) * stone, j[1] + (pal[1] * k - j[1]) * stone, j[2] + (pal[2] * k - j[2]) * stone, stone * (0.5 + 0.5 * smooth(0.1, 0.4, gap)) + (g - 0.5) * 0.05];
+  }, 4);
+
+  // — fryz: kafel 0,6 × 0,8 m z dwoma pasami po 0,4 m. Góra: sztukateria (pnącze, rozety i liście
+  //   między listwami z koralikami). Dół: pas cegły z ciemnymi krzyżami (neogotyk).
+  //   Barwiony kolorem wierzchołków (opaska albo cegła), wysokość daje relief w normal mapie.
+  T.frieze = bake(512, 512, (u, v) => {
+    const g = nB(u, v, 200, 1);
+    if (v < 0.5) {
+      const yb = v * 2, X = (u - 0.5) * 0.6, Y = (yb - 0.5) * 0.4;
+      const bead = 0.5 + 0.18 * Math.cos(u * Math.PI * 2 * 12);
+      let h = 0.3;
+      if (yb < 0.075 || yb > 0.925) h = Math.max(h, bead);
+      const yc = 0.17 * Math.sin(u * Math.PI * 2) * 0.4;
+      h = Math.max(h, smooth(0.014, 0.006, Math.abs(Y - yc)) * 0.7);
+      for (const cx of [0.5, 0, 1]) {
+        const dx = (u - cx) * 0.6, r = Math.hypot(dx, Y), th = Math.atan2(Y, dx);
+        const petal = 0.55 + 0.45 * Math.cos(8 * th);
+        h = Math.max(h, smooth(0.1, 0.06, r) * (0.55 + 0.35 * petal), smooth(0.03, 0.0, r) * 0.9);
+      }
+      for (const [lu, sg] of [[0.25, 1], [0.75, -1]]) {
+        const lx = (u - lu) * 0.6 / 0.085, ly = (Y - sg * 0.07) / 0.032;
+        h = Math.max(h, Math.max(0, 1 - lx * lx - ly * ly) * 0.75);
+      }
+      const c = 0.74 + 0.26 * h + (g - 0.5) * 0.05;
+      return [c, c * 0.985, c * 0.95, h];
+    }
+    const yb = (v - 0.5) * 2, ty = yb * 6, iy = Math.floor(ty), fy = ty - iy;
+    const tx = u * 2 + (iy % 2) * 0.5, fx = tx - Math.floor(tx);
+    const X = (u - 0.25) * 0.6, X2 = (u - 0.75) * 0.6, Y = (yb - 0.5) * 0.4;
+    const cross = [X, X2].some((x) => (Math.abs(x) < 0.1 && Math.abs(Y) < 0.033) || (Math.abs(x) < 0.033 && Math.abs(Y) < 0.12));
+    const mort = Math.min(fy, 1 - fy) < 0.06 || Math.min(fx, 1 - fx) < 0.025;
+    const bv = 0.85 + (ihash(Math.floor(tx), iy + 5) - 0.5) * 0.2 + (g - 0.5) * 0.06;
+    if (mort) return [0.66, 0.64, 0.6, 0.1];
+    return cross ? [0.36 * bv, 0.2 * bv, 0.17 * bv, 0.55] : [0.66 * bv, 0.36 * bv, 0.26 * bv, 0.5];
+  }, 4);
 
   // — płyty chodnikowe 50×50 cm: każda z innym odcieniem, ziarno, plamy, pęknięcia, mech w szczelinach
   const crack = tileNoise(91);
@@ -205,14 +260,16 @@ export function createTextures() {
     if (gap < 0.014) { const gm = smooth(0.55, 0.8, moss); r = 0.22 + gm * 0.0; g = 0.21 + gm * 0.08; b = 0.17; h = 0.1; }
     else if (gap < 0.034) { h -= (0.034 - gap) * 7; const e = 1 - (gap - 0.014) / 0.02; r *= 1 - e * 0.18; g *= 1 - e * 0.18; b *= 1 - e * 0.18; }
     if (isCrack) { r *= 0.6; g *= 0.6; b *= 0.6; h -= 0.25; }
+    const lf = nA(u + 0.27, v + 0.52, 140, 1);
+    if (lf > 0.972 && gap > 0.04) { const lc = LEAVES[Math.floor(ihash(Math.floor(u * 140), Math.floor(v * 140)) * 4)]; r = r * 0.3 + lc[0] * 0.7; g = g * 0.3 + lc[1] * 0.7; b = b * 0.3 + lc[2] * 0.7; }
     return [r, g, b, h];
   }, 5);
 
-  // — granit krawężnika —
+  // — krawężnik z piaskowca (beżowy, jak na zdjęciach), drobne ziarno i ciemniejsze plamy —
   T.curb = bake(256, 256, (u, v) => {
     const n = nA(u, v, 8, 3), sp = nB(u, v, 128, 1);
-    const c = 0.55 + (n - 0.5) * 0.1 + (sp > 0.7 ? -0.2 : sp < 0.25 ? 0.12 : 0);
-    return [c, c, c * 1.02, n * 0.3 + sp * 0.2];
+    const c = 0.74 + (n - 0.5) * 0.12 + (sp > 0.7 ? -0.16 : sp < 0.25 ? 0.08 : 0);
+    return [c, c * 0.92, c * 0.76, n * 0.3 + sp * 0.2];
   }, 2);
 
   // — blacha na rąbek stojący —
@@ -233,6 +290,9 @@ export function createTextures() {
     const fl = nB(u + 0.31, v + 0.57, 96, 1);
     if (fl > 0.955) return [0.95 * g, 0.94 * g, 0.82 * g, f * 0.7 + 0.2];
     if (fl > 0.94) return [0.9, 0.72 * g, 0.12, f * 0.7 + 0.2];
+    // opadłe liście w trawie: rzadkie żółte, pomarańczowe i brązowe plamki
+    const lf = nB(u + 0.13, v + 0.81, 150, 1);
+    if (lf > 0.955) { const lc = LEAVES[Math.floor(ihash(Math.floor(u * 150), Math.floor(v * 150)) * 4)]; return [lc[0] * g, lc[1] * g, lc[2] * g, f * 0.6 + 0.2]; }
     return [(0.3 + dry * 0.14) * g, (0.46 + dry * 0.05) * g, 0.2 * g, f * 0.6 + bl * 0.25 + n * 0.15];
   }, 3);
 

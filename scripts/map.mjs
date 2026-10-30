@@ -75,8 +75,16 @@ if (args.includes('--props')) {
   for (const b of c.benches) dot(b.p, 0.8, '#7a4a1a');
   for (const p of c.props) dot(p.p, 1, '#ff3399');
 }
+// plan miasteczka (--plan): obrys jądra, pierścień plant, rynek, ziarna Voronoi
+if (args.includes('--plan') && c.plan) {
+  const P = c.plan, path = (pts, close = true) => { x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo(X(p[0]), Z(p[1])) : x.moveTo(X(p[0]), Z(p[1])))); if (close) x.closePath(); };
+  x.lineWidth = 2; x.strokeStyle = '#00e5ff'; x.setLineDash([8, 5]); path(P.outline.pts); x.stroke(); x.setLineDash([]);
+  if (P.ring) { x.strokeStyle = '#7CFC00'; path(P.ring.outer); x.stroke(); }
+  x.strokeStyle = '#ff00ff'; x.lineWidth = 3; path(P.rynek.poly); x.stroke();
+  for (const s of c.seedList) { x.fillStyle = s.dead ? '#ff00ff' : s.fixed ? '#ffffff' : '#000000'; x.beginPath(); x.arc(X(s.x), Z(s.z), 2.2, 0, 7); x.fill(); }
+}
 x.fillStyle = '#fff'; x.font = '20px sans-serif';
-x.fillText(`ziarno ${seed} · ${c.streets.length} odcinków dróg · ${c.bridges.length} mostów`, 16, 28);
+x.fillText(`ziarno ${seed} · ${c.plan ? c.plan.type + ' · ' : ''}${c.terrain.riverMode} · ${c.streets.length} odcinków dróg · ${c.bridges.length} mostów`, 16, 28);
 fs.writeFileSync(OUT, cv.toBuffer('image/png'));
 console.log('plan →', OUT);
 void filled;

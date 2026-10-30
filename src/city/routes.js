@@ -55,6 +55,12 @@ function bestRoute(T, bridges, tries, build, wantCross) {
       score += (cr.length - 1) * 400 + (1 - Math.sin(cr[0].angle)) * 60 + (wantCross ? 0 : 260);
       if (bridges.some((b) => Math.hypot(b.p[0] - cr[0].p[0], b.p[1] - cr[0].p[1]) < 100)) score += 80;
     }
+    // autostrada omija miasteczko (obwodnica): kara za przejazd blisko rynku
+    if (T.center) {
+      let dmin = 1e9;
+      for (const p of pts) dmin = Math.min(dmin, Math.hypot(p[0] - T.center[0], p[1] - T.center[1]));
+      if (dmin < 310) score += (310 - dmin) * 2.5;
+    }
     if (!best || score < best.score) best = { score, pts, cr };
   }
   return best;

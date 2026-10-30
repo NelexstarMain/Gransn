@@ -36,6 +36,18 @@ export class CollisionGrid {
       const [a, c] = sz, e = pr.e, n = pr.n, P = (u, w) => [pr.p[0] + e[0] * u + n[0] * w, pr.p[1] + e[1] * u + n[1] * w];
       this.fill([P(-a, -c), P(a, -c), P(a, c), P(-a, c)], SOLID);
     }
+    // ogrodzenia ogrodów: wąski pas wzdłuż kratki i słupki
+    for (const f of city.fences || []) {
+      const dx = f.b[0] - f.a[0], dz = f.b[1] - f.a[1], l = Math.hypot(dx, dz) || 1, nx = (-dz / l) * 0.18, nz = (dx / l) * 0.18;
+      this.fill([[f.a[0] + nx, f.a[1] + nz], [f.b[0] + nx, f.b[1] + nz], [f.b[0] - nx, f.b[1] - nz], [f.a[0] - nx, f.a[1] - nz]], SOLID);
+    }
+    for (const po of city.posts || []) this.disc(po.p[0], po.p[1], 0.25);
+    // kościół: prostokąt budynku (z zapasem na przypory)
+    for (const ex of city.extras) {
+      if (ex.kind !== 'church') continue;
+      const P = (a, c) => [ex.p[0] + ex.e[0] * a + ex.n[0] * c, ex.p[1] + ex.e[1] * a + ex.n[1] * c], hw = ex.W / 2 + 0.6, hd = ex.D / 2 + 0.6;
+      this.fill([P(-hw, -hd), P(hw, -hd), P(hw, hd), P(-hw, hd)], SOLID);
+    }
     for (const m of city.monuments) {
       const r = m.kind === 'fountain' ? 4.4 : 2.2, [x, z] = m.p;
       this.fill([[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]], SOLID);

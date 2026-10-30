@@ -77,6 +77,8 @@ export const PROPS = {
   rowboat:   P([3.5, 1.0, 1.5], 1.8, PRIO.furniture, { solid: [1.6, 0.7], orient: 'along', max: 20 }),
   deckchair: P([2.6, 2.4, 2.6], 1.5, PRIO.furniture, { orient: 'random', solid: [0.3, 0.3] }),
   telegraph: P([1.8, 7.5, 0.8], 0.4, PRIO.tall, { solid: [0.15, 0.15], tall: true, orient: 'along' }),
+  // ── cmentarz ───────────────────────────────────────────────────────────────
+  gravestone: P([0.8, 1.7, 0.45], 0.5, PRIO.small, { solid: [0.3, 0.16] }),
 };
 
 // ── budżet dodatków: razem ok. 50–100 nowych rzeczy na całą wyspę ────────────
@@ -122,6 +124,7 @@ export const ZONES = {
     ['firewood', 0.03], ['flowerbed', 0.05], ['well', 0.01], ['handcart', 0.02], ['stump', 0.01]],
   lawn: [['tree', 0.12], ['bush', 0.07], ['bench', 0.02], ['lamp', 0.02], ['flowerbed', 0.04], ['planter', 0.02], ['statue', 0.004], ['sundial', 0.004], ['hedge', 0.03]],
   edge: [['telegraph', 0.12], ['milestone', 0.03], ['roadcross', 0.01], ['shrine', 0.008], ['rock', 0.03], ['haystack', 0.01]],
+  cemetery: [['gravestone', 0.5], ['tree', 0.12], ['bush', 0.06], ['bench', 0.012], ['lamp', 0.012], ['roadcross', 0.012], ['statue', 0.004]],
 };
 
 // wybór rodzaju z tabeli strefy dla liczby hv ∈ [0, 1)
