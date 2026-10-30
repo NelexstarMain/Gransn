@@ -6,14 +6,26 @@
 import { Builder } from './builder.js';
 import { Cage } from './cage.js';
 import { M } from './modules.js';
+import './fragments.js';
+import { programOf, panelPlan } from './facade.js';
+import { facadesOf } from '../city/facades.js';
 import { SHOP_SIGNS, POSTERS } from './atlas.js';
+import { PROPS, moduleOf } from '../city/props.js';
 import { Rng, hash } from '../core/rng.js';
+import { noise3 } from '../core/noise.js';
 import { HALF } from '../city/layout.js';
-import { levelY, filled, quadGeom, wallPlan, buildingInfo, raised, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
+import { levelY, filled, quadGeom, wallPlan, designOf, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
+import { CAR_KINDS, PARKED_KINDS } from './vehicles.js';
+import { polyDist } from '../city/routes.js';
+import { SEG, bridgeSegments } from '../city/bridges.js';
+import { SURFACE, SURF_Y } from '../render/layers.js';
 
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+// pole czworokąta [u0w0, u1w0, u0w1, u1w1] (dwa trójkąty)
+const quadArea = (p) => Math.abs((p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1])) / 2 +
+  Math.abs((p[1][0] - p[3][0]) * (p[2][1] - p[3][1]) - (p[2][0] - p[3][0]) * (p[1][1] - p[3][1])) / 2;
 
 // Zniszczenia budynku: jeden z 20 rodzajów (render/wear.js, GLSL_PROFILE) i stopień 0..7.
 // Rodzaj mówi, które z cech (zacieki, wilgoć, płaty, pasy, wżery, łaty, pęknięcia, brud) w ogóle
@@ -25,12 +37,17 @@ const WEAR_POOL = {
   modern: [[0, 4], [1, 3], [2, 3], [3, 2], [11, 1]],
   any: [[0, 2], [1, 2], [2, 3], [3, 3], [4, 3], [5, 2], [6, 2], [7, 2], [8, 2], [9, 2], [10, 2], [11, 2], [12, 2], [13, 2], [14, 1], [15, 2], [16, 2], [17, 2], [18, 3], [19, 1]],
 };
-function wearOf(seed, bid, info) {
-  const r = new Rng(hash(seed, bid, 313));
-  const pool = info.zone === 2 ? WEAR_POOL.ministry : info.style === 'modern' ? WEAR_POOL.modern : WEAR_POOL.any;
-  const arch = r.weighted(pool);
-  const d = Math.max(0, Math.min(7, WEAR_BASE[arch] + r.int(-1, 1)));
-  return { s: arch + 20 * r.int(0, 11), d };
+function wearOf(city, bid, info) {
+  const cache = city._wear || (city._wear = new Map());
+  let w = cache.get(bid);
+  if (!w) {
+    const r = new Rng(hash(city.seed, bid, 313));
+    const pool = info.zone === 2 ? WEAR_POOL.ministry : info.style === 'modern' ? WEAR_POOL.modern : WEAR_POOL.any;
+    const arch = r.weighted(pool);
+    w = { s: arch + 20 * r.int(0, 11), d: Math.max(0, Math.min(7, WEAR_BASE[arch] + r.int(-1, 1))) };
+    cache.set(bid, w);
+  }
+  return w;
 }
 
 function place(b, name, cage, W, H, D, p) {
@@ -65,23 +82,82 @@ function placeLamp(b, T, l) {
 
 const LEAF_BY = { oak: [[0.34, 0.48, 0.22], [0.3, 0.42, 0.2], [0.42, 0.5, 0.24]], birch: [[0.5, 0.62, 0.3], [0.56, 0.6, 0.28]], poplar: [[0.3, 0.44, 0.24], [0.36, 0.46, 0.22]], pine: [[0.16, 0.3, 0.18], [0.2, 0.34, 0.2]] };
 
+// Jesień: część drzew (skupiona w dzielnicach, nie losowo co drzewo) ma żółte, pomarańczowe i
+// rdzawe liście, reszta zostaje zielona; iglaste nie zmieniają koloru.
+const AUTUMN = [[0.76, 0.64, 0.18], [0.72, 0.4, 0.12], [0.58, 0.28, 0.1], [0.62, 0.6, 0.2], [0.8, 0.5, 0.14]];
+function leafColor(sp, t, rr) {
+  const green = rr.pick(LEAF_BY[sp]);
+  if (sp === 'pine') return green;
+  const au = noise3(t.p[0] / 110 + 3.1, 0.7, t.p[1] / 110 - 1.7) + 0.5;
+  const chance = 0.1 + 0.6 * Math.max(0, Math.min(1, (au - 0.35) / 0.4));
+  return hash(t.seed || 1, 5) / 4294967296 < chance ? AUTUMN[hash(t.seed || 1, 6) % AUTUMN.length] : green;
+}
+
 function placeTree(b, T, t, r) {
   const sp = t.species || 'oak';
   const s = t.s, W = (sp === 'poplar' ? 4 : sp === 'pine' ? 5 : 7) * s, H = (sp === 'poplar' ? 14 : sp === 'pine' ? 12 : 9) * s;
   const rr = new Rng(t.seed || 1);
   const a = rr.float(0, Math.PI * 2), e = [Math.cos(a), Math.sin(a)], n = [-e[1], e[0]];
   const y = t.y ?? 0;
-  place(b, 'tree', cage4(T, null, boxPts(t.p, e, n, W, W), NONE, y, y + H), W, H, W, { species: sp, seed: t.seed, leaf: rr.pick(LEAF_BY[sp]) });
+  place(b, 'tree', cage4(T, null, boxPts(t.p, e, n, W, W), NONE, y, y + H), W, H, W, { species: sp, seed: t.seed, leaf: leafColor(sp, t, rr) });
 }
 
 const CAR_COLORS = [[0.12, 0.13, 0.15], [0.55, 0.12, 0.1], [0.2, 0.32, 0.24], [0.82, 0.8, 0.72], [0.25, 0.35, 0.55], [0.6, 0.6, 0.62], [0.45, 0.32, 0.2]];
-const PROP_SIZE = { car: [3.6, 2.2, 1.7], kiosk: [2.4, 3.2, 2.0], booth: [1.0, 2.5, 1.0], busstop: [3.2, 3.1, 1.4], bin: [0.7, 1, 0.7] };
+const AWNINGS_ = [[[0.8, 0.2, 0.18], [0.95, 0.93, 0.86]], [[0.2, 0.45, 0.3], [0.95, 0.93, 0.86]], [[0.2, 0.3, 0.6], [0.95, 0.93, 0.86]], [[0.9, 0.7, 0.2], [0.95, 0.93, 0.86]]];
+const FLOWERS_ = [[0.9, 0.2, 0.3], [0.95, 0.85, 0.3], [0.8, 0.5, 0.9], [0.98, 0.98, 0.95], [0.95, 0.55, 0.2]];
+const WOODS_ = [[0.52, 0.38, 0.24], [0.42, 0.3, 0.2], [0.6, 0.46, 0.3]];
+
+// parametry wyglądu rekwizytu (kolory, napisy) z jego własnego seeda — stałe dla danego miejsca
+const VARIANT = {
+  // zaparkowane auto: typ z seedu miejsca (ten sam w każdym workerze), niski poziom detalu
+  car: (r) => ({ kind: r.pick(PARKED_KINDS), color: r.pick(CAR_COLORS), seat: r.pick([[0.4, 0.12, 0.1], [0.2, 0.15, 0.1], [0.15, 0.2, 0.3]]), q: 0, band: r.pick([[0.95, 0.92, 0.82], [0.85, 0.7, 0.3]]) }),
+  kiosk: (r) => ({ sign: r.pick(['gin', 'milk', 'bread', 'tobacco']), color: r.pick([[0.3, 0.45, 0.35], [0.55, 0.2, 0.15], [0.25, 0.35, 0.5]]) }),
+  hydrant: (r) => ({ color: r.pick([[0.85, 0.14, 0.1], [0.85, 0.14, 0.1], [0.22, 0.5, 0.32], [0.95, 0.78, 0.15]]) }),
+  postbox: (r) => ({ color: r.pick([[0.85, 0.14, 0.12], [0.85, 0.14, 0.12], [0.2, 0.36, 0.72], [0.95, 0.78, 0.15]]) }),
+  bollard: (r) => ({ color: r.pick([[0.13, 0.14, 0.14], [0.55, 0.53, 0.5]]) }),
+  adcolumn: (r) => ({ posters: Array.from({ length: 8 }, () => r.pick(POSTERS)) }),
+  planter: (r) => ({ flowers: r.pick(FLOWERS_), stone: r.pick([[0.74, 0.7, 0.64], [0.66, 0.64, 0.6], [0.8, 0.74, 0.62]]) }),
+  sandwich: (r) => ({ sign: r.pick(SHOP_SIGNS) }),
+  cafeset: (r) => { const a = r.pick(AWNINGS_); return { c1: a[0], c2: a[1] }; },
+  stall: (r) => { const a = r.pick(AWNINGS_); return { c1: a[0], c2: a[1] }; },
+  fruitstall: (r) => ({ c1: r.pick(AWNINGS_)[0] }),
+  flowerstand: (r) => ({ c1: r.pick(AWNINGS_)[0], cols: [r.pick(FLOWERS_), r.pick(FLOWERS_), r.pick(FLOWERS_), r.pick(FLOWERS_)] }),
+  handcart: (r) => ({ sack: r.pick([[0.78, 0.68, 0.5], [0.7, 0.62, 0.45]]) }),
+  crates: (r) => ({ tint: r.pick(WOODS_) }),
+  barrels: (r) => ({ tint: r.pick(WOODS_) }),
+  wagon: (r) => ({ tint: r.pick([[0.45, 0.3, 0.2], [0.3, 0.4, 0.5], [0.5, 0.25, 0.2]]) }),
+  statue: (r) => ({ bronze: r.pick([[0.5, 0.72, 0.62], [0.5, 0.42, 0.32], [0.7, 0.6, 0.4]]) }),
+  gazebo: (r) => ({ tint: r.pick([[0.9, 0.88, 0.82], [0.85, 0.9, 0.88]]), roof: r.pick([[0.28, 0.5, 0.42], [0.55, 0.22, 0.18]]) }),
+  well: (r) => ({ roof: r.pick([[0.62, 0.3, 0.2], [0.36, 0.3, 0.26]]) }),
+  pergola: (r) => ({ tint: r.pick([[0.9, 0.88, 0.82], [0.5, 0.36, 0.24]]) }),
+  flowerbed: (r) => ({ cols: [r.pick(FLOWERS_), r.pick(FLOWERS_), r.pick(FLOWERS_), r.pick(FLOWERS_)] }),
+  shed: (r) => ({ tint: r.pick(WOODS_), roof: r.pick([[0.35, 0.3, 0.28], [0.45, 0.2, 0.15]]) }),
+  haystack: (r) => ({ tint: r.pick([[0.9, 0.78, 0.38], [0.82, 0.7, 0.34]]) }),
+  coop: (r) => ({ tint: r.pick(WOODS_) }),
+  rock: (r) => ({ tint: r.pick([[0.6, 0.6, 0.57], [0.5, 0.48, 0.44], [0.66, 0.62, 0.55]]) }),
+  windmill: (r) => ({ tint: r.pick([[0.9, 0.86, 0.78], [0.85, 0.78, 0.66]]), roof: r.pick([[0.3, 0.2, 0.15], [0.4, 0.22, 0.16]]) }),
+  rowboat: (r) => ({ hull: r.pick([[0.25, 0.4, 0.55], [0.6, 0.2, 0.18], [0.85, 0.82, 0.72], [0.2, 0.42, 0.3]]) }),
+  deckchair: (r) => { const a = r.pick(AWNINGS_); return { c1: a[0], c2: a[1] }; },
+  gravestone: (r) => ({ variant: r.pick([0, 0, 0, 1, 1, 2]), tint: r.pick([[0.55, 0.54, 0.52], [0.36, 0.36, 0.38], [0.64, 0.62, 0.58], [0.45, 0.47, 0.44]]) }),
+};
+
+// parametry wyglądu rekwizytu o danym rodzaju i seedzie (też dla zdjęć studyjnych)
+export function propParams(kind, seed = 1) {
+  return VARIANT[kind] ? VARIANT[kind](new Rng(seed)) : {};
+}
+
+// ogrodzenie ogrodu: odcinek leży na granicy ćwiartek, kratka jest wyśrodkowana na tej linii
+function placeFence(b, T, f) {
+  const [nx, nz] = f.n, sh = 0.15;
+  const a = [f.a[0] - nx * sh, f.a[1] - nz * sh], c = [f.b[0] - nx * sh, f.b[1] - nz * sh];
+  place(b, 'fence', cage4(T, null, [a, c, [a[0] + nx * 0.3, a[1] + nz * 0.3], [c[0] + nx * 0.3, c[1] + nz * 0.3]], NONE, 0.15, 1.75), dist(f.a, f.b), 1.6, 0.3, { iron: f.iron });
+}
 
 function placeProp(b, T, pr, seed) {
-  const r = new Rng(hash(seed, Math.round(pr.p[0] * 10), Math.round(pr.p[1] * 10)));
+  const r = new Rng(pr.seed ?? hash(seed, Math.round(pr.p[0] * 10), Math.round(pr.p[1] * 10)));
   if (pr.kind === 'bush') {
     const s = pr.s;
-    place(b, 'bush', cage4(T, null, boxPts(pr.p, [1, 0], [0, 1], 2.2 * s, 2.2 * s), NONE, (pr.y || 0) - 0.1, (pr.y || 0) + 1.6 * s), 2.2 * s, 1.7 * s, 2.2 * s, { leaf: r.pick(LEAF_BY.oak), flowers: r.chance(0.3) ? r.pick([[0.9, 0.2, 0.3], [0.95, 0.85, 0.3], [0.8, 0.5, 0.9]]) : null });
+    place(b, 'bush', cage4(T, null, boxPts(pr.p, [1, 0], [0, 1], 2.2 * s, 2.2 * s), NONE, (pr.y || 0) - 0.1, (pr.y || 0) + 1.6 * s), 2.2 * s, 1.7 * s, 2.2 * s, { leaf: r.pick(LEAF_BY.oak), flowers: r.chance(0.3) ? r.pick([[0.9, 0.2, 0.3], [0.95, 0.85, 0.3], [0.8, 0.5, 0.9]]) : null, seed: r.int(1, 99999) });
     return;
   }
   if (pr.kind === 'column') {
@@ -92,10 +168,14 @@ function placeProp(b, T, pr, seed) {
     b.cyl('stone', 0.5, 0.5, pr.h - 0.4, pr.h + 0.2, 0.3, 0.45, 10, { tint: [0.82, 0.8, 0.74] }, 'Y');
     return;
   }
-  const [W, H, D] = PROP_SIZE[pr.kind];
+  const [W, H, D] = PROPS[pr.kind].size;
   const y0 = pr.y ?? 0.15;
-  const p = pr.kind === 'car' ? { color: r.pick(CAR_COLORS), seat: r.pick([[0.4, 0.12, 0.1], [0.2, 0.15, 0.1], [0.15, 0.2, 0.3]]) } : pr.kind === 'kiosk' ? { sign: r.pick(['gin', 'milk', 'bread', 'tobacco']), color: r.pick([[0.3, 0.45, 0.35], [0.55, 0.2, 0.15], [0.25, 0.35, 0.5]]) } : {};
-  place(b, pr.kind === 'car' ? 'oldcar' : pr.kind, cage4(T, null, boxPts(pr.p, pr.e, pr.n, W, D), NONE, y0, y0 + H), W, H, D, p);
+  const p = VARIANT[pr.kind] ? VARIANT[pr.kind](r) : {};
+  // zaparkowane auto: moduł liczy w wymiarach nominalnych typu, a klatka (stopka z props.js) lekko go ściska
+  const K = pr.kind === 'car' ? CAR_KINDS[p.kind] : null;
+  b.aoK = 0.45; // niskie rekwizyty nie giną w cieniu przy ziemi
+  place(b, moduleOf(pr.kind), cage4(T, null, boxPts(pr.p, pr.e, pr.n, W, D), NONE, y0, y0 + H), K ? K.L : W, H, K ? K.Wd : D, p);
+  b.aoK = 1;
 }
 
 // cage z wysokościami w 4 narożnikach (trasy: tory, estakada)
@@ -132,6 +212,14 @@ function buildExtra(b, city, ex) {
     const n = [-ex.e[1], ex.e[0]], end = [ex.p[0] + ex.e[0] * ex.len, ex.p[1] + ex.e[1] * ex.len];
     const pts = [[ex.p[0] - n[0] * 2, ex.p[1] - n[1] * 2], [end[0] - n[0] * 2, end[1] - n[1] * 2], [ex.p[0] + n[0] * 2, ex.p[1] + n[1] * 2], [end[0] + n[0] * 2, end[1] + n[1] * 2]];
     place(b, 'pier', Cage.quad(pts[0], pts[1], pts[2], pts[3], T.seaY - 4, T.seaY + 2.2), ex.len, 6.2, 4, {});
+  } else if (ex.kind === 'townhall') {
+    // wieża ratusza: dolne 3,6 m chowa się w dachu, całość ~17 m
+    const w = ex.w, H = 17, y0 = levelY(ex.top) + 0.5 - 0.2;
+    place(b, 'townhall', cage4(T, null, boxPts(ex.p, [1, 0], [0, 1], w, w), NONE, y0, y0 + H), w, H, w, { hide: 3.6 });
+  } else if (ex.kind === 'factorychimney') {
+    place(b, 'factorychimney', cage4(T, null, boxPts(ex.p, [1, 0], [0, 1], 4, 4), NONE, 0.05, ex.H + 0.05), 4, ex.H, 4, {});
+  } else if (ex.kind === 'church') {
+    place(b, 'church', cage4(T, null, boxPts(ex.p, ex.e, ex.n, ex.W, ex.D), NONE, 0.05, ex.H + 0.05), ex.W, ex.H, ex.D, { brick: ex.brick, wall: ex.wall, roof: ex.roof, spire: ex.spire });
   } else if (ex.kind === 'station') {
     // peron wzdłuż toru + pociąg (lokomotywa i 3 wagony)
     const P = (along, side) => [ex.p[0] + ex.e[0] * along + ex.n[0] * side, ex.p[1] + ex.e[1] * along + ex.n[1] * side];
@@ -171,7 +259,7 @@ export function buildChunk(city, id) {
   const b = new Builder();
   b.ground = (x, z) => T.height(x, z);
   for (const q of ch.quads) buildQuad(b, city, q);
-  for (const i of ch.roads) buildRoad(b, city, city.streets[i], i);
+  for (const i of ch.roads) buildRoad(b, city, city.streets[i]);
   const r = new Rng(hash(city.seed, id, 99));
   for (const t of ch.trees) placeTree(b, T, t, r);
   for (const l of ch.lamps) placeLamp(b, T, l);
@@ -181,6 +269,8 @@ export function buildChunk(city, id) {
     else place(b, 'monument', cage4(T, null, boxPts(m.p, [1, 0], [0, 1], 4, 4), NONE, 0.15, 13.15), 4, 13, 4, { poster: 'bb4' });
   }
   for (const pr of ch.props) placeProp(b, T, pr, city.seed);
+  for (const f of ch.fences) placeFence(b, T, f);
+  for (const po of ch.posts) place(b, 'fencepost', cage4(T, null, boxPts(po.p, [1, 0], [0, 1], 0.5, 0.5), NONE, 0.15, 2.05), 0.5, 1.9, 0.5, {});
   for (const i of ch.rail) buildRail(b, city, i);
   for (const ex of ch.extras) buildExtra(b, city, ex);
   for (const bb of ch.billboards) {
@@ -206,8 +296,7 @@ function buildQuad(b, city, q) {
     const Qi = quarterInfo(G, i);
     if (g.TY[a] === T_BLD) {
       const zone = g.ZN[a];
-      const info = buildingInfo(seed, g.BID[a], zone);
-      info.wear = wearOf(seed, g.BID[a], info);
+      const info = designOf(city, g.BID[a], zone);
       const top = g.H[a];
       setTints(b, info);
       for (let L = 0; L < top; L++) {
@@ -217,7 +306,10 @@ function buildQuad(b, city, q) {
           const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
           if (filled(g, nb, L)) continue;
           const f0 = side === 0 ? Qi.mA : Qi.mB, back1 = side === 0 ? Qi.mB : Qi.mA;
-          wallSegment(b, city, info, a, nb, q, side, L, [f0, Qi.c, Qi.v, back1], top);
+          // co jest dalej za końcem ściany w środku czworokąta: prosto, wypukły/wklęsły narożnik czy „szachownica”
+          const other = filled(g, V[side === 0 ? (i + 3) % 4 : (i + 1) % 4], L), opp = filled(g, V[(i + 2) % 4], L);
+          const ek = { kind: other ? (opp ? 'concave' : 'straight') : (opp ? 'saddle' : 'convex'), owner: side === 0 };
+          wallSegment(b, city, info, a, nb, q, side, L, [f0, Qi.c, Qi.v, back1], top, ek);
         }
         if (L > 0 && !filled(g, a, L - 1)) {
           const y = levelY(L);
@@ -243,20 +335,19 @@ function buildQuad(b, city, q) {
 
 function setTints(b, info) {
   b.setTint('plaster', info.tint);
-  b.setTint('brick', info.style === 'brick' ? [0.78, 0.6, 0.52] : [0.68, 0.52, 0.46]);
+  b.setTint('brick', info.style === 'brick' ? info.brickTint || [0.98, 0.92, 0.88] : [0.8, 0.7, 0.64]);
   b.setTint('stone', info.trim || [0.76, 0.73, 0.67]);
 }
 
 const GLASS = [[0.52, 0.58, 0.64], [0.48, 0.55, 0.62], [0.56, 0.6, 0.62], [0.62, 0.6, 0.55], [0.44, 0.42, 0.38], [0.36, 0.4, 0.45]];
 
-function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
+function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
   const T = city.terrain, g = city.grid;
   const [f0, f1, b0, b1] = pts;
   const W = dist(f0, f1), D = (dist(f0, b0) + dist(f1, b1)) / 2;
   const y0 = levelY(L), y1 = levelY(L + 1), H = y1 - y0;
   const cage = cage4(T, null, pts, NONE, y0, y1);
   const hh = hash(city.seed, a, nb, q, L);
-  const plan = wallPlan(city, a, nb, q, side, L);
   const house = info.zone === Z_HOUSES;
   const p = {
     style: info.style, wallMat: info.wallMat, groundMat: info.groundMat || info.wallMat,
@@ -264,28 +355,43 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top) {
     shopGlass: [0.3, 0.32, 0.33], variant: info.variant, bars: info.bars, glassTint: GLASS[hh % GLASS.length],
     shutters: info.shutters, shutterTint: info.shutterTint, flowers: L > 0 ? info.flowers : null,
     simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4], winW: info.winW, winH: info.winH, curtain: info.curtain, awning: info.awning,
+    endKind: ek.kind, cornerOwner: ek.owner, trim: info.trim, brickTint: info.brickTint,
   };
-  let mod;
-  if (W < 1.25) mod = 'wall';
-  else if (L === 0) { mod = plan.mod; p.ground = true; }
-  else if (info.zone === 2) mod = 'ornate';
-  else if (plan.balcony && !house) mod = 'balcony';
-  else mod = info.style === 'ornate' ? 'ornate' : info.style === 'modern' ? 'modern' : 'window';
-  if (mod === 'shop' && W < 2.4) mod = 'window';
-  if (mod === 'door' && W < 1.8) mod = 'wall';
-  b.setWear((L === 0 ? 1 : 0) + (L === top - 1 ? 2 : 0), info.wear.d, info.wear.s);
+  // fasada z fragmentów (okna o stałej szerokości, wejścia, balkony, narożniki);
+  // Ministerstwo i styl modernistyczny zostają przy starych modułach
+  const seg = info.zone !== 2 && info.style !== 'modern' ? facadesOf(city).at(a, nb, q, side, L) : null;
+  let mod, plan;
+  if (seg && W >= 1.25) {
+    plan = panelPlan(city, info, programOf(city, g.BID[a], info), seg, L, top, W, H, p.simple, hash(city.seed, a, nb, q * 2 + side, L) / 4294967296);
+    mod = plan.mod;
+    if (L === 0) p.ground = true;
+    p.spec = plan.spec;
+    if (mod === 'shop' && W < 2.4) mod = 'wall';
+  } else {
+    plan = wallPlan(city, a, nb, q, side, L);
+    if (W < 1.25) mod = 'wall';
+    else if (L === 0) { mod = plan.mod; p.ground = true; }
+    else if (info.zone === 2) mod = 'ornate';
+    else if (plan.balcony && !house) mod = 'balcony';
+    else mod = info.style === 'ornate' ? 'ornate' : info.style === 'modern' ? 'modern' : 'window';
+    if (mod === 'shop' && W < 2.4) mod = 'window';
+    if (mod === 'door' && W < 1.8) mod = 'wall';
+    plan.string = L === 1 && info.zone === 1;
+  }
+  const wear = wearOf(city, g.BID[a], info);
+  b.setWear((L === 0 ? 1 : 0) + (L === top - 1 ? 2 : 0), wear.d, wear.s);
   place(b, mod, cage, W, H, D, p);
   if (L === 0 && plan.poster) place(b, 'poster', cage, W, H, D, { name: POSTERS[hh % POSTERS.length], y: 0.9, w: Math.min(W * 0.6, 1.2) });
   // gzyms nad parterem kamienicy
-  if (L === 1 && info.zone === 1 && !filled(g, nb, 0)) place(b, 'string', cage4(T, null, pts, NONE, y0, y0 + 0.32), W, 0.32, D, p);
+  if (plan.string && !filled(g, nb, 0)) place(b, 'string', cage4(T, null, pts, NONE, y0, y0 + 0.32), W, 0.32, D, p);
   // okap / gzyms wieńczący — wszystkie budynki mają tę samą wysokość okapu (0,5 m),
   // więc dachy sąsiadów zawsze stykają się bez szczelin
   if (L === top - 1) {
     const ce = info.ce;
     const cg = cage4(T, null, pts, NONE, y1, y1 + ce);
-    b.setWear(2, info.wear.d, info.wear.s, H);
-    if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint });
-    else place(b, 'cornice', cg, W, ce, D, { style: info.style === 'modern' ? 'modern' : info.style, consoles: info.style === 'ornate' });
+    b.setWear(2, wear.d, wear.s, H);
+    if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint, endKind: ek.kind, cornerOwner: ek.owner, brackets: info.style === 'brick' || info.style === 'ornate' || hash(city.seed, g.BID[a], 63) % 100 < 45 });
+    else place(b, 'cornice', cg, W, ce, D, { style: info.style === 'modern' ? 'modern' : info.style, consoles: info.style === 'ornate', endKind: ek.kind, cornerOwner: ek.owner });
   }
   b.clearWear();
 }
@@ -304,9 +410,11 @@ function roofQuarter(b, city, info, G, i, top) {
   const T = city.terrain, a = G.v[i];
   const base = levelY(top) + info.ce;
   const pts = roofSpec(city, G, i, top, info);
-  b.setWear(0, info.wear.d, info.wear.s);
+  const wear = wearOf(city, city.grid.BID[a], info);
+  b.setWear(0, wear.d, wear.s);
   b.wpoly(info.roofMat || 'roof', pts.map(([p, h]) => [p[0], T.height(p[0], p[1]) + base + h, p[1]]), [0, 1, 0], { tint: info.roofTint });
   const hv = pts[0][1];
+  if (info.dormers && hv >= 1.7) roofDormers(b, city, info, G, i, top, base);
   if (hv > 2.2 && hash(city.seed, a, 77) / 4294967296 < 0.12) {
     const pv = G.p[i];
     b.cell(cage4(T, null, boxPts(pv, [1, 0], [0, 1], 1, 1), NONE, base, base + 1), 1, 1, 1);
@@ -315,86 +423,152 @@ function roofQuarter(b, city, info, G, i, top) {
   b.clearWear();
 }
 
+// Lukarny na krawędziach okapu: w osi odcinka ściany, czyli nad oknami ostatniego piętra.
+// Połać to trójkąt (środek krawędzi, środek czworokąta, punkt narożny): wysokość rośnie
+// liniowo od okapu do kalenicy, stąd nachylenie s = R / odległość punktu od okapu.
+function roofDormers(b, city, info, G, i, top, base) {
+  const g = city.grid, T = city.terrain, V = G.v, a = V[i], R = info.ridge, vp = G.p[i];
+  for (const side of [0, 1]) {
+    const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
+    if (filled(g, nb, top - 1)) continue;
+    const f0 = side === 0 ? G.m[i] : G.m[(i + 3) % 4], c = G.c, W = dist(f0, c);
+    if (W < 2.0 || hash(city.seed, a, G.v[(i + 2) % 4], side, 78) / 4294967296 > info.dormerRate) continue;
+    const e = [(c[0] - f0[0]) / W, (c[1] - f0[1]) / W];
+    let n = [-e[1], e[0]];
+    const run = (vp[0] - f0[0]) * n[0] + (vp[1] - f0[1]) * n[1];
+    if (run < 0) n = [-n[0], -n[1]];
+    const depthToApex = Math.abs(run);
+    if (depthToApex < 1.8) continue;
+    const s = R / depthToApex, set = 0.35, wd = info.zone === Z_HOUSES ? 1.1 : 1.3;
+    const Hd = Math.max(1.2, Math.min(1.75, R * 0.9 - s * set)), Dd = Math.min(depthToApex * 0.8, Hd / s + 0.3);
+    const P = [(f0[0] + c[0]) / 2 + n[0] * set, (f0[1] + c[1]) / 2 + n[1] * set];
+    const F0 = [P[0] - e[0] * wd / 2, P[1] - e[1] * wd / 2], F1 = [P[0] + e[0] * wd / 2, P[1] + e[1] * wd / 2];
+    const B0 = [F0[0] + n[0] * Dd, F0[1] + n[1] * Dd], B1 = [F1[0] + n[0] * Dd, F1[1] + n[1] * Dd];
+    const yb = base + s * set;
+    const hh = hash(city.seed, a, side, 79);
+    place(b, 'dormer', cage4(T, null, [F0, F1, B0, B1], NONE, yb, yb + Hd), wd, Hd, Dd, {
+      wallMat: info.wallMat, roofMat: info.roofMat || 'roof', roofTint: info.roofTint, frameTint: info.frameTint,
+      glassTint: GLASS[hh % GLASS.length], curtain: info.curtain, style: info.style, metalTint: [0.2, 0.22, 0.21],
+    });
+  }
+}
+
 // Nawierzchnia ćwiartki pustego punktu. W mieście wszystko poza jezdnią leży
 // na +0,15 m (chodnik / trawnik / bruk podwórza) i jest DOCINANE do krawędzi
 // jezdni; od strony niskiego terenu (las, plaża) dostaje obrzeże.
-function groundQuarter(b, city, G, i, q) {
-  const g = city.grid, T = city.terrain, a = G.v[i], ty = g.TY[a];
-  if (!raised(city, a)) return;
-  const roads = city.roads;
-  const clampAll = (p) => {
-    let c = roads.clamp(p, 0.3);
-    const bank = T.clampToBank(c[0], c[1]);
+// Docinanie ćwiartki chodnika do jezdni i brzegu rzeki. Wszystkie rogi idą na TĘ
+// stronę ulicy/rzeki, po której leży punkt odniesienia (punkt siatki albo — gdy
+// sam stoi na jezdni — jego róg najdalej od jezdni). null = ćwiartka cała na jezdni.
+export function sidewalkClamp(city, G, i) {
+  const T = city.terrain, roads = city.roads;
+  const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
+  let ref = G.p[i];
+  if (roads.clearance(ref[0], ref[1]) < 0.3) {
+    let best = -1e9;
+    for (const p of raw) { const cl = roads.clearance(p[0], p[1]); if (cl > best) { best = cl; ref = p; } }
+    if (best < 0.3) return null;
+  }
+  const own = T.bankSide(ref[0], ref[1]);
+  return (p) => {
+    let c = roads.clampSide(p, ref, 0.3);
+    const bank = T.clampToBank(c[0], c[1], own);
     if (bank) c = [bank[0], bank[1]];
     return c;
   };
+}
+
+function groundQuarter(b, city, G, i, q) {
+  const g = city.grid, T = city.terrain, roads = city.roads, a = G.v[i], ty = g.TY[a];
+  if (!raised(city, a)) return;
+  const clampAll = sidewalkClamp(city, G, i);
+  if (!clampAll) return;
   const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
-  const pts = raw.map(clampAll);
-  // ćwiartka zjedzona przez jezdnię
-  const area = Math.abs((pts[1][0] - pts[0][0]) * (pts[2][1] - pts[0][1]) - (pts[2][0] - pts[0][0]) * (pts[1][1] - pts[0][1])) / 2 +
-    Math.abs((pts[1][0] - pts[3][0]) * (pts[2][1] - pts[3][1]) - (pts[2][0] - pts[3][0]) * (pts[1][1] - pts[3][1])) / 2;
-  if (area < 0.15) return;
-  const W = Math.max(0.3, dist(pts[0], pts[1])), D = Math.max(0.3, dist(pts[0], pts[2]));
-  const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES) ? 'grass'
-    : ty === T_COURT ? 'cobble' : 'slab';
-  if (mat === 'slab') {
-    // płyty leżą wzdłuż najbliższej jezdni
-    const nr = roads.nearest((G.p[i][0] + G.c[0]) / 2, (G.p[i][1] + G.c[1]) / 2);
-    const ang = nr ? Math.atan2(nr.s.b[1] - nr.s.a[1], nr.s.b[0] - nr.s.a[0]) : 0;
-    const ab = Math.round(((((ang % Math.PI) + Math.PI) % Math.PI) / Math.PI) * 255);
-    place(b, 'sidewalk', cage4(T, null, pts, NONE, 0, 0.15), W, 0.15, D, { mat: 'slab', o: { drape: 0.15, wear: [ab, 0, 0, 0] } });
-  } else place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat, step: 3, o: mat === 'cobble' ? { drape: 0.15, uvScale: 1 / COBBLE_H } : { drape: 0.15 } });
-  // Obrzeża (ścianki) wokół wyniesionej nawierzchni, żeby nie "wisiała" nad terenem:
-  // od strony niskich sąsiadów (las, plaża, tory), wody i jezdni poza miastem (tam nie ma krawężników
-  // z buildRoad). Sięgają głęboko pod teren (0,7 m, nad wodą 1,4 m), więc nawet na spadku widać mur, nie szczelinę.
-  for (const [s0, s1, nb] of [[G.m[i], G.c, G.v[(i + 1) % 4]], [G.c, G.m[(i + 3) % 4], G.v[(i + 3) % 4]]]) {
-    if (g.TY[nb] === T_BLD) continue;
-    const c0 = clampAll(s0), c1 = clampAll(s1);
-    if (dist(c0, c1) < 0.2) continue;
-    if (raised(city, nb)) {
-      // ciągła nawierzchnia — ścianka tylko tam, gdzie krawędź przylega do jezdni bez krawężnika
-      const mx = (c0[0] + c1[0]) / 2, mz = (c0[1] + c1[1]) / 2;
-      const nr = roads.nearest(mx, mz);
-      if (!nr || nr.c > 0.6 || nr.s.town) continue;
+  const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES) || lawn(city, a) ? 'lawn'
+    : ty === T_COURT || ty === T_PLAZA ? 'cobblep' : 'slab';
+  const lay = (pts, minArea) => {
+    if (quadArea(pts) < minArea) return; // zjedzone przez jezdnię
+    // narożniki rzucone na przeciwne brzegi rzeki → pas nad wodą; pomijamy
+    if (Math.max(dist(pts[0], pts[1]), dist(pts[0], pts[2]), dist(pts[1], pts[3]), dist(pts[2], pts[3])) > 9) return;
+    const W = Math.max(0.3, dist(pts[0], pts[1])), D = Math.max(0.3, dist(pts[0], pts[2]));
+    if (mat === 'slab') {
+      // płyty leżą wzdłuż najbliższej jezdni (kąt w bajcie)
+      const nr = roads.nearest((pts[0][0] + pts[3][0]) / 2, (pts[0][1] + pts[3][1]) / 2);
+      const ang = nr ? Math.atan2(nr.s.b[1] - nr.s.a[1], nr.s.b[0] - nr.s.a[0]) : 0;
+      const ab = Math.round(((((ang % Math.PI) + Math.PI) % Math.PI) / Math.PI) * 255);
+      place(b, 'sidewalk', cage4(T, null, pts, NONE, 0, 0.15), W, 0.15, D, { mat: 'slab', o: { drape: 0.15, wear: [ab, 0, 0, 0] } });
     }
-    const depth = g.TY[nb] === T_WATER ? 1.4 : 0.7;
+    else place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat, step: 3, o: { drape: 0.15, tint: ty === T_PLAZA ? [1, 0.96, 0.9] : undefined } });
+  };
+  // Przy jezdni ćwiartka dzielona jest na drobne pola, każde docinane osobno.
+  // Docięcie samych narożników całej ćwiartki zostawiało pola rozpięte NAD
+  // jezdnią (narożniki po obu stronach ulicy) — płyty przykrywały bruk.
+  const bil = (u, w) => lerp2(lerp2(raw[0], raw[1], u), lerp2(raw[2], raw[3], u), w);
+  let nearRoad = false;
+  for (let k = 0; k <= 4 && !nearRoad; k++) for (let j = 0; j <= 4; j++) if (roads.clearance(...clampAll(bil(k / 4, j / 4))) < 0.45) { nearRoad = true; break; }
+  if (!nearRoad) lay(raw.map(clampAll), 0.15);
+  else {
+    const len = Math.max(dist(raw[0], raw[1]), dist(raw[0], raw[2]), dist(raw[1], raw[3]), dist(raw[2], raw[3]));
+    const n = Math.min(4, Math.max(2, Math.ceil(len / 1.1)));
+    for (let j = 0; j < n; j++)
+      for (let k = 0; k < n; k++) {
+        const pts = [bil(k / n, j / n), bil((k + 1) / n, j / n), bil(k / n, (j + 1) / n), bil((k + 1) / n, (j + 1) / n)].map(clampAll);
+        const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4, cz = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
+        // (przy rzece docięcie do brzegu potrafi wepchnąć narożnik z powrotem na jezdnię)
+        if (roads.clearance(cx, cz) < 0.15 || pts.some((p) => roads.clearance(p[0], p[1]) < 0)) continue;
+        lay(pts, 0.01);
+      }
+  }
+  // obrzeża od strony niskich sąsiadów (las, plaża, tory) — bez szczelin na krawędzi
+  for (const [s0, s1, nb] of [[G.m[i], G.c, G.v[(i + 1) % 4]], [G.c, G.m[(i + 3) % 4], G.v[(i + 3) % 4]]]) {
+    if (raised(city, nb) || g.TY[nb] === T_BLD || g.TY[nb] === T_WATER) continue;
+    const c0 = clampAll(s0), c1 = clampAll(s1);
+    // docięcie do brzegu może rzucić końce na PRZECIWNE brzegi rzeki — wtedy krawężnik przecinałby wodę
+    if (dist(c0, c1) < 0.2 || dist(c0, c1) > dist(s0, s1) * 2 + 1.5) continue;
     const inn = G.p[i];
     const k0 = Math.min(0.3, dist(c0, inn) * 0.5) / (dist(c0, inn) || 1), k1 = Math.min(0.3, dist(c1, inn) * 0.5) / (dist(c1, inn) || 1);
-    place(b, 'curb', cage4(T, null, [c0, c1, lerp2(c0, inn, k0), lerp2(c1, inn, k1)], NONE, -depth, 0.16), dist(c0, c1), depth + 0.16, 0.3, {});
+    // ścianka sięga 0,7 m pod teren, więc nawet na spadku widać mur, nie szczelinę pod nawierzchnią
+    place(b, 'curb', cage4(T, null, [c0, c1, lerp2(c0, inn, k0), lerp2(c1, inn, k1)], NONE, -0.7, 0.16), dist(c0, c1), 0.86, 0.3, {});
   }
 }
 
 // ── jezdnia: ciągła wstęga na kafelkach (kapsuła), krawężniki maskowane ─────
-// Bruk: rzędy kostek leżą wzdłuż jezdni, a liczba rzędów jest całkowita, więc skrajne
-// rzędy dokładnie przylegają do krawężników. UV bruku liczone są w "kostkach" (1 = rząd),
-// ze współrzędnych świata — kolejne odcinki tej samej ulicy układają się w jedną całość.
-const COBBLE_H = 0.15;
-const ROAD_TINT = { cobble: [0.9, 0.88, 0.85], dirt: [0.78, 0.62, 0.46], asphalt: [1, 1, 1] };
-function buildRoad(b, city, s, si = 0) {
+const ROAD_TINT = { cobble: [0.96, 0.95, 0.94], dirt: [0.78, 0.62, 0.46], asphalt: [1, 1, 1] };
+const COBBLE_H = 0.15; // wysokość rzędu kostek [m]
+function buildRoad(b, city, s) {
   const T = city.terrain, roads = city.roads;
   const dx = s.b[0] - s.a[0], dz = s.b[1] - s.a[1], L = Math.hypot(dx, dz);
   if (L < 0.5) return;
   const u = [dx / L, dz / L], n = [-u[1], u[0]], rw = s.rw;
   const mat = s.mat === 'dirt' ? 'gravel' : s.mat === 'asphalt' ? 'asphalt' : 'cobble';
+  // Bruk: rzędy kostek wzdłuż jezdni, całkowita liczba rzędów między krawężnikami. UV w "kostkach"
+  // (1 = rząd) ze współrzędnych świata — odcinki tej samej ulicy układają się w jedną całość.
   const cob = mat === 'cobble';
   const nR = Math.max(4, Math.round((2 * rw) / COBBLE_H)), rowH = (2 * rw) / nR;
   const cobUV = (p) => [(p[0] * u[0] + p[2] * u[1]) / rowH, ((p[0] - s.a[0]) * n[0] + (p[2] - s.a[1]) * n[1] + rw) / rowH];
   const o = cob ? { tint: ROAD_TINT.cobble, flat: 1, wear: [nR, 0, 0, 0] } : { tint: ROAD_TINT[s.mat], flat: 1 };
-  // odcinki zachodzą na siebie na skrzyżowaniach: kilka milimetrów różnicy w wysokości
-  // zapobiega migotaniu (z-fighting) dwóch wzorów bruku
-  const yOff = (s.mat === 'asphalt' ? 0.07 : s.mat === 'cobble' ? 0.06 : 0.05) + 0.004 * (si % 3);
+  const yOff = s.mat === 'asphalt' ? SURF_Y.asphalt : s.mat === 'cobble' ? SURF_Y.cobble : SURF_Y.dirt;
   const Y = (x, z) => (s.bridge ? T.bankY : T.height(x, z)) + yOff;
+  // ulica kończąca się przy nabrzeżu: wierzchołki z koryta wracają na brzeg (bez "balkonu" nad wodą)
+  const own = s.bridge ? 0 : T.bankSide((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2);
+  const onLand = (x, z) => {
+    if (s.bridge) return [x, z];
+    const c = T.clampToBank(x, z, own);
+    return c ? [c[0], c[1]] : [x, z];
+  };
   const P = (along, side) => {
-    const x = s.a[0] + u[0] * along + n[0] * side, z = s.a[1] + u[1] * along + n[1] * side;
+    const [x, z] = onLand(s.a[0] + u[0] * along + n[0] * side, s.a[1] + u[1] * along + n[1] * side);
     return [x, Y(x, z), z];
   };
+  // asfalt: autostrada ma 4 pasy (cała szerokość tekstury), ulice tylko środek z osią
+  const v0 = s.type === 'H' ? 0 : 0.3, v1 = s.type === 'H' ? 1 : 0.7, s0 = s.s0 || 0;
   const steps = Math.max(1, Math.ceil(L / 3)), across = 2;
   for (let i = 0; i < steps; i++) {
     const t0 = (i / steps) * L, t1 = ((i + 1) / steps) * L;
     for (let j = 0; j < across; j++) {
       const w0 = -rw + (2 * rw * j) / across, w1 = -rw + (2 * rw * (j + 1)) / across;
       const q = [P(t0, w0), P(t1, w0), P(t1, w1), P(t0, w1)];
-      const oo = cob ? { ...o, uv: q.map(cobUV) } : s.mat === 'asphalt' ? { ...o, uv: [[(s.s0 + t0) / 12, j / across], [(s.s0 + t1) / 12, j / across], [(s.s0 + t1) / 12, (j + 1) / across], [(s.s0 + t0) / 12, (j + 1) / across]] } : o;
+      const va = v0 + ((v1 - v0) * j) / across, vb = v0 + ((v1 - v0) * (j + 1)) / across;
+      const oo = cob ? { ...o, uv: q.map(cobUV) } : s.mat === 'asphalt' ? { ...o, uv: [[(s0 + t0) / 12, va], [(s0 + t1) / 12, va], [(s0 + t1) / 12, vb], [(s0 + t0) / 12, vb]] } : o;
       b.wpoly(mat, q, [0, 1, 0], oo);
     }
   }
@@ -403,7 +577,7 @@ function buildRoad(b, city, s, si = 0) {
     const base = Math.atan2(dir[1], dir[0]), seg = 8;
     for (let k = 0; k < seg; k++) {
       const a0 = base - Math.PI / 2 + (k / seg) * Math.PI, a1 = base - Math.PI / 2 + ((k + 1) / seg) * Math.PI;
-      const p0 = [c[0] + Math.cos(a0) * rw, c[1] + Math.sin(a0) * rw], p1 = [c[0] + Math.cos(a1) * rw, c[1] + Math.sin(a1) * rw];
+      const p0 = onLand(c[0] + Math.cos(a0) * rw, c[1] + Math.sin(a0) * rw), p1 = onLand(c[0] + Math.cos(a1) * rw, c[1] + Math.sin(a1) * rw);
       const tri = [[c[0], Y(c[0], c[1]), c[1]], [p1[0], Y(p1[0], p1[1]), p1[1]], [p0[0], Y(p0[0], p0[1]), p0[1]]];
       b.wpoly(mat, tri, [0, 1, 0], cob ? { ...o, uv: tri.map(cobUV) } : s.mat === 'asphalt' ? { ...o, uv: [[0.02, 0.5], [0.02, 0.5], [0.02, 0.5]] } : o);
     }
@@ -419,6 +593,10 @@ function buildRoad(b, city, s, si = 0) {
     if (T.river(m[0], m[1]).d < T.hw + 1) return;
     const bk0 = [c0[0] + out[0] * 0.3, c0[1] + out[1] * 0.3], bk1 = [c1[0] + out[0] * 0.3, c1[1] + out[1] * 0.3];
     place(b, 'curb', cage4(T, null, [c0, c1, bk0, bk1], NONE, 0, 0.16), dist(c0, c1), 0.16, 0.3, {});
+    // pas małej kostki za krawężnikiem; pomijany, gdy wchodziłby w inną jezdnię
+    if (roads.clearance(m[0] + out[0] * 0.6, m[1] + out[1] * 0.6, s) < 0.05) return;
+    const sb0 = [bk0[0] + out[0] * 0.45, bk0[1] + out[1] * 0.45], sb1 = [bk1[0] + out[0] * 0.45, bk1[1] + out[1] * 0.45];
+    place(b, 'sett', cage4(T, null, [bk0, bk1, sb0, sb1], NONE, 0, 0.152), dist(bk0, bk1), 0.152, 0.45, {});
   };
   const nP = Math.max(1, Math.round(L / piece));
   for (const sd of [-1, 1]) {
@@ -450,7 +628,9 @@ export function buildRiver(city) {
     const dx = p[0] - br.p[0], dz = p[1] - br.p[1];
     return Math.abs(dx * br.perp[0] + dz * br.perp[1]) < br.width / 2 + 0.6 && Math.abs(dx * br.axis[0] + dz * br.axis[1]) < br.L + 3;
   });
-  for (const bank of [T.left, T.right]) {
+  // poręcz nabrzeża stoi tylko tam, gdzie nie ma jezdni, mostu, torów ani autostrady
+  const free = (x, z) => !nearBridge([x, z]) && city.roads.clearance(x, z) > 0.9 && polyDist(city.routes.rail, x, z) > 4.5 && polyDist(city.routes.highway, x, z) > 9.5;
+  for (const bank of [T.bankL, T.bankR]) {
     for (let i = 0; i < bank.length - 1; i++) {
       const a = bank[i], c = bank[i + 1], L = dist(a, c), m = Math.max(1, Math.round(L / 6));
       const mid = lerp2(a, c, 0.5), rv = T.river(mid[0], mid[1]);
@@ -460,22 +640,31 @@ export function buildRiver(city) {
         const qa = [pa[0] + out[0], pa[1] + out[1]], qc = [pc[0] + out[0], pc[1] + out[1]];
         const pm = lerp2(pa, pc, 0.5);
         if (T.inland(pm[0], pm[1]) < 12) continue;
-        const rail = !nearBridge(pm) && !nearBridge(pa) && !nearBridge(pc) && city.roads.clearance(pm[0], pm[1]) > 1;
-        place(b, 'quay', Cage.quad(pa, pc, qa, qc, yb, T.bankY), dist(pa, pc), H, 1, { rail });
+        // przy ujściu teren opada do plaży — mur nabrzeża schodzi razem z nim (bez stopnia)
+        const top = (p) => Math.max(T.waterY + 0.4, Math.min(T.bankY, T.height(p[0], p[1])));
+        place(b, 'quay', cageY([pa, pc, qa, qc], [pa, pc, qa, qc].map((p) => top(p) - H), H), dist(pa, pc), H, 1, {});
+        const k = Math.max(1, Math.round(dist(pa, pc) / 2.2));
+        for (let u = 0; u < k; u++) {
+          const ra = lerp2(pa, pc, u / k), rc = lerp2(pa, pc, (u + 1) / k), rm = lerp2(ra, rc, 0.5);
+          if (!free(ra[0], ra[1]) || !free(rc[0], rc[1]) || !free(rm[0], rm[1])) continue;
+          if (top(ra) < T.bankY - 0.25 || top(rc) < T.bankY - 0.25) continue; // przy ujściu mur schodzi do plaży — bez poręczy
+          const rq = [ra, rc, [ra[0] + out[0], ra[1] + out[1]], [rc[0] + out[0], rc[1] + out[1]]];
+          place(b, 'quayrail', cageY(rq, rq.map(top), 1.1), dist(ra, rc), 1.1, 1, {});
+        }
       }
     }
   }
+  // mosty: łańcuch prostych segmentów po 5 m (bridges.js), każdy dokładnie tam, gdzie kończy się poprzedni
   for (const br of city.bridges) {
-    const spans = 3, hw = br.width / 2;
-    const E = (t) => lerp2(br.e0, br.e1, t);
-    const Hb = T.bankY - yb;
-    for (let s = 0; s < spans; s++) {
-      const a = E(s / spans), c = E((s + 1) / spans);
-      const pts = [[a[0] - br.perp[0] * hw, a[1] - br.perp[1] * hw], [c[0] - br.perp[0] * hw, c[1] - br.perp[1] * hw], [a[0] + br.perp[0] * hw, a[1] + br.perp[1] * hw], [c[0] + br.perp[0] * hw, c[1] + br.perp[1] * hw]];
-      place(b, 'bridge', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), dist(a, c), Hb, br.width, { end0: s === 0, end1: s === spans - 1 });
+    const hw = br.width / 2, Hb = T.bankY - yb;
+    for (const sg of bridgeSegments(br)) {
+      const pts = [[sg.a[0] - br.perp[0] * hw, sg.a[1] - br.perp[1] * hw], [sg.c[0] - br.perp[0] * hw, sg.c[1] - br.perp[1] * hw], [sg.a[0] + br.perp[0] * hw, sg.a[1] + br.perp[1] * hw], [sg.c[0] + br.perp[0] * hw, sg.c[1] + br.perp[1] * hw]];
+      place(b, 'bridgeseg', Cage.quad(pts[0], pts[1], pts[2], pts[3], yb, T.bankY), SEG, Hb, br.width, { solid: sg.solid, first: sg.first, last: sg.last, sw: (br.width - 2 * (br.highway ? 5.5 : 3.5)) / 2, rail: br.rail });
     }
-    for (const sd of [-1, 1]) {
-      const p = [br.p[0] + br.perp[0] * sd * (hw - 0.9), br.p[1] + br.perp[1] * sd * (hw - 0.9)];
+    // latarnie po obu stronach, na styku segmentów (co 2 segmenty od środka)
+    if (!br.rail) for (const k of [-2, 2]) for (const sd of [-1, 1]) {
+      const c = [br.p[0] + br.axis[0] * SEG * k, br.p[1] + br.axis[1] * SEG * k];
+      const p = [c[0] + br.perp[0] * sd * (hw - 0.7), c[1] + br.perp[1] * sd * (hw - 0.7)];
       const nn = [br.perp[0] * sd, br.perp[1] * sd];
       place(b, 'lamp', Cage.oriented(p, br.axis, nn, 1, 1, T.bankY + 0.15, T.bankY + 6.15), 1, 6, 1, { metalTint: [0.17, 0.22, 0.19] });
     }
@@ -493,14 +682,15 @@ export function buildChunkLOD(city, id) {
     for (let i = 0; i < 4; i++) {
       const a = V[i];
       if (g.TY[a] !== T_BLD) {
-        if (raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN) {
-          const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]];
-          if (q4.some((p) => T.river(p[0], p[1]).d < T.hw + 0.5)) continue;
-          b.wpoly('slab', q4.map((p) => [p[0], T.height(p[0], p[1]) + 0.1, p[1]]), [0, 1, 0], { flat: 1 });
+        if (raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN && !lawn(city, a)) {
+          const cl = sidewalkClamp(city, G, i);
+          if (!cl) continue;
+          const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map(cl);
+          b.wpoly('lodwalk', q4.map((p) => [p[0], T.height(p[0], p[1]) + SURFACE.lodwalk.y, p[1]]), [0, 1, 0], { flat: 1 });
         }
         continue;
       }
-      const info = buildingInfo(city.seed, g.BID[a], g.ZN[a]);
+      const info = designOf(city, g.BID[a], g.ZN[a]);
       const top = g.H[a];
       for (const side of [0, 1]) {
         const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
@@ -511,7 +701,7 @@ export function buildChunkLOD(city, id) {
         const hint = [f0[0] - G.p[i][0] + f1[0] - G.p[i][0], 0, f0[1] - G.p[i][1] + f1[1] - G.p[i][1]];
         const ga = T.height(f0[0], f0[1]), gb = T.height(f1[0], f1[1]);
         b.wpoly('lod', [[f0[0], ga + y0, f0[1]], [f1[0], gb + y0, f1[1]], [f1[0], gb + y1, f1[1]], [f0[0], ga + y1, f0[1]]], hint, {
-          tint: info.wallMat === 'brick' ? [0.62, 0.45, 0.38] : info.tint, uv: [[0, nh], [1, nh], [1, top], [0, top]],
+          tint: info.wallMat === 'brick' ? [0.7, 0.5, 0.42] : info.tint, uv: [[0, nh], [1, nh], [1, top], [0, top]],
         });
       }
       roofQuarterLOD(b, city, info, G, i, top);
@@ -523,7 +713,20 @@ export function buildChunkLOD(city, id) {
     const n = [-(st.b[1] - st.a[1]) / L * st.rw, (st.b[0] - st.a[0]) / L * st.rw];
     const P = (p, sd) => { const x = p[0] + n[0] * sd, z = p[1] + n[1] * sd; return [x, (st.bridge ? T.bankY : T.height(x, z)) + 0.13, z]; };
     const lm = st.mat === 'dirt' ? 'gravel' : st.mat === 'asphalt' ? 'asphalt' : 'cobblelod';
-    b.wpoly(lm, [P(st.a, -1), P(st.b, -1), P(st.b, 1), P(st.a, 1)], [0, 1, 0], { tint: ROAD_TINT[st.mat], flat: 1, uv: lm === 'cobblelod' ? [[0, 0], [L, 0], [L, 2 * st.rw], [0, 2 * st.rw]] : [[0, 0], [L / 12, 0], [L / 12, 1], [0, 1]] });
+    b.wpoly(lm, [P(st.a, -1), P(st.b, -1), P(st.b, 1), P(st.a, 1)], [0, 1, 0], { tint: ROAD_TINT[st.mat], flat: 1, uv: lm === 'cobblelod' ? [[0, 0], [L, 0], [L, 2 * st.rw], [0, 2 * st.rw]] : st.type === 'H' ? [[0, 0], [L / 12, 0], [L / 12, 1], [0, 1]] : [[0, 0.3], [L / 12, 0.3], [L / 12, 0.7], [0, 0.7]] });
+  }
+  // wieża ratusza w LOD: trzon + miedziany hełm (widać ją z całej wyspy)
+  for (const ex of ch.extras) {
+    if (ex.kind !== 'townhall') continue;
+    const gy = T.height(ex.p[0], ex.p[1]), w = ex.w / 2, y0 = gy + levelY(ex.top) + 0.3, ys = y0 + 8.4, yr = y0 + 14.4;
+    const C = [[-w, -w], [w, -w], [w, w], [-w, w]].map(([a, c]) => [ex.p[0] + a, ex.p[1] + c]);
+    for (let k = 0; k < 4; k++) {
+      const a = C[k], c = C[(k + 1) % 4], hint = [(a[0] + c[0]) / 2 - ex.p[0], 0, (a[1] + c[1]) / 2 - ex.p[1]];
+      b.wpoly('lod', [[a[0], y0, a[1]], [c[0], y0, c[1]], [c[0], ys, c[1]], [a[0], ys, a[1]]], hint, { tint: [0.92, 0.88, 0.78], uv: [[0, 0], [1, 0], [1, 3], [0, 3]] });
+      const h2 = w * 0.62;
+      b.wpoly('lodroof', [[ex.p[0] + (a[0] - ex.p[0]) * 0.62, ys, ex.p[1] + (a[1] - ex.p[1]) * 0.62], [ex.p[0] + (c[0] - ex.p[0]) * 0.62, ys, ex.p[1] + (c[1] - ex.p[1]) * 0.62], [ex.p[0], yr + 2, ex.p[1]]], [hint[0], 0.8, hint[2]], { tint: [0.4, 0.66, 0.56] });
+      void h2;
+    }
   }
   for (const t of ch.trees) {
     const gy = T.height(t.p[0], t.p[1]), r = 2.4 * t.s, h = 8 * t.s;

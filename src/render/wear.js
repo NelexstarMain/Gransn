@@ -600,6 +600,7 @@ export function applyWear(material, kind, wearTex, wearVol, low = false) {
   const K = KINDS[kind];
   material.defines = { ...(material.defines || {}), ...K.defs, ...(low ? { WEAR_LOW: 1 } : {}) };
   material.customProgramCacheKey = () => 'wear-' + kind;
+  material.userData.wearKey = 'wear-' + kind;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.wearTex = { value: wearTex };
     shader.uniforms.wearVol = { value: wearVol };

@@ -2,6 +2,7 @@
 // prędkościomierz, nazwa okolicy, komunikaty.
 import { pointInPoly } from '../city/layout.js';
 import { quadGeom, T_BLD } from '../city/grid.js';
+import { KINDS } from '../city/town.js';
 
 export class Hud {
   constructor(city) {
@@ -14,6 +15,11 @@ export class Hud {
     this.panel = document.getElementById('taxi');
     this.arrow = document.getElementById('arrow');
     this.speed = document.getElementById('speed');
+    this.ammo = document.getElementById('ammo');
+    this.stam = document.getElementById('stam');
+    this.stamFill = document.getElementById('stamfill');
+    this.cross = document.getElementById('cross');
+    this.hitm = document.getElementById('hitm');
     this.base = this.renderBase();
     this.msgT = 0;
     this.lastMsg = null;
@@ -41,7 +47,7 @@ export class Hud {
     poly(coast, '#d9c79a');
     const inner = coast.map(([x, z]) => { const l = Math.hypot(x, z); return [x * (1 - 34 / l), z * (1 - 34 / l)]; });
     poly(inner, '#6d8a52');
-    for (let i = 0; i < T.left.length - 1; i++) poly([T.left[i], T.left[i + 1], T.right[i + 1], T.right[i]], '#3d6a80');
+    poly([...T.bankL, ...T.bankR.slice().reverse()], '#3d6a80');
     ctx.lineCap = 'round';
     for (const s of this.city.streets) {
       ctx.strokeStyle = s.mat === 'asphalt' ? '#e8e2d0' : s.mat === 'dirt' ? '#a58a64' : '#c9c4b6';
@@ -70,29 +76,50 @@ export class Hud {
     return c;
   }
 
-  update(dt, view, info, job, car, camera) {
+  // zapis do DOM tylko przy zmianie (każdy zapis wymusza przeliczenie stylów)
+  set(el, key, value, prop = 'textContent') {
+    const c = this.cache || (this.cache = new Map());
+    const id = el.id + ':' + key;
+    if (c.get(id) === value) return;
+    c.set(id, value);
+    if (prop === 'html') el.innerHTML = value;
+    else if (prop === 'style') el.style.cssText = value;
+    else el[prop] = value;
+  }
+
+  // st = { onFoot, weapon, player, peds, nearCar }
+  update(dt, view, info, job, car, camera, st = {}) {
+    this.acc = (this.acc || 0) + dt;
+    const slow = this.acc >= 0.12; // minimapa i teksty ~8 razy na sekundę
+    if (slow) this.acc = 0;
     const { ctx, k, o } = this;
-    ctx.drawImage(this.base, 0, 0);
     const P = (p) => [(p[0] + o) * k, (p[1] + o) * k];
-    ctx.fillStyle = '#ffd23a';
-    for (const w of job.waiting) { const [x, y] = P(w.p); ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill(); }
-    if (job.fare) {
-      const [x, y] = P(job.fare.dest);
-      ctx.fillStyle = '#46e08a';
-      ctx.fillRect(x - 4, y - 4, 8, 8);
+    if (slow) {
+      ctx.drawImage(this.base, 0, 0);
+      ctx.fillStyle = '#ffd23a';
+      for (const w of job.waiting) { const [x, y] = P(w.p); ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill(); }
+      if (job.fare) {
+        const [x, y] = P(job.fare.dest);
+        ctx.fillStyle = '#46e08a';
+        ctx.fillRect(x - 4, y - 4, 8, 8);
+      }
+      if (st.peds) {
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        for (const w of st.peds.walkers) { if (w.mode === 'down') continue; const [x, y] = P([w.h.x, w.h.z]); ctx.fillRect(x - 0.7, y - 0.7, 1.4, 1.4); }
+      }
+      const [px, py] = P([view.pos.x, view.pos.z]);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(-view.yaw);
+      ctx.fillStyle = car.active ? '#ffd23a' : '#ffffff';
+      ctx.strokeStyle = '#000';
+      ctx.beginPath();
+      ctx.moveTo(0, -7); ctx.lineTo(4.5, 5); ctx.lineTo(-4.5, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
-    const [px, py] = P([view.pos.x, view.pos.z]);
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(-view.yaw);
-    ctx.fillStyle = car.active ? '#ffd23a' : '#ffffff';
-    ctx.strokeStyle = '#000';
-    ctx.beginPath();
-    ctx.moveTo(0, -7); ctx.lineTo(4.5, 5); ctx.lineTo(-4.5, 5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
 
     // panel taksówkarza
     const f = job.fare;
@@ -108,15 +135,35 @@ export class Hud {
       if (best) tgt = best.p;
       line2 = best ? `Najbliższy pasażer: ${Math.round(bd)} m` : 'Szukaj pasażerów';
     }
-    this.panel.innerHTML = `<b>${job.money} zł</b> · kursy: ${job.trips}<br>${line2}`;
+    if (slow) this.set(this.panel, 'p', `<b>${job.money} zł</b> · kursy: ${job.trips}<br>${line2}`, 'html');
     if (tgt && camera) {
       const a = Math.atan2(tgt[0] - view.pos.x, tgt[1] - view.pos.z);
       const camYaw = Math.atan2(-(camera.matrixWorld.elements[8]), -(camera.matrixWorld.elements[10]));
-      this.arrow.style.display = 'block';
-      this.arrow.style.transform = `translateX(-50%) rotate(${camYaw - a}rad)`;
-      this.arrow.style.borderBottomColor = f ? '#46e08a' : '#ffd23a';
-    } else this.arrow.style.display = 'none';
-    this.speed.textContent = car.active ? `${Math.round(car.kmh)} km/h` : 'pieszo · E przy taksówce';
+      const deg = Math.round(((camYaw - a) * 180) / Math.PI);
+      this.set(this.arrow, 'a', `display:block;transform:translateX(-50%) rotate(${deg}deg);border-bottom-color:${f ? '#46e08a' : '#ffd23a'}`, 'style');
+    } else this.set(this.arrow, 'a', 'display:none', 'style');
+
+    // prędkościomierz / stan pieszego
+    let sp;
+    if (car.active) sp = `${Math.round(car.kmh)} km/h`;
+    else sp = st.nearCar ? 'E — wsiądź do taksówki' : 'pieszo';
+    this.set(this.speed, 's', sp);
+
+    // broń: amunicja, wytrzymałość, celownik
+    const W = st.weapon, foot = st.onFoot;
+    if (this.ammo) {
+      this.set(this.ammo, 'a', foot && W ? `${W.reloading ? 'przeładowanie…' : `${W.ammo} / ${W.reserve}`}` : '', 'textContent');
+      this.set(this.ammo, 'v', foot ? 'display:block' : 'display:none', 'style');
+      const pl = st.player;
+      if (pl) {
+        this.set(this.stam, 'v', foot ? 'display:block' : 'display:none', 'style');
+        this.set(this.stamFill, 'w', `width:${Math.round(pl.stamina * 100)}%;background:${pl.tired ? '#d9573a' : '#f2c200'}`, 'style');
+      }
+      const hit = W && W.hitT > 0;
+      const gap = W ? Math.round(6 + W.spread * 1100) : 6;
+      this.set(this.cross, 'c', foot ? `display:block;--gap:${gap}px;opacity:${W && W.aim > 0.6 ? 0.35 : 0.9}` : 'display:none', 'style');
+      this.set(this.hitm, 'h', hit ? `display:block;border-color:${W.headT > 0 ? '#ff5a3a' : '#fff'}` : 'display:none', 'style');
+    }
 
     if (job.msg && job.msg !== this.lastMsg) {
       this.lastMsg = job.msg;
@@ -124,11 +171,14 @@ export class Hud {
       this.msgT = job.msg.t;
     }
     this.msgT -= dt;
-    this.msg.style.opacity = this.msgT > 0 ? '1' : '0';
+    this.set(this.msg, 'o', this.msgT > 0 ? 'opacity:1' : 'opacity:0', 'style');
 
-    const here = this.city.blocks.find((b) => pointInPoly(b.poly, view.pos.x, view.pos.z));
-    const name = this.city.terrain.inRiver(view.pos.x, view.pos.z, 2) ? 'Most' : here ? { plaza: 'Rynek', park: 'Park', houses: 'Przedmieście', tenement: 'Śródmieście', nature: 'Las i wydmy' }[here.kind] : 'Wybrzeże';
-    this.clock.textContent = `Gransn · ${name}`;
-    if (info) this.stats.textContent = info;
+    if (slow) {
+      const here = this.city.blocks.find((b) => pointInPoly(b.poly, view.pos.x, view.pos.z));
+      const ov = this.city.plan ? this.city.plan.overrideKind(view.pos.x, view.pos.z) : null;
+      const name = this.city.terrain.inRiver(view.pos.x, view.pos.z, 2) ? 'Most' : ov ? KINDS[ov].name : here ? (KINDS[here.kind] || KINDS.houses).name : 'Wybrzeże';
+      this.set(this.clock, 'n', `Gransn · ${name} · wyspa nr ${this.city.seed}`);
+      if (info) this.set(this.stats, 'i', info);
+    }
   }
 }

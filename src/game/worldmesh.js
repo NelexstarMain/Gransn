@@ -5,8 +5,8 @@
 //    (osobno w przebiegu kamery i w przebiegu cienia) i sortuje je od najbliższych,
 //  • przełączenie detal ↔ LOD to jedna flaga widoczności, bez tworzenia ani kasowania geometrii.
 import * as THREE from 'three';
+import { isSurface, surfaceOrder } from '../render/layers.js';
 
-const GROUND = new Set(['cobble', 'slab', 'curb', 'cobblelod']);
 const ATTRS = [['position', 'p', 3, false], ['normal', 'n', 3, true], ['uv', 'uv', 2, false], ['color', 'c', 3, true], ['wear', 'w', 4, true]];
 
 // geometria jednego fragmentu dla jednego materiału (tymczasowa — BatchedMesh kopiuje dane)
@@ -37,7 +37,8 @@ export class WorldMesh {
       b.frustumCulled = false; // przycinanie robi BatchedMesh osobno dla każdego fragmentu
       b.matrixAutoUpdate = false;
       const detail = setName === 'detail';
-      b.castShadow = this.shadows && detail && !GROUND.has(name) && name !== 'light';
+      b.renderOrder = surfaceOrder(name); // niższe warstwy nawierzchni rysują się pierwsze
+      b.castShadow = this.shadows && detail && !isSurface(name) && name !== 'light';
       b.receiveShadow = this.shadows && detail;
       this.scene.add(b);
       set.set(name, b);

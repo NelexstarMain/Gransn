@@ -1,7 +1,7 @@
 import { generateCity } from '../src/city/layout.js';
 import { Traffic, buildRoadGraph } from '../src/game/traffic.js';
 import { Rng } from '../src/core/rng.js';
-const c = generateCity(1984);
+const c = generateCity(Number(process.argv[2]) || 1984);
 const G = buildRoadGraph(c.streets);
 const live = G.live.filter(Boolean).length;
 console.log('graph nodes', G.nodes.length, 'edges', G.edges.length, 'live', live, 'deg3+', G.nodes.filter((n) => n.edges.length >= 3).length);

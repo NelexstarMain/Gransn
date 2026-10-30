@@ -8,13 +8,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { atlasUV, atlasAspect } from './atlas.js';
 import { Rng } from '../core/rng.js';
+import { vehicleModules } from './vehicles.js';
+import { installProps } from './propmods.js';
 
-const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 // ── wspólne helpery ─────────────────────────────────────────────────────────
 // Okno: rama z głębią, podział szyb zależny od stylu, firanki/zasłony.
 // Szkło ma lustrzane odbicia (mapa otoczenia), więc dostaje jasny odcień.
-function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
+export function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
   const ft = 0.07, h = 0.022;
   const fo = { tint: p.frameTint };
   b.rect('glass', x0, y0, x1, y1, z + 0.035, { tint: p.glassTint });
@@ -33,7 +36,7 @@ function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
   b.box(frameMat, x0 + ft, y1 - ft, z - 0.03, x1 - ft, y1, z + 0.03, 'yz', fo);
   // szprosy: kamienice 6 pól, domy 4, modernizm 2
   const cx = (x0 + x1) / 2, ty = y0 + (y1 - y0) * 0.68;
-  const panes = p.style === 'modern' ? 1 : p.style === 'house' || p.ground ? 2 : 3;
+  const panes = p.panes ?? (p.style === 'modern' ? 1 : p.style === 'house' || p.ground ? 2 : 3);
   b.box(frameMat, cx - h * 1.4, y0 + ft, z - 0.02, cx + h * 1.4, y1 - ft, z + 0.02, 'xXz', fo);
   b.box(frameMat, x0 + ft, ty - h, z - 0.02, x1 - ft, ty + h, z + 0.02, 'yYz', fo);
   if (panes >= 2) {
@@ -45,27 +48,52 @@ function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
   }
 }
 
-function plinth(b, segs, mat = 'stone') {
+export function plinth(b, segs, mat = 'stone') {
   for (const [a, c] of segs) if (c - a > 0.02) b.box(mat, a, 0, -0.06, c, 0.5, 0, 'Yz', { shade: 0.8 });
 }
 
-function windowCore(b, W, H, p) {
-  const ow = clamp(W * (p.winW || 0.4), 0.7, 1.6);
-  const oh = clamp(H * (p.winH || 0.5), 1.1, 2.15);
-  const x0 = (W - ow) / 2, x1 = x0 + ow;
-  b.win(ow / 2);
-  const y0 = p.ground ? Math.max(1.25, H - oh - 0.9) : clamp(H * 0.27, 0.75, 1.0);
-  const y1 = Math.min(y0 + oh, H - 0.32);
-  const wm = p.ground ? p.groundMat : p.wallMat;
-  b.wallHole(wm, W, H, x0, y0, x1, y1, 0.24);
+// Opaska okna (kamień przy otworze): kind = lintel | band | ped | segm | cornice.
+// Naczółki i gzyms nadokienny leżą na opasce ościeżowej, więc zawierają "lintel".
+export function surround(b, kind, x0, y0, x1, y1, H) {
+  const s = kind === 'band' ? 0.2 : 0.14, pz = kind === 'band' ? -0.055 : -0.035;
+  b.box('stone', x0 - s, y0, pz, x0, y1, 0, 'xXz');
+  b.box('stone', x1, y0, pz, x1 + s, y1, 0, 'xXz');
+  b.box('stone', x0 - s, y1, pz, x1 + s, y1 + s, 0, 'xXyYz');
+  if (kind !== 'ped' && kind !== 'segm' && kind !== 'cornice') return;
+  const cx = (x0 + x1) / 2;
+  if (kind === 'ped') {
+    const base = y1 + 0.16, bx0 = x0 - 0.26, bx1 = x1 + 0.26;
+    const apex = Math.min(base + 0.42, H - 0.04), z = -0.12;
+    b.poly('stone', [[bx0, base, z], [bx1, base, z], [cx, apex, z]], [0, 0, -1]);
+    b.poly('stone', [[bx0, base, z], [cx, apex, z], [cx, apex, 0], [bx0, base, 0]], [-(apex - base), cx - bx0, 0]);
+    b.poly('stone', [[cx, apex, z], [bx1, base, z], [bx1, base, 0], [cx, apex, 0]], [apex - base, bx1 - cx, 0]);
+    b.rectY('stone', base, bx0, z, bx1, 0, -1, { shade: 0.7 });
+  } else if (kind === 'segm') {
+    // naczółek łukowy: wycinek koła nad belkowaniem
+    const base = y1 + 0.16, bx0 = x0 - 0.26, bx1 = x1 + 0.26, z = -0.12, rise = Math.min(0.3, H - 0.04 - base), N = 6;
+    const pt = (i) => [bx0 + ((bx1 - bx0) * i) / N, base + rise * Math.sin((Math.PI * i) / N)];
+    for (let i = 0; i < N; i++) {
+      const a = pt(i), c = pt(i + 1);
+      b.poly('stone', [[a[0], base, z], [c[0], base, z], [c[0], c[1], z], [a[0], a[1], z]], [0, 0, -1]);
+      b.poly('stone', [[a[0], a[1], z], [c[0], c[1], z], [c[0], c[1], 0], [a[0], a[1], 0]], [0, 1, -0.3]);
+    }
+    b.rectY('stone', base, bx0, z, bx1, 0, -1, { shade: 0.7 });
+  } else {
+    const hy = Math.min(y1 + 0.32, H - 0.02);
+    b.box('stone', x0 - 0.3, y1 + 0.14, -0.17, x1 + 0.3, hy, 0, 'xXyYz');
+    b.box('stone', x0 - 0.27, y1 - 0.22, -0.12, x0 - 0.14, y1 + 0.14, 0, 'xXyz');
+    b.box('stone', x1 + 0.14, y1 - 0.22, -0.12, x1 + 0.27, y1 + 0.14, 0, 'xXyz');
+  }
+  if (y0 > 0.75) b.box('stone', x0, Math.max(0.1, y0 - 0.62), -0.03, x1, y0 - 0.12, 0, 'xXyYz');
+  b.box('stone', cx - 0.11, y1 - 0.02, -0.07, cx + 0.11, y1 + 0.2, 0, 'xXYz');
+}
+
+// Wnętrze otworu i wszystko wokół niego (bez ściany): rama z szybą, parapet,
+// opaska, okiennice, kwiaty, kraty. Wymiary w metrach, więc działa w każdym panelu.
+export function windowParts(b, x0, y0, x1, y1, H, p) {
   glassFrame(b, x0, y0, x1, y1, 0.18, p);
   b.box('stone', x0 - 0.07, y0 - 0.07, -0.08, x1 + 0.07, y0, 0.0, 'xXyYz');
-  if (!p.simple) {
-    const s = 0.14;
-    b.box('stone', x0 - s, y0, -0.035, x0, y1, 0, 'xXz');
-    b.box('stone', x1, y0, -0.035, x1 + s, y1, 0, 'xXz');
-    b.box('stone', x0 - s, y1, -0.035, x1 + s, y1 + s, 0, 'xXyYz');
-  }
+  if (!p.simple && p.frame !== 'plain') surround(b, p.frame || 'lintel', x0, y0, x1, y1, H);
   if (p.shutters) {
     const sw = (x1 - x0) / 2, so = { tint: p.shutterTint };
     b.box('wood', x0 - sw - 0.02, y0, -0.06, x0 - 0.02, y1, -0.02, 'xXyYz', so);
@@ -78,15 +106,82 @@ function windowCore(b, W, H, p) {
     const fo = { tint: p.flowers };
     for (let x = x0; x < x1 - 0.1; x += 0.22) b.box('wood', x, y0 + 0.2, -0.3, x + 0.2, y0 + 0.38, -0.1, 'xXYz', fo);
   }
-  if (p.ground) {
-    plinth(b, [[0, W]], 'stone');
-    if (p.bars) {
-      for (let x = x0 + 0.12; x < x1 - 0.06; x += 0.14) b.box('metal', x - 0.012, y0, 0.05, x + 0.012, y1, 0.074, 'xXz');
-      b.box('metal', x0, y0 + 0.25, 0.05, x1, y0 + 0.28, 0.074, 'yYz');
-      b.box('metal', x0, y1 - 0.28, 0.05, x1, y1 - 0.25, 0.074, 'yYz');
-    }
+  if (p.ground && p.bars) {
+    for (let x = x0 + 0.12; x < x1 - 0.06; x += 0.14) b.box('metal', x - 0.012, y0, 0.05, x + 0.012, y1, 0.074, 'xXz');
+    b.box('metal', x0, y0 + 0.25, 0.05, x1, y0 + 0.28, 0.074, 'yYz');
+    b.box('metal', x0, y1 - 0.28, 0.05, x1, y1 - 0.25, 0.074, 'yYz');
   }
+}
+
+function windowCore(b, W, H, p) {
+  const ow = clamp(W * (p.winW || 0.4), 0.7, 1.6);
+  const oh = clamp(H * (p.winH || 0.5), 1.1, 2.15);
+  const x0 = (W - ow) / 2, x1 = x0 + ow;
+  b.win(ow / 2);
+  const y0 = p.ground ? Math.max(1.25, H - oh - 0.9) : clamp(H * 0.27, 0.75, 1.0);
+  const y1 = Math.min(y0 + oh, H - 0.32);
+  b.wallHole(p.ground ? p.groundMat : p.wallMat, W, H, x0, y0, x1, y1, 0.24);
+  windowParts(b, x0, y0, x1, y1, H, p);
+  if (p.ground) plinth(b, [[0, W]], 'stone');
   return { x0, x1, y0, y1 };
+}
+
+// Balkon bez ściany: drzwi balkonowe, płyta ze wspornikami i balustrada.
+// p.rail: bars (kuta, domyślna) | balust (kamienne tralki) | solid (pełny parapet)
+export function balconyParts(b, x0, x1, y0, y1, W, p) {
+  b.rect('wood', x0, y0, x1, y0 + 0.9, 0.21, { tint: p.frameTint });
+  glassFrame(b, x0, y0 + 0.9, x1, y1, 0.18, p);
+  const out = p.slab ?? 0.75;
+  const sx0 = Math.max(0.05, x0 - out), sx1 = Math.min(W - 0.05, x1 + out), sz = -1.05;
+  b.box('stone', sx0, -0.18, sz, sx1, 0.02, 0, 'xXyYz');
+  for (const x of [sx0 + 0.15, sx1 - 0.3]) b.box('stone', x, -0.6, -0.75, x + 0.15, -0.18, 0, 'xXyz', { shade: 0.85 });
+  const rt = 1.0, mo = { tint: p.metalTint };
+  if (p.rail === 'solid') {
+    b.box('stone', sx0, 0.02, sz, sx1, rt, sz + 0.1, 'xXyYzZ');
+    b.box('stone', sx0, 0.02, sz, sx0 + 0.1, rt, 0, 'xXYz');
+    b.box('stone', sx1 - 0.1, 0.02, sz, sx1, rt, 0, 'xXYz');
+    return;
+  }
+  const bal = p.rail === 'balust';
+  const post = bal ? 'stone' : 'metal', po = bal ? {} : mo;
+  b.box(post, sx0, rt - 0.04, sz, sx1, rt, sz + 0.05, 'xXyYzZ', po);
+  b.box(post, sx0, rt - 0.04, sz, sx0 + 0.05, rt, 0, 'xXYz', po);
+  b.box(post, sx1 - 0.05, rt - 0.04, sz, sx1, rt, 0, 'xXYz', po);
+  b.box(post, sx0, 0.1, sz, sx1, 0.13, sz + 0.03, 'yYzZ', po);
+  const st = bal ? 0.2 : 0.15, th = bal ? 0.06 : 0.018;
+  for (let x = sx0 + 0.1; x < sx1 - 0.05; x += st) b.box(post, x, 0.02, sz + 0.01, x + th, rt - 0.04, sz + 0.01 + th, 'xXzZ', po);
+  for (let z = sz + 0.15; z < -0.05; z += 0.15) {
+    b.box(post, sx0 + 0.01, 0.02, z, sx0 + 0.03, rt - 0.04, z + 0.018, 'xXzZ', po);
+    b.box(post, sx1 - 0.03, 0.02, z, sx1 - 0.01, rt - 0.04, z + 0.018, 'xXzZ', po);
+  }
+}
+
+// Drzwi bez ściany: skrzydło z płycinami, naświetle, portal, schodek i latarenka.
+export function doorParts(b, x0, x1, y0, y1, W, p) {
+  // latarenka obok drzwi
+  if (x1 + 0.7 < W) {
+    b.box('metal', x1 + 0.45, y1 - 0.35, -0.3, x1 + 0.5, y1 - 0.3, 0, 'yYzZ', { tint: [0.12, 0.12, 0.12] });
+    b.box('light', x1 + 0.38, y1 - 0.8, -0.38, x1 + 0.58, y1 - 0.4, -0.18, 'xXyYzZ', { tint: [1, 0.85, 0.55] });
+    b.box('metal', x1 + 0.35, y1 - 0.4, -0.41, x1 + 0.61, y1 - 0.34, -0.15, 'xXyYzZ', { tint: [0.12, 0.12, 0.12] });
+  }
+  const dy = y0 + (y1 - y0) * 0.74, wo = { tint: p.doorTint };
+  b.rect('wood', x0, y0, x1, dy, 0.4, wo);
+  const cx = (x0 + x1) / 2;
+  b.rect('wood', cx - 0.02, y0, cx + 0.02, dy, 0.385, { tint: p.doorTint, shade: 0.6 });
+  for (const [a, c] of [[x0 + 0.12, cx - 0.1], [cx + 0.1, x1 - 0.12]]) {
+    b.box('wood', a, y0 + 0.25, 0.36, c, y0 + 0.95, 0.4, 'xXyYz', wo);
+    b.box('wood', a, y0 + 1.15, 0.36, c, dy - 0.18, 0.4, 'xXyYz', wo);
+  }
+  glassFrame(b, x0, dy, x1, y1, 0.38, p);
+  b.box('stone', x0 - 0.38, 0.3, -0.1, x0, y1 + 0.05, 0, 'xXz');
+  b.box('stone', x1, 0.3, -0.1, x1 + 0.38, y1 + 0.05, 0, 'xXz');
+  b.box('stone', x0 - 0.52, y1 + 0.05, -0.17, x1 + 0.52, y1 + 0.42, 0, 'xXyYz');
+  b.box('stone', x0 - 0.25, 0, -0.5, x1 + 0.25, 0.3, 0.42, 'xXYz', { shade: 0.9 });
+  // głowice i bazy pilastrów portalu
+  for (const [xa, xb] of [[x0 - 0.46, x0 + 0.04], [x1 - 0.04, x1 + 0.46]]) {
+    b.box('stone', xa, y1 - 0.2, -0.17, xb, y1 + 0.05, 0, 'xXyYz');
+    b.box('stone', xa + 0.02, 0.3, -0.15, xb - 0.02, 0.62, 0, 'xXYz', { shade: 0.9 });
+  }
 }
 
 export const M = {
@@ -119,23 +214,7 @@ export const M = {
 
   // 4. Okno ozdobne — naczółek trójkątny lub gzyms nadokienny + płycina
   ornate(b, W, H, D, p) {
-    const { x0, x1, y0, y1 } = windowCore(b, W, H, p);
-    const cx = (x0 + x1) / 2;
-    if (p.variant === 0) {
-      const base = y1 + 0.16, bx0 = x0 - 0.26, bx1 = x1 + 0.26;
-      const apex = Math.min(base + 0.42, H - 0.04), z = -0.12;
-      b.poly('stone', [[bx0, base, z], [bx1, base, z], [cx, apex, z]], [0, 0, -1]);
-      b.poly('stone', [[bx0, base, z], [cx, apex, z], [cx, apex, 0], [bx0, base, 0]], [-(apex - base), cx - bx0, 0]);
-      b.poly('stone', [[cx, apex, z], [bx1, base, z], [bx1, base, 0], [cx, apex, 0]], [apex - base, bx1 - cx, 0]);
-      b.rectY('stone', base, bx0, z, bx1, 0, -1, { shade: 0.7 });
-    } else {
-      const hy = Math.min(y1 + 0.32, H - 0.02);
-      b.box('stone', x0 - 0.3, y1 + 0.14, -0.17, x1 + 0.3, hy, 0, 'xXyYz');
-      b.box('stone', x0 - 0.27, y1 - 0.22, -0.12, x0 - 0.14, y1 + 0.14, 0, 'xXyz');
-      b.box('stone', x1 + 0.14, y1 - 0.22, -0.12, x1 + 0.27, y1 + 0.14, 0, 'xXyz');
-    }
-    if (y0 > 0.75) b.box('stone', x0, Math.max(0.1, y0 - 0.62), -0.03, x1, y0 - 0.12, 0, 'xXyYz');
-    b.box('stone', cx - 0.11, y1 - 0.02, -0.07, cx + 0.11, y1 + 0.2, 0, 'xXYz');
+    windowCore(b, W, H, { ...p, frame: p.variant === 0 ? 'ped' : 'cornice' });
   },
 
   // 5. Balkon — drzwi balkonowe, płyta, wsporniki, balustrada
@@ -143,21 +222,7 @@ export const M = {
     const ow = clamp(W * 0.36, 0.9, 1.3);
     const x0 = (W - ow) / 2, x1 = x0 + ow, y0 = 0.05, y1 = Math.min(H - 0.35, 2.55);
     b.wallHole(p.wallMat, W, H, x0, y0, x1, y1, 0.24);
-    b.rect('wood', x0, y0, x1, y0 + 0.9, 0.21, { tint: p.frameTint });
-    glassFrame(b, x0, y0 + 0.9, x1, y1, 0.18, p);
-    const sx0 = Math.max(0.05, x0 - 0.75), sx1 = Math.min(W - 0.05, x1 + 0.75), sz = -1.05;
-    b.box('stone', sx0, -0.18, sz, sx1, 0.02, 0, 'xXyYz');
-    for (const x of [sx0 + 0.15, sx1 - 0.3]) b.box('stone', x, -0.6, -0.75, x + 0.15, -0.18, 0, 'xXyz', { shade: 0.85 });
-    const rt = 1.0, mo = { tint: p.metalTint };
-    b.box('metal', sx0, rt - 0.04, sz, sx1, rt, sz + 0.05, 'xXyYzZ', mo);
-    b.box('metal', sx0, rt - 0.04, sz, sx0 + 0.05, rt, 0, 'xXYz', mo);
-    b.box('metal', sx1 - 0.05, rt - 0.04, sz, sx1, rt, 0, 'xXYz', mo);
-    b.box('metal', sx0, 0.1, sz, sx1, 0.13, sz + 0.03, 'yYzZ', mo);
-    for (let x = sx0 + 0.1; x < sx1 - 0.05; x += 0.15) b.box('metal', x, 0.02, sz + 0.01, x + 0.018, rt - 0.04, sz + 0.03, 'xXzZ', mo);
-    for (let z = sz + 0.15; z < -0.05; z += 0.15) {
-      b.box('metal', sx0 + 0.01, 0.02, z, sx0 + 0.03, rt - 0.04, z + 0.018, 'xXzZ', mo);
-      b.box('metal', sx1 - 0.03, 0.02, z, sx1 - 0.01, rt - 0.04, z + 0.018, 'xXzZ', mo);
-    }
+    balconyParts(b, x0, x1, y0, y1, W, p);
   },
 
   // 6. Okno modernistyczne/brutalistyczne — pas szkła, żebra (Ministerstwo)
@@ -177,28 +242,10 @@ export const M = {
   // 7. Drzwi wejściowe z portalem i schodkiem
   door(b, W, H, D, p) {
     const ow = Math.min(1.55, W * 0.5), x0 = (W - ow) / 2, x1 = x0 + ow, y0 = 0.3;
-    const y1 = Math.min(3.1, H - 0.7), gm = p.groundMat;
-    // latarenka obok drzwi
-    if (x1 + 0.7 < W) {
-      b.box('metal', x1 + 0.45, y1 - 0.35, -0.3, x1 + 0.5, y1 - 0.3, 0, 'yYzZ', { tint: [0.12, 0.12, 0.12] });
-      b.box('light', x1 + 0.38, y1 - 0.8, -0.38, x1 + 0.58, y1 - 0.4, -0.18, 'xXyYzZ', { tint: [1, 0.85, 0.55] });
-      b.box('metal', x1 + 0.35, y1 - 0.4, -0.41, x1 + 0.61, y1 - 0.34, -0.15, 'xXyYzZ', { tint: [0.12, 0.12, 0.12] });
-    }
-    b.wallHole(gm, W, H, x0, y0, x1, y1, 0.42);
-    b.rect(gm, x0, 0, x1, y0, -0.0);
-    const dy = y0 + (y1 - y0) * 0.74, wo = { tint: p.doorTint };
-    b.rect('wood', x0, y0, x1, dy, 0.4, wo);
-    const cx = (x0 + x1) / 2;
-    b.rect('wood', cx - 0.02, y0, cx + 0.02, dy, 0.385, { tint: p.doorTint, shade: 0.6 });
-    for (const [a, c] of [[x0 + 0.12, cx - 0.1], [cx + 0.1, x1 - 0.12]]) {
-      b.box('wood', a, y0 + 0.25, 0.36, c, y0 + 0.95, 0.4, 'xXyYz', wo);
-      b.box('wood', a, y0 + 1.15, 0.36, c, dy - 0.18, 0.4, 'xXyYz', wo);
-    }
-    glassFrame(b, x0, dy, x1, y1, 0.38, p);
-    b.box('stone', x0 - 0.38, 0.3, -0.1, x0, y1 + 0.05, 0, 'xXz');
-    b.box('stone', x1, 0.3, -0.1, x1 + 0.38, y1 + 0.05, 0, 'xXz');
-    b.box('stone', x0 - 0.52, y1 + 0.05, -0.17, x1 + 0.52, y1 + 0.42, 0, 'xXyYz');
-    b.box('stone', x0 - 0.25, 0, -0.5, x1 + 0.25, 0.3, 0.42, 'xXYz', { shade: 0.9 });
+    const y1 = Math.min(3.1, H - 0.7);
+    b.wallHole(p.groundMat, W, H, x0, y0, x1, y1, 0.42);
+    b.rect(p.groundMat, x0, 0, x1, y0, -0.0);
+    doorParts(b, x0, x1, y0, y1, W, p);
     plinth(b, [[0, x0 - 0.38], [x1 + 0.38, W]]);
   },
 
@@ -230,7 +277,7 @@ export const M = {
       const mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2;
       b.poly(gm, [[a[0], a[1], 0], [c[0], c[1], 0], [c[0], c[1], D], [a[0], a[1], D]], [cx - mx, spring - my, 0], { shade: 0.35 });
     }
-    b.gridY('cobble', 0.1, x0, 0, x1, D, 2, Math.max(1, Math.round(D / 3)), { shade: 0.6, flat: 1, uvScale: 1 / 0.15 });
+    b.gridY('cobblep', 0.1, x0, 0, x1, D, 2, Math.max(1, Math.round(D / 3)), { shade: 0.6, flat: 1 });
     // archiwolta
     const R = r + 0.3;
     for (let i = 0; i < N; i++) {
@@ -289,23 +336,41 @@ export const M = {
     plinth(b, [[0, x0], [x1, W]]);
   },
 
-  // 10. Gzyms międzykondygnacyjny (kordonowy)
+  // 10. Gzyms międzykondygnacyjny (kordonowy). Końce zamknięte denkami, początek lekko
+  //     wydłużony (zakrywa załamanie ściany w połowie krawędzi czworokąta), wypukły narożnik
+  //     dostaje klocek w rogu.
   string(b, W, H, D, p) {
-    b.box('stone', 0, 0, -0.13, W, 0.24, 0, 'yYz');
-    b.box('stone', 0, 0.24, -0.06, W, 0.32, 0, 'Yz');
+    const x0 = -0.25;
+    b.box('stone', x0, 0, -0.13, W, 0.24, 0, 'xXyYz');
+    b.box('stone', x0, 0.24, -0.06, W, 0.32, 0, 'xXYz');
+    if (p.endKind === 'convex' && p.cornerOwner) {
+      b.box('stone', W, 0, -0.13, W + 0.13, 0.24, 0, 'XyYz');
+      b.box('stone', W, 0.24, -0.06, W + 0.06, 0.32, 0, 'XYz');
+    }
   },
 
-  // 11. Gzyms wieńczący — schodkowy profil, opcjonalne kroksztyny
+  // 11. Gzyms wieńczący — schodkowy profil, opcjonalne kroksztyny. Denka na końcach i klocek
+  //     w wypukłym narożniku (wcześniej gzyms kończył się w powietrzu i było widać przez niego),
+  //     rynna skręca w narożniku zamiast urywać się.
   cornice(b, W, H, D, p) {
-    const m = p.mat || 'stone';
+    const m = p.mat || 'stone', x0 = -0.25, convex = p.endKind === 'convex' && p.cornerOwner;
     if (p.style === 'modern') {
-      b.box(m, 0, 0, -0.35, W, H, 0, 'yYz');
+      b.box(m, x0, 0, -0.35, W, H, 0, 'xXyYz');
+      if (convex) b.box(m, W, 0, -0.35, W + 0.35, H, 0, 'XyYz');
       return;
     }
-    b.box(m, 0, 0, -0.1, W, 0.2, 0, 'yz');
-    b.box(m, 0, 0.2, -0.26, W, 0.36, 0, 'yz');
-    b.box(m, 0, 0.36, -0.56, W, H, 0, 'yYz');
-    b.tube('metal', [0, H - 0.05, -0.62], [W, H - 0.05, -0.62], 0.07, 0.07, 6, { tint: [0.45, 0.47, 0.48] });
+    const layers = [[0.1, 0, 0.2], [0.26, 0.2, 0.36], [0.56, 0.36, H]];
+    for (const [d, y0, y1] of layers) {
+      b.box(m, x0, y0, -d, W, y1, 0, y1 === H ? 'xXyYz' : 'xXyz');
+      if (convex) b.box(m, W, y0, -d, W + d, y1, 0, y1 === H ? 'XyYz' : 'Xyz');
+    }
+    const g = { tint: [0.45, 0.47, 0.48] };
+    const tx1 = p.endKind === 'concave' ? W - 0.62 : W;
+    b.tube('metal', [x0, H - 0.05, -0.62], [tx1, H - 0.05, -0.62], 0.07, 0.07, 6, g);
+    if (convex) {
+      b.tube('metal', [W, H - 0.05, -0.62], [W + 0.62, H - 0.05, -0.62], 0.07, 0.07, 6, g);
+      b.tube('metal', [W + 0.62, H - 0.05, -0.62], [W + 0.62, H - 0.05, 0], 0.07, 0.07, 6, g);
+    }
     if (p.consoles) {
       const n = Math.max(2, Math.round(W / 0.7));
       for (let i = 0; i < n; i++) {
@@ -409,6 +474,11 @@ export const M = {
     }
   },
 
+  // 17b. Pas małej kostki (ok. 5 cm) za krawężnikiem — jasny granit przy jezdni
+  sett(b, W, H, D) {
+    b.rectY('sett', H, 0, 0, W, D, 1);
+  },
+
   // 18. Bruk (kocie łby) — nawierzchnia jezdni
   cobble(b, W, H, D, p) {
     const s = p.step || 4;
@@ -456,12 +526,14 @@ function posterQuad(b, x0, y0, x1, y1, z, uv) {
 
 // ── miasteczko: mosty, nabrzeża, zieleń ─────────────────────────────────────
 Object.assign(M, {
-  // 22. Przęsło kamiennego mostu — łuk eliptyczny, sklepienie, filary,
-  //     jezdnia z brukiem, chodniki i balustrady. x = wzdłuż mostu, z = w poprzek.
-  bridge(b, W, H, D, p) {
-    const so = { tint: [0.72, 0.7, 0.66] };
-    const x0 = W * 0.13, x1 = W * 0.87, cx = W / 2, rx = (x1 - x0) / 2;
-    const ys = H * 0.2, ry = H * 0.62, N = 12;
+  // 22. Segment mostu 5 m (x = wzdłuż mostu, z = w poprzek). Każdy segment ma własny łuk
+  //     z półfilarami po 0,5 m przy krawędziach, więc dwa segmenty stykają się w pełnym
+  //     filarze; ciągła jezdnia, chodniki, gzyms, balustrada bez szwów na styku.
+  //     p.solid = oparcie na lądzie (bez łuku), p.first/p.last = słupy końcowe,
+  //     p.sw = szerokość chodnika (m).
+  bridgeseg(b, W, H, D, p) {
+    const so = { tint: [0.72, 0.7, 0.66] }, ao = { tint: [0.62, 0.6, 0.56] };
+    const cx = W / 2, rx = Math.min(2.0, W / 2 - 0.5), ys = H * 0.2, ry = Math.min(H * 0.62, 2.35), N = 10;
     const arc = [];
     for (let i = 0; i <= N; i++) {
       const a = Math.PI - (i / N) * Math.PI;
@@ -469,52 +541,81 @@ Object.assign(M, {
     }
     for (const [z, f] of [[0, -1], [D, 1]]) {
       const h = [0, 0, f];
-      b.poly('stone', [[0, 0, z], [x0, 0, z], [x0, H, z], [0, H, z]], h, so);
-      b.poly('stone', [[x1, 0, z], [W, 0, z], [W, H, z], [x1, H, z]], h, so);
+      if (p.solid) {
+        const ny = Math.max(1, Math.round(H / 1.2));
+        for (let j = 0; j < ny; j++) (f < 0 ? b.rect : b.rectBack).call(b, 'stone', 0, (H * j) / ny, W, (H * (j + 1)) / ny, z, so);
+        continue;
+      }
+      b.poly('stone', [[0, 0, z], [cx - rx, 0, z], [cx - rx, H, z], [0, H, z]], h, so);
+      b.poly('stone', [[cx + rx, 0, z], [W, 0, z], [W, H, z], [cx + rx, H, z]], h, so);
       for (let i = 0; i < N; i++) {
         const a = arc[i], c = arc[i + 1];
         b.poly('stone', [[a[0], a[1], z], [c[0], c[1], z], [c[0], H, z], [a[0], H, z]], h, so);
       }
-      // archiwolta
+      // archiwolta z klińcami
       for (let i = 0; i < N; i++) {
         const a0 = Math.PI - (i / N) * Math.PI, a1 = Math.PI - ((i + 1) / N) * Math.PI;
         const P = (a, k) => [cx + Math.cos(a) * rx * k, ys + Math.sin(a) * ry * k];
-        const p0 = P(a0, 1), p1 = P(a1, 1), q1 = P(a1, 1.12), q0 = P(a0, 1.12), zz = z + f * 0.08;
-        b.poly('stone', [[p0[0], p0[1], zz], [p1[0], p1[1], zz], [q1[0], q1[1], zz], [q0[0], q0[1], zz]], h, { tint: [0.62, 0.6, 0.56] });
+        const p0 = P(a0, 1), p1 = P(a1, 1), q1 = P(a1, 1.14), q0 = P(a0, 1.14), zz = z + f * 0.08;
+        b.poly('stone', [[p0[0], p0[1], zz], [p1[0], p1[1], zz], [q1[0], q1[1], zz], [q0[0], q0[1], zz]], h, { tint: i % 2 ? [0.6, 0.58, 0.54] : [0.66, 0.64, 0.6] });
       }
-      // gzyms pod balustradą
-      b.box('stone', 0, H - 0.35, z - (f < 0 ? 0.25 : 0), W, H - 0.1, z + (f > 0 ? 0.25 : 0), f < 0 ? 'yYz' : 'yYZ', so);
     }
-    b.rectX('stone', x0, 0, 0, D, ys, 1, { ...so, shade: 0.5 });
-    b.rectX('stone', x1, 0, 0, D, ys, -1, { ...so, shade: 0.5 });
-    for (let i = 0; i < N; i++) {
-      const a = arc[i], c = arc[i + 1], mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2;
-      b.poly('stone', [[a[0], a[1], 0], [c[0], c[1], 0], [c[0], c[1], D], [a[0], a[1], D]], [cx - mx, ys - my, 0], { ...so, shade: 0.4 });
+    // gzyms pod balustradą (ciągły, przez cały segment)
+    b.box('stone', 0, H - 0.35, -0.25, W, H - 0.1, 0, 'yYz', so);
+    b.box('stone', 0, H - 0.35, D, W, H - 0.1, D + 0.25, 'yYZ', so);
+    if (!p.solid) {
+      b.rectX('stone', cx - rx, 0, 0, D, ys, 1, { ...so, shade: 0.5 });
+      b.rectX('stone', cx + rx, 0, 0, D, ys, -1, { ...so, shade: 0.5 });
+      for (let i = 0; i < N; i++) {
+        const a = arc[i], c = arc[i + 1], mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2;
+        b.poly('stone', [[a[0], a[1], 0], [c[0], c[1], 0], [c[0], c[1], D], [a[0], a[1], D]], [cx - mx, ys - my, 0], { ...so, shade: 0.4 });
+      }
     }
-    // nawierzchnia
-    const sw = Math.min(2.5, D * 0.22), pw = 0.45;
-    b.gridY('cobble', H, 0, sw, W, D - sw, Math.max(1, Math.round(W / 3)), 2, { flat: 1, uvScale: 1 / 0.15 });
+    if (p.rail) {
+      // most kolejowy: podsypka, podkłady, szyny na poziomie toru (jak moduł rail) i dźwigary z blachy
+      const c = D / 2, gv = { tint: [0.62, 0.6, 0.58] }, tie = { tint: [0.32, 0.25, 0.2] }, steel = { tint: [0.3, 0.32, 0.31] };
+      b.box('stone', 0, H - 0.12, 0, W, H, D, 'yY', so);
+      b.poly('gravel', [[0, H + 0.35, c - 1.5], [W, H + 0.35, c - 1.5], [W, H + 0.35, c + 1.5], [0, H + 0.35, c + 1.5]], [0, 1, 0], gv);
+      b.poly('gravel', [[0, H, c - 2.1], [W, H, c - 2.1], [W, H + 0.35, c - 1.5], [0, H + 0.35, c - 1.5]], [0, 1, -1], gv);
+      b.poly('gravel', [[W, H, c + 2.1], [0, H, c + 2.1], [0, H + 0.35, c + 1.5], [W, H + 0.35, c + 1.5]], [0, 1, 1], gv);
+      const nt = Math.max(1, Math.round(W / 0.65));
+      for (let i = 0; i < nt; i++) { const x = ((i + 0.5) * W) / nt; b.box('wood', x - 0.12, H + 0.35, c - 1.25, x + 0.12, H + 0.5, c + 1.25, 'xXYzZ', tie); }
+      for (const z of [c - 0.72, c + 0.72]) b.box('metal', 0, H + 0.5, z - 0.035, W, H + 0.66, z + 0.035, 'YzZ', { tint: [0.55, 0.52, 0.5] });
+      for (const [za, zb, f] of [[0, 0.22, -1], [D - 0.22, D, 1]]) {
+        b.box('metal', 0, H - 0.3, za, W, H + 1.1, zb, 'xXYzZ', steel);
+        b.box('metal', 0, H + 1.1, za - 0.08, W, H + 1.2, zb + 0.08, 'xXyYzZ', steel);
+        for (let i = 0; i < 6; i++) { const x = ((i + 0.5) * W) / 6; b.rect('dark', x - 0.18, H + 0.15, x + 0.18, H + 0.85, f < 0 ? za - 0.01 : zb + 0.01, { shade: 0.5 }); }
+        if (p.first) b.box('metal', 0, H - 0.3, za - 0.04, 0.3, H + 1.3, zb + 0.04, 'xXYzZ', steel);
+        if (p.last) b.box('metal', W - 0.3, H - 0.3, za - 0.04, W, H + 1.3, zb + 0.04, 'xXYzZ', steel);
+      }
+      return;
+    }
+    // nawierzchnia: jezdnia z brukiem, po bokach chodniki z krawężnikiem
+    const sw = p.sw ?? Math.min(2.5, D * 0.22), pw = 0.45;
+    b.gridY('cobblep', H, 0, sw, W, D - sw, 2, Math.max(1, Math.round((D - 2 * sw) / 2.5)), { flat: 1 });
     for (const [za, zb, fz] of [[pw, sw, 1], [D - sw, D - pw, -1]]) {
-      b.rectY('slab', H + 0.15, 0, za, W, zb, 1);
+      b.rectY('slab', H + 0.15, 0, za, W, zb, 1, { flat: 1 });
       const zc = fz > 0 ? zb : za;
       b.rectX('curb', 0, zc, H, zc, H + 0.15, 1);
       b.poly('curb', [[0, H, zc], [W, H, zc], [W, H + 0.15, zc], [0, H + 0.15, zc]], [0, 0, fz]);
     }
-    // balustrady: cokół, tralki, pochwyt
+    // balustrada ciągła od końca do końca mostu: cokół, tralki o stałej podziałce (zgranej z
+    // długością segmentu, więc na styku nie ma szwu) i pochwyt; słupy tylko na samych końcach
     for (const [za, zb] of [[0, pw], [D - pw, D]]) {
       b.box('stone', 0, H, za, W, H + 0.3, zb, 'yYzZ', so);
       b.box('stone', 0, H + 0.95, za - 0.04, W, H + 1.12, zb + 0.04, 'yYzZ', so);
-      const nb = Math.max(2, Math.round(W / 0.32));
+      const nb = 16;
       for (let i = 0; i < nb; i++) {
         const x = ((i + 0.5) * W) / nb;
+        if ((p.first && x < 0.5) || (p.last && x > W - 0.5)) continue;
         b.cyl('stone', x, (za + zb) / 2, H + 0.3, H + 0.95, 0.09, 0.07, 6, so);
       }
-      if (p.end0) b.box('stone', 0, H, za - 0.05, 0.5, H + 1.35, zb + 0.05, 'xXYzZ', so);
-      if (p.end1) b.box('stone', W - 0.5, H, za - 0.05, W, H + 1.35, zb + 0.05, 'xXYzZ', so);
+      if (p.first) b.box('stone', 0, H, za - 0.1, 0.5, H + 1.3, zb + 0.1, 'xXYzZ', so);
+      if (p.last) b.box('stone', W - 0.5, H, za - 0.1, W, H + 1.3, zb + 0.1, 'xXYzZ', so);
     }
   },
 
-  // 23. Nabrzeże — kamienny mur oporowy, kapinos, balustrada
+  // 23. Nabrzeże — kamienny mur oporowy, kapinos (poręcz to osobny moduł quayrail)
   quay(b, W, H, D, p) {
     const so = { tint: [0.6, 0.6, 0.57] };
     const rows = Math.max(3, Math.round(H / 0.6));
@@ -524,15 +625,23 @@ Object.assign(M, {
       b.rect('stone', 0, yb - 0.03, W, yb, 0.02, { ...so, shade: 0.45 });
     }
     b.box('stone', 0, H - 0.3, -0.3, W, H + 0.02, 0.6, 'yYz', so);
-    if (p.rail) {
-      const mo = { tint: [0.15, 0.17, 0.16] };
-      const n = Math.max(1, Math.round(W / 2.2));
-      for (let i = 0; i <= n; i++) {
-        const x = (i * W) / n;
-        b.box('metal', x - 0.04, H, 0.1, x + 0.04, H + 1.05, 0.18, 'xXzZ', mo);
-      }
-      b.box('metal', 0, H + 0.98, 0.08, W, H + 1.05, 0.2, 'yYzZ', mo);
-      b.box('metal', 0, H + 0.5, 0.12, W, H + 0.53, 0.16, 'yYzZ', mo);
+  },
+
+  // 23b. Poręcz nabrzeża: jeden przęsło ~2 m, słupki z nasadkami na obu końcach.
+  //      Stawiana tylko tam, gdzie nic nie stoi (jezdnia, most, tory) — wcześniej płot
+  //      przechodził przez jezdnię i wchodził w balustrady mostów.
+  quayrail(b, W, H, D, p) {
+    const mo = { tint: [0.15, 0.17, 0.16] };
+    for (const x of [0.05, W - 0.05]) {
+      b.box('metal', x - 0.045, 0, 0.1, x + 0.045, 1.05, 0.19, 'xXzZ', mo);
+      b.box('metal', x - 0.06, 1.05, 0.085, x + 0.06, 1.1, 0.205, 'xXyYzZ', mo);
+    }
+    b.box('metal', 0, 0.98, 0.08, W, 1.05, 0.2, 'yYzZ', mo);
+    b.box('metal', 0, 0.5, 0.12, W, 0.53, 0.16, 'yYzZ', mo);
+    const n = Math.max(2, Math.round(W / 0.22));
+    for (let i = 1; i < n; i++) {
+      const x = (i * W) / n;
+      b.box('metal', x - 0.012, 0.53, 0.125, x + 0.012, 0.98, 0.155, 'xXzZ', mo);
     }
   },
 
@@ -584,15 +693,65 @@ Object.assign(M, {
   },
 });
 
+const IRON_FENCE = [[0.12, 0.13, 0.13], [0.15, 0.24, 0.2], [0.2, 0.24, 0.3]];
+
 Object.assign(M, {
-  // 28. Okap domu — deska czołowa + wysunięty pas dachu
+  // 28. Okap domu — deska czołowa + wysunięty pas dachu. W wypukłym narożniku dwa pasy
+  //     schodzą się w „czapkę”: dwa trójkąty połaci, dwa podsufitki i narożny słupek deski
+  //     (wcześniej tam była dziura i było widać przez okap). Rynna skręca o 90°.
   eave(b, W, H, D, p) {
-    const ro = { tint: p.roofTint };
-    b.box('wood', 0, 0, -0.05, W, H, 0, 'yz', { tint: [0.85, 0.82, 0.76] });
-    b.poly('roof', [[0, H, 0.3], [W, H, 0.3], [W, H - 0.32, -0.55], [0, H - 0.32, -0.55]], [0, 1, -0.4], ro);
-    b.poly('wood', [[0, H - 0.34, -0.55], [W, H - 0.34, -0.55], [W, H - 0.02, 0.3], [0, H - 0.02, 0.3]], [0, -1, 0.4], { tint: [0.5, 0.4, 0.3], shade: 0.6 });
-    // rynna wzdłuż okapu
-    b.tube('metal', [0, H - 0.4, -0.62], [W, H - 0.4, -0.62], 0.075, 0.075, 6, { tint: [0.45, 0.47, 0.48] });
+    const ro = { tint: p.roofTint }, x0 = -0.25, wood = { tint: [0.5, 0.4, 0.3], shade: 0.6 };
+    const convex = p.endKind === 'convex' && p.cornerOwner;
+    b.box('wood', x0, 0, -0.05, W, H, 0, 'xXyz', { tint: [0.85, 0.82, 0.76] });
+    b.poly('roof', [[x0, H, 0.3], [W, H, 0.3], [W, H - 0.32, -0.55], [x0, H - 0.32, -0.55]], [0, 1, -0.4], ro);
+    b.poly('wood', [[x0, H - 0.34, -0.55], [W, H - 0.34, -0.55], [W, H - 0.02, 0.3], [x0, H - 0.02, 0.3]], [0, -1, 0.4], wood);
+    const g = { tint: [0.45, 0.47, 0.48] };
+    const tx1 = p.endKind === 'concave' ? W - 0.62 : W;
+    b.tube('metal', [x0, H - 0.4, -0.62], [tx1, H - 0.4, -0.62], 0.075, 0.075, 6, g);
+    // zastrzały pod okapem (drewniane wsporniki, jak w willach z cegły)
+    if (p.brackets) {
+      const n = Math.max(1, Math.round((W - 0.5) / 1.3));
+      for (let i = 0; i < n; i++) {
+        const x = 0.25 + ((i + 0.5) * (W - 0.5)) / n;
+        b.tube('wood', [x, H - 0.95, -0.02], [x, H - 0.36, -0.5], 0.045, 0.045, 4, { tint: [0.28, 0.2, 0.15] });
+        b.box('wood', x - 0.05, H - 0.96, -0.06, x + 0.05, H - 0.5, 0, 'xXz', { tint: [0.28, 0.2, 0.15] });
+      }
+    }
+    if (convex) {
+      // połać: y = H − 0,3765·(0,3 − z) wzdłuż ściany A i y = H − 0,3765·(0,3 + x − W) wzdłuż B
+      const yw = H - 0.113, yo = H - 0.32;
+      const P0 = [W, yw, 0], P1 = [W + 0.55, yo, 0], P2 = [W + 0.55, yo, -0.55], P3 = [W, yo, -0.55];
+      b.poly('roof', [P0, P1, P2], [0.4, 1, 0], ro);
+      b.poly('roof', [P0, P2, P3], [0, 1, -0.4], ro);
+      const dn = (q) => [q[0], q[1] - 0.02, q[2]];
+      b.poly('wood', [dn(P0), dn(P1), dn(P2)], [0, -1, 0], wood);
+      b.poly('wood', [dn(P0), dn(P2), dn(P3)], [0, -1, 0], wood);
+      b.box('wood', W, 0, -0.05, W + 0.05, H, 0, 'XYz', { tint: [0.85, 0.82, 0.76] });
+      b.tube('metal', [W, H - 0.4, -0.62], [W + 0.62, H - 0.4, -0.62], 0.075, 0.075, 6, g);
+      b.tube('metal', [W + 0.62, H - 0.4, -0.62], [W + 0.62, H - 0.4, 0], 0.075, 0.075, 6, g);
+    }
+  },
+
+  // 28b. Ogrodzenie ogrodu: kratka z kutego żelaza na ceglanym cokole (odcinek między słupkami).
+  //      x wzdłuż płotu, z = grubość (płot stoi pośrodku). Słupki to osobny moduł `fencepost`.
+  fence(b, W, H, D, p) {
+    const cz = D / 2, brick = { tint: [0.66, 0.34, 0.25] }, iron = { tint: IRON_FENCE[p.iron % 3] };
+    b.box('brick', 0, 0, cz - 0.13, W, 0.4, cz + 0.13, 'yYzZ', brick);
+    b.box('stone', 0, 0.4, cz - 0.16, W, 0.46, cz + 0.16, 'yYzZ');
+    for (let x = 0.3; x < W - 0.2; x += 0.13) {
+      b.box('metal', x, 0.46, cz - 0.013, x + 0.026, 1.5, cz + 0.013, 'xXzZ', iron);
+      b.cyl('metal', x + 0.013, cz, 1.5, 1.62, 0.022, 0.0, 4, iron);
+    }
+    b.box('metal', 0, 0.55, cz - 0.02, W, 0.6, cz + 0.02, 'yYzZ', iron);
+    b.box('metal', 0, 1.36, cz - 0.02, W, 1.41, cz + 0.02, 'yYzZ', iron);
+  },
+  // słupek ogrodzenia: ceglany trzon, kamienna głowica z kulą
+  fencepost(b, W, H, D, p) {
+    const cx = W / 2, cz = D / 2, brick = { tint: [0.66, 0.34, 0.25] };
+    b.box('brick', cx - 0.2, 0, cz - 0.2, cx + 0.2, 1.5, cz + 0.2, 'xXzZ', brick);
+    b.box('stone', cx - 0.25, 1.5, cz - 0.25, cx + 0.25, 1.62, cz + 0.25, 'xXyYzZ');
+    b.box('stone', cx - 0.15, 1.62, cz - 0.15, cx + 0.15, 1.7, cz + 0.15, 'xXyYzZ');
+    b.cyl('stone', cx, cz, 1.7, 1.86, 0.1, 0.0, 8, {});
   },
 
   // 29. Billboard Partii — rama, plakat z dwóch stron, słupy
@@ -615,13 +774,15 @@ const norm3 = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]
 
 Object.assign(M, {
   // 24. Drzewo generowane rekurencyjnie (L-system: pień → gałęzie → kępy liści).
-  //     Gatunki: dąb, brzoza, topola, sosna. Każde drzewo z własnego seeda.
+  //     Gatunki: dąb (szeroka, gęsta korona), brzoza (biały pień, jasna owalna korona),
+  //     topola (kolumnowa), sosna (piętra gałęzi). Każde drzewo z własnego seeda.
   tree(b, W, H, D, p) {
     const r = new Rng(p.seed || 7);
     const sp = p.species || 'oak';
     const cx = W / 2, cz = D / 2;
     const bark = { tint: sp === 'birch' ? [0.88, 0.86, 0.8] : sp === 'pine' ? [0.42, 0.3, 0.22] : [0.4, 0.33, 0.26] };
     const leafT = p.leaf;
+    const clump = (c, R, sq = r.float(0.75, 0.95)) => cubeSphere(b, 'leaf', c, [R, R * sq, R], 2, { tint: leafT.map((x) => x * r.float(0.86, 1.14)) });
     if (sp === 'pine') {
       b.tube('bark', [cx, 0, cz], [cx, H * 0.95, cz], 0.022 * H, 0.008 * H, 7, bark);
       const layers = r.int(4, 6);
@@ -631,7 +792,20 @@ Object.assign(M, {
       }
       return;
     }
-    const clump = sp === 'poplar' ? 0.75 : sp === 'birch' ? 0.85 : 1.15;
+    if (sp === 'poplar') {
+      // krótki pień i wąska kolumnowa korona z kilkunastu kęp ułożonych w pionie
+      const lx = r.float(-0.15, 0.15), lz = r.float(-0.15, 0.15);
+      b.tube('bark', [cx, -0.2, cz], [cx + lx, H * 0.3, cz + lz], 0.032 * H, 0.02 * H, 7, bark);
+      const n = 14;
+      for (let i = 0; i < n; i++) {
+        const t = i / (n - 1), rad = W * 0.36 * (0.5 + 0.5 * Math.sin(Math.PI * Math.pow(t, 0.75)));
+        const a = r.float(0, Math.PI * 2);
+        clump([cx + lx * t + Math.cos(a) * rad * 0.4, H * (0.2 + 0.78 * t), cz + lz * t + Math.sin(a) * rad * 0.4], Math.max(0.5, rad * 0.9), r.float(1.0, 1.3));
+      }
+      return;
+    }
+    const spreadK = sp === 'birch' ? 0.85 : 1.15;
+    const tips = [];
     const branch = (p0, dir, len, rad, depth) => {
       // lekko krzywy odcinek z dwóch kawałków
       const mid = [p0[0] + dir[0] * len * 0.5 + r.float(-0.08, 0.08) * len, p0[1] + dir[1] * len * 0.5, p0[2] + dir[2] * len * 0.5 + r.float(-0.08, 0.08) * len];
@@ -639,29 +813,59 @@ Object.assign(M, {
       b.tube('bark', p0, mid, rad, rad * 0.85, depth > 1 ? 7 : 5, bark);
       b.tube('bark', mid, p1, rad * 0.85, rad * 0.68, depth > 1 ? 7 : 5, bark);
       if (depth === 0 || len < 0.9) {
-        const R = Math.max(0.7, len * clump) * r.float(0.85, 1.25);
-        cubeSphere(b, 'leaf', p1, [R, R * r.float(0.75, 0.95), R], 2, { tint: leafT.map((c) => c * r.float(0.88, 1.12)) });
+        const R = Math.max(0.8, len * spreadK) * r.float(0.9, 1.3);
+        clump(p1, R);
+        tips.push([p1, R]);
+        // kępa-towarzyszka dopełnia koronę (dąb gęstszy, brzoza lżejsza)
+        if (sp === 'oak' && r.chance(0.55)) clump([p1[0] + r.float(-0.7, 0.7) * R, p1[1] + R * 0.3, p1[2] + r.float(-0.7, 0.7) * R], R * 0.78);
         return;
       }
-      const n = sp === 'poplar' ? 2 : r.int(2, 3);
-      const spread = sp === 'poplar' ? 0.35 : sp === 'birch' ? 0.6 : 0.95;
+      const n = r.int(2, 3);
+      const spread = sp === 'birch' ? 0.5 : 0.95;
       const ph = r.float(0, Math.PI * 2);
       for (let i = 0; i < n; i++) {
         const a = ph + (i / n) * Math.PI * 2 + r.float(-0.4, 0.4);
-        const d = norm3([dir[0] + Math.cos(a) * spread, dir[1] + r.float(0.15, 0.5), dir[2] + Math.sin(a) * spread]);
+        const d = norm3([dir[0] + Math.cos(a) * spread, dir[1] + (sp === 'birch' ? r.float(0.45, 1.0) : r.float(0.2, 0.65)), dir[2] + Math.sin(a) * spread]);
         branch(p1, d, len * r.float(0.62, 0.8), rad * 0.62, depth - 1);
       }
-      if (sp === 'poplar' || r.chance(0.4)) branch(p1, norm3([dir[0] * 0.3, 1, dir[2] * 0.3]), len * 0.7, rad * 0.6, depth - 1);
+      if (r.chance(0.4)) branch(p1, norm3([dir[0] * 0.3, 1, dir[2] * 0.3]), len * 0.7, rad * 0.6, depth - 1);
     };
-    const trunk = H * (sp === 'poplar' ? 0.22 : sp === 'birch' ? 0.34 : 0.3);
+    const trunk = H * (sp === 'birch' ? 0.27 : 0.27);
     const lean = [r.float(-0.12, 0.12), 1, r.float(-0.12, 0.12)];
-    branch([cx, -0.2, cz], norm3(lean), trunk, H * (sp === 'birch' ? 0.018 : 0.03), sp === 'poplar' ? 4 : 3);
+    branch([cx, -0.2, cz], norm3(lean), trunk, H * (sp === 'birch' ? 0.018 : 0.03), 3);
+    // wypełnienie środka korony — bez prześwitów, przez które widać gołe gałęzie
+    if (tips.length > 2) {
+      const m = [0, 0, 0];
+      let avg = 0;
+      for (const [q, R] of tips) { m[0] += q[0] / tips.length; m[1] += q[1] / tips.length; m[2] += q[2] / tips.length; avg += R / tips.length; }
+      const fill = sp === 'oak' ? 4 : 2;
+      for (let k = 0; k < fill; k++) {
+        const [q] = tips[r.int(0, tips.length - 1)], t = r.float(0.3, 0.7);
+        clump([q[0] + (m[0] - q[0]) * t, q[1] + (m[1] - q[1]) * t, q[2] + (m[2] - q[2]) * t], avg * 0.85);
+      }
+    }
   },
 
-  // 30. Krzak — sześcian nadmuchany do kuli + szum
+  // 30. Krzak — kilka nadmuchanych kęp + szum; kwiaty rozsiane po koronie
   bush(b, W, H, D, p) {
-    cubeSphere(b, 'leaf', [W / 2, H * 0.45, D / 2], [W * 0.5, H * 0.5, D * 0.5], 2, { tint: p.leaf });
-    if (p.flowers) for (let i = 0; i < 5; i++) b.box('paint', W * (0.2 + 0.12 * i), H * 0.85, D * 0.3, W * (0.25 + 0.12 * i), H * 0.92, D * 0.36, 'xXYzZ', { tint: p.flowers });
+    const r = new Rng(p.seed || 5);
+    const n = 3;
+    const clumps = [];
+    for (let i = 0; i < n; i++) {
+      const a = r.float(0, Math.PI * 2), d = i === 0 ? 0 : W * 0.26 * r.float(0.6, 1);
+      const R = W * (i === 0 ? 0.42 : 0.3) * r.float(0.9, 1.1);
+      const c = [W / 2 + Math.cos(a) * d, H * (i === 0 ? 0.46 : 0.38), D / 2 + Math.sin(a) * d], rad = [R, Math.min(R * 0.9, H * 0.46), R];
+      clumps.push([c, rad]);
+      cubeSphere(b, 'leaf', c, rad, 2, { tint: p.leaf.map((x) => x * r.float(0.9, 1.1)) });
+    }
+    if (p.flowers) {
+      const [c, rad] = clumps[0];
+      for (let i = 0; i < 12; i++) {
+        const a = r.float(0, Math.PI * 2), e = r.float(0.1, 1.05), x = Math.cos(a) * Math.cos(e), z = Math.sin(a) * Math.cos(e), y = Math.sin(e);
+        const fx = c[0] + x * rad[0] * 0.8, fy = c[1] + y * rad[1] * 0.62, fz = c[2] + z * rad[2] * 0.8;
+        b.box('paint', fx - 0.055, fy - 0.055, fz - 0.055, fx + 0.055, fy + 0.055, fz + 0.055, 'xXyYzZ', { tint: p.flowers });
+      }
+    }
   },
 
   // 31. Samochód (x = długość, przód przy x = W); p.taxi = taksówka
@@ -700,165 +904,138 @@ Object.assign(M, {
     }
   },
 
-  // 31b. Wóz z ok. 1900 roku: szprychowe koła, otwarta buda z ławkami,
-  //      składany dach, mosiężna chłodnica i lampy (x = długość, przód przy x = W)
-  oldcar(b, W, H, D, p) {
-    const po = { tint: p.color }, dark = { tint: [0.08, 0.08, 0.08] }, brass = { tint: [0.85, 0.65, 0.25] };
-    const leather = { tint: p.seat || [0.4, 0.12, 0.1] };
-    const wheel = (x, z, r, side) => {
-      const w = 0.07, z0 = z - w / 2, z1 = z + w / 2, n = 16;
-      for (let i = 0; i < n; i++) {
-        const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
-        const P = (a, rr, zz) => [x + Math.cos(a) * rr, r + Math.sin(a) * rr, zz];
-        b.poly('dark', [P(a0, r, z0), P(a1, r, z0), P(a1, r, z1), P(a0, r, z1)], [Math.cos(a0), Math.sin(a0), 0], dark);
-        b.poly('wood', [P(a0, r - 0.06, z1), P(a1, r - 0.06, z1), P(a1, r - 0.06, z0), P(a0, r - 0.06, z0)], [-Math.cos(a0), -Math.sin(a0), 0], { tint: [0.35, 0.22, 0.12] });
-        for (const [zz, f] of [[z0, -1], [z1, 1]]) b.poly('dark', [P(a0, r - 0.06, zz), P(a1, r - 0.06, zz), P(a1, r, zz), P(a0, r, zz)], [0, 0, f], dark);
-      }
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2;
-        b.tube('wood', [x, r, z], [x + Math.cos(a) * (r - 0.06), r + Math.sin(a) * (r - 0.06), z], 0.018, 0.014, 4, { tint: [0.55, 0.38, 0.2] });
-      }
-      b.tube('metal', [x, r, z - side * 0.06], [x, r, z + side * 0.06], 0.07, 0.07, 8, { ...brass, caps: 1 });
-    };
-    const rf = 0.42, rr = 0.5;
-    wheel(W - 0.55, 0.12, rf, -1); wheel(W - 0.55, D - 0.12, rf, 1);
-    wheel(0.6, 0.12, rr, -1); wheel(0.6, D - 0.12, rr, 1);
-    // rama i osie
-    b.box('dark', 0.2, 0.42, 0.3, W - 0.15, 0.55, D - 0.3, 'xXyYzZ', dark);
-    b.tube('dark', [W - 0.55, rf, 0.12], [W - 0.55, rf, D - 0.12], 0.035, 0.035, 6, dark);
-    b.tube('dark', [0.6, rr, 0.12], [0.6, rr, D - 0.12], 0.035, 0.035, 6, dark);
-    // buda pasażerska i przednia ławka
-    b.box('paint', 0.15, 0.55, 0.25, W * 0.62, 1.15, D - 0.25, 'xXyYzZ', po);
-    b.box('paint', 0.1, 1.1, 0.22, W * 0.62, 1.18, D - 0.22, 'xXyYzZ', { tint: [0.1, 0.1, 0.1] });
-    b.box('paint', W * 0.62, 0.55, 0.3, W - 0.35, 0.95, D - 0.3, 'xXyYzZ', po);
-    // maska silnika i mosiężna chłodnica
-    b.box('paint', W - 0.75, 0.6, 0.38, W - 0.12, 1.05, D - 0.38, 'xYzZ', { tint: [0.12, 0.12, 0.13] });
-    b.box('metal', W - 0.12, 0.55, 0.36, W - 0.04, 1.12, D - 0.36, 'xXyYzZ', brass);
-    // ławki z oparciami
-    for (const [x0, x1] of [[0.25, 1.1], [W * 0.62 - 0.05, W * 0.62 + 0.55]]) {
-      b.box('paint', x0, 1.18, 0.35, x1, 1.3, D - 0.35, 'xXYzZ', leather);
-      b.box('paint', x0, 1.3, 0.35, x0 + 0.12, 1.75, D - 0.35, 'xXyYzZ', leather);
-    }
-    // błotniki — łuki nad kołami
-    for (const [x, r] of [[W - 0.55, rf], [0.6, rr]])
-      for (const z of [0.04, D - 0.2]) {
-        const n = 8;
-        for (let i = 0; i < n; i++) {
-          const a0 = Math.PI * (0.05 + (0.9 * i) / n), a1 = Math.PI * (0.05 + (0.9 * (i + 1)) / n);
-          const P = (a, zz) => [x + Math.cos(a) * (r + 0.1), r + Math.sin(a) * (r + 0.1), zz];
-          b.poly('paint', [P(a0, z), P(a1, z), P(a1, z + 0.16), P(a0, z + 0.16)], [Math.cos(a0), Math.sin(a0), 0], dark);
-          b.poly('paint', [P(a0, z + 0.16), P(a1, z + 0.16), P(a1, z), P(a0, z)], [-Math.cos(a0), -Math.sin(a0), 0], dark);
-        }
-      }
-    // stopnie po bokach
-    for (const z of [0.02, D - 0.22]) b.box('dark', W * 0.25, 0.48, z, W * 0.7, 0.52, z + 0.2, 'xXyYzZ', dark);
-    // składany dach nad tylną ławką (łuk z płócien)
-    const n = 6, tx0 = 0.12, tx1 = 1.25, ty = 2.05;
-    for (let i = 0; i < n; i++) {
-      const a0 = Math.PI * (i / n), a1 = Math.PI * ((i + 1) / n);
-      const P = (a, x) => [x, 1.2 + Math.sin(a) * (ty - 1.2), D / 2 - Math.cos(a) * (D / 2 - 0.15)];
-      b.poly('paint', [P(a0, tx0), P(a0, tx1), P(a1, tx1), P(a1, tx0)], [0, Math.sin((a0 + a1) / 2), -Math.cos((a0 + a1) / 2)], { tint: [0.12, 0.12, 0.12] });
-      b.poly('paint', [P(a0, tx1), P(a0, tx0), P(a1, tx0), P(a1, tx1)], [0, -Math.sin((a0 + a1) / 2), Math.cos((a0 + a1) / 2)], { tint: [0.2, 0.18, 0.16] });
-    }
-    for (let i = 0; i < n; i++) {
-      const P = (a) => [tx0, 1.2 + Math.sin(a) * (ty - 1.2), D / 2 - Math.cos(a) * (D / 2 - 0.15)];
-      b.poly('paint', [[tx0, 1.2, D / 2], P(Math.PI * (i / n)), P(Math.PI * ((i + 1) / n))], [-1, 0, 0], { tint: [0.12, 0.12, 0.12] });
-    }
-    // kierownica na kolumnie
-    b.tube('metal', [W * 0.62 + 0.55, 0.95, D * 0.3], [W * 0.62 + 0.35, 1.55, D * 0.3], 0.025, 0.025, 6, dark);
-    const sc = [W * 0.62 + 0.35, 1.58, D * 0.3];
-    for (let i = 0; i < 10; i++) {
-      const a0 = (i / 10) * Math.PI * 2, a1 = ((i + 1) / 10) * Math.PI * 2;
-      b.tube('wood', [sc[0] + Math.cos(a0) * 0.06, sc[1] + Math.cos(a0) * 0.2 * 0.1, sc[2] + Math.sin(a0) * 0.2], [sc[0] + Math.cos(a1) * 0.06, sc[1] + Math.cos(a1) * 0.02, sc[2] + Math.sin(a1) * 0.2], 0.018, 0.018, 4, { tint: [0.35, 0.22, 0.12] });
-    }
-    // szyba przednia w mosiężnej ramie
-    const wx = W * 0.62 + 0.62;
-    for (const z of [0.36, D - 0.36]) b.tube('metal', [wx, 0.95, z], [wx, 1.95, z], 0.025, 0.025, 6, brass);
-    b.tube('metal', [wx, 1.95, 0.36], [wx, 1.95, D - 0.36], 0.025, 0.025, 6, brass);
-    b.rectX('glass', wx, 0.38, 1.18, D - 0.38, 1.93, 1, { tint: [0.6, 0.65, 0.68] });
-    b.rectX('glass', wx - 0.01, 0.38, 1.18, D - 0.38, 1.93, -1, { tint: [0.6, 0.65, 0.68] });
-    // przetłoczenia na masce i korek chłodnicy
-    for (let k = 1; k < 5; k++) for (const z of [0.375, D - 0.375]) b.rect('dark', W - 0.7 + k * 0.11, 0.7, W - 0.66 + k * 0.11, 0.95, z < D / 2 ? z - 0.001 : z + 0.001, { tint: [0.05, 0.05, 0.05] });
-    b.cyl('metal', W - 0.08, D / 2, 1.12, 1.2, 0.05, 0.04, 8, brass, 'Y');
-    // linie drzwi na budzie
-    for (const z of [0.249, D - 0.249]) {
-      const f = z < D / 2 ? (o2) => b.rect('dark', 1.08, 0.62, 1.11, 1.1, z, o2) : (o2) => b.rectBack('dark', 1.08, 0.62, 1.11, 1.1, z, o2);
-      f({ tint: [0.05, 0.05, 0.05] });
-    }
-    // koło zapasowe, lampa tylna, tablica, trąbka
-    b.tube('dark', [-0.16, 0.98, D / 2], [-0.02, 0.98, D / 2], 0.4, 0.4, 14, { tint: [0.08, 0.08, 0.08], caps: 1 });
-    b.box('paint', -0.06, 0.62, 0.3, 0.02, 0.76, 0.42, 'xXyYzZ', { tint: [0.85, 0.1, 0.08] });
-    b.box('paint', W - 0.04, 0.47, D / 2 - 0.26, W + 0.02, 0.6, D / 2 + 0.26, 'xXyYzZ', { tint: [0.92, 0.9, 0.82] });
-    b.tube('metal', [W * 0.62 + 0.3, 1.25, D - 0.22], [W - 0.4, 1.12, D - 0.12], 0.02, 0.06, 8, brass);
-    // mosiężne lampy karbidowe
-    for (const z of [0.3, D - 0.3]) {
-      b.cyl('metal', W - 0.2, z, 1.0, 1.28, 0.09, 0.07, 8, brass, 'Y');
-      b.tube('light', [W - 0.2, 1.14, z], [W - 0.09, 1.14, z], 0.075, 0.075, 8, { caps: 1 });
-    }
-    if (p.taxi) {
-      b.box('paint', W * 0.62 - 0.05, 1.75, D / 2 - 0.35, W * 0.62 + 0.05, 2.0, D / 2 + 0.35, 'xXyYzZ', { tint: [0.95, 0.78, 0.15] });
-      b.box('paint', W * 0.62 - 0.02, 1.3, D / 2 - 0.02, W * 0.62 + 0.02, 1.75, D / 2 + 0.02, 'xXzZ', dark);
-      for (let i = 0; i < 6; i++) {
-        if (i % 2) continue;
-        const x0 = 0.25 + i * ((W * 0.62 - 0.4) / 6), x1 = x0 + (W * 0.62 - 0.4) / 6;
-        b.rect('dark', x0, 0.95, x1, 1.08, 0.249, { tint: [0.05, 0.05, 0.05] });
-        b.rectBack('dark', x0, 0.95, x1, 1.08, D - 0.249, { tint: [0.05, 0.05, 0.05] });
-      }
-    }
-  },
-
-  // 32. Człowiek (pasażer / przechodzień) — kilka zdeformowanych kostek
+  // 32. Człowiek (pasażer / przechodzień) — przód to +z. Buty, nogawki, marynarka z
+  //     rękawami i dłońmi, szyja, głowa z nosem, oczami i włosami, opcjonalnie melonik.
   person(b, W, H, D, p) {
     const cx = W / 2, cz = D / 2;
-    const pants = { tint: p.pants }, shirt = { tint: p.shirt }, skin = { tint: p.skin };
-    b.box('paint', cx - 0.17, 0, cz - 0.1, cx - 0.02, 0.85, cz + 0.1, 'xXYzZ', pants);
-    b.box('paint', cx + 0.02, 0, cz - 0.1, cx + 0.17, 0.85, cz + 0.1, 'xXYzZ', pants);
-    b.box('paint', cx - 0.21, 0.85, cz - 0.12, cx + 0.21, 1.45, cz + 0.12, 'xXyYzZ', shirt);
-    b.box('paint', cx - 0.3, 0.9, cz - 0.08, cx - 0.21, 1.42, cz + 0.08, 'xXyYzZ', shirt);
-    b.box('paint', cx + 0.21, 0.9, cz - 0.08, cx + 0.3, 1.42, cz + 0.08, 'xXyYzZ', shirt);
-    cubeSphere(b, 'paint', [cx, 1.6, cz], [0.13, 0.15, 0.13], 2, skin);
-    if (p.hat) b.cyl('paint', cx, cz, 1.7, 1.82, 0.16, 0.13, 8, { tint: p.hat }, 'Y');
+    const pants = { tint: p.pants }, coat = { tint: p.shirt }, skin = { tint: p.skin }, dark = { tint: [0.07, 0.06, 0.06] };
+    const hair = { tint: p.hair || [0.16, 0.1, 0.07] };
+    for (const s of [-1, 1]) {
+      const x = cx + s * 0.095;
+      b.box('paint', x - 0.07, 0, cz - 0.09, x + 0.07, 0.09, cz + 0.2, 'xXyYzZ', dark);
+      b.tube('paint', [x, 0.08, cz], [x, 0.9, cz], 0.07, 0.095, 8, pants);
+    }
+    b.box('paint', cx - 0.2, 0.86, cz - 0.11, cx + 0.2, 1.22, cz + 0.11, 'xXyYzZ', pants);
+    b.box('paint', cx - 0.205, 0.9, cz - 0.115, cx + 0.205, 0.95, cz + 0.115, 'xXyYzZ', dark);
+    b.box('paint', cx - 0.215, 0.95, cz - 0.125, cx + 0.215, 1.28, cz + 0.125, 'xXyYzZ', coat);
+    b.box('paint', cx - 0.235, 1.28, cz - 0.12, cx + 0.235, 1.46, cz + 0.12, 'xXYzZ', coat);
+    b.box('paint', cx - 0.05, 1.0, cz + 0.124, cx + 0.05, 1.46, cz + 0.13, 'xXyYzZ', { tint: [0.9, 0.88, 0.8] }); // koszula pod klapami
+    for (const s of [-1, 1]) {
+      const sw = s > 0 ? 0.1 : -0.06;
+      b.tube('paint', [cx + s * 0.255, 1.4, cz], [cx + s * 0.27, 0.9, cz + sw], 0.055, 0.045, 7, coat);
+      cubeSphere(b, 'paint', [cx + s * 0.27, 0.84, cz + sw], [0.05, 0.06, 0.05], 1, skin);
+    }
+    b.tube('paint', [cx, 1.44, cz], [cx, 1.56, cz], 0.055, 0.05, 7, skin);
+    cubeSphere(b, 'paint', [cx, 1.66, cz], [0.115, 0.14, 0.125], 2, skin);
+    b.box('paint', cx - 0.016, 1.62, cz + 0.12, cx + 0.016, 1.67, cz + 0.152, 'xXyYzZ', skin);
+    for (const s of [-1, 1]) b.box('paint', cx + s * 0.05 - 0.016, 1.69, cz + 0.115, cx + s * 0.05 + 0.016, 1.71, cz + 0.13, 'xXyYzZ', dark);
+    b.box('paint', cx - 0.03, 1.6, cz + 0.115, cx + 0.03, 1.612, cz + 0.128, 'xXyYzZ', { tint: [0.45, 0.2, 0.18] });
+    cubeSphere(b, 'paint', [cx, 1.72, cz - 0.025], [0.122, 0.1, 0.125], 2, hair);
+    if (p.hat) {
+      b.cyl('paint', cx, cz, 1.77, 1.8, 0.2, 0.2, 12, { tint: p.hat }, 'Y');
+      b.cyl('paint', cx, cz, 1.79, 1.92, 0.135, 0.1, 12, { tint: p.hat }, 'Y');
+    }
   },
 
-  // 33. Kiosk z gazetami
+  // 33. Kiosk z gazetami: ściany, lada z towarem, pas z szyldem, czterospadowy dach
   kiosk(b, W, H, D, p) {
-    const po = { tint: p.color || [0.3, 0.45, 0.35] };
+    const po = { tint: p.color || [0.3, 0.45, 0.35] }, wo = { tint: [0.5, 0.4, 0.3] };
     b.box('paint', 0, 0, 0, W, 2.2, D, 'xXYzZ', po);
-    b.rect('glass', 0.25, 1.0, W - 0.25, 1.9, -0.01, { tint: [0.6, 0.62, 0.55] });
-    b.box('wood', 0.2, 0.95, -0.35, W - 0.2, 1.0, 0, 'xXyYz', { tint: [0.5, 0.4, 0.3] });
-    b.box('roof', -0.25, 2.2, -0.35, W + 0.25, 2.4, D + 0.25, 'xXyYzZ', { tint: [0.35, 0.36, 0.38] });
-    const uv = atlasUV(p.sign || 'gin');
-    const m = b.cage.sign > 0;
-    b.rect('poster', 0.15, 2.42, W - 0.15, 2.42 + (W - 0.3) / atlasAspect(p.sign || 'gin'), -0.02, { uv: m ? [uv[1], uv[0], uv[3], uv[2]] : uv });
+    b.box('stone', -0.05, 0, -0.05, W + 0.05, 0.25, D + 0.05, 'xXyYzZ', { shade: 0.8 });
+    // okno wystawowe z ramą i ladą
+    b.box('wood', 0.2, 0.92, -0.04, W - 0.2, 1.97, 0.02, 'xXyYz', wo);
+    b.rect('dark', 0.28, 1.0, W - 0.28, 1.9, -0.045, { shade: 0.6 });
+    b.rect('glass', 0.28, 1.0, W - 0.28, 1.9, -0.05, { tint: [0.6, 0.62, 0.55] });
+    b.box('wood', 0.15, 0.9, -0.42, W - 0.15, 0.97, 0, 'xXyYz', wo);
+    // gazety i czasopisma na ladzie (kolorowe prostokąty za szybą)
+    const mags = [[0.85, 0.8, 0.65], [0.7, 0.2, 0.18], [0.25, 0.4, 0.6], [0.9, 0.75, 0.25], [0.45, 0.6, 0.4]];
+    const mw = (W - 0.6) / mags.length;
+    mags.forEach((c, i) => b.rect('paint', 0.3 + i * mw + 0.03, 1.02, 0.3 + (i + 1) * mw - 0.03, 1.55 + (i % 2) * 0.12, -0.056, { tint: c }));
+    // pas z szyldem
+    b.box('wood', -0.12, 2.2, -0.16, W + 0.12, 2.8, D + 0.12, 'xXyYzZ', { tint: [0.28, 0.2, 0.15] });
+    const uv = atlasUV(p.sign || 'gin'), m = b.cage.sign > 0;
+    const sw = W - 0.3, sh = Math.min(0.5, sw / atlasAspect(p.sign || 'gin'));
+    b.rect('poster', 0.15, 2.25, W - 0.15, 2.25 + sh, -0.165, { uv: m ? [uv[1], uv[0], uv[3], uv[2]] : uv });
+    // dach czterospadowy z okapem
+    const ro = { tint: [0.42, 0.18, 0.14] }, ox = 0.3, hy = 3.5;
+    const A = [-ox, 2.8, -ox - 0.1], Bq = [W + ox, 2.8, -ox - 0.1], C = [W + ox, 2.8, D + ox], Dq = [-ox, 2.8, D + ox], T = [W / 2, hy, D / 2];
+    b.poly('tile', [A, Bq, T], [0, 0.8, -1], ro);
+    b.poly('tile', [Bq, C, T], [1, 0.8, 0], ro);
+    b.poly('tile', [C, Dq, T], [0, 0.8, 1], ro);
+    b.poly('tile', [Dq, A, T], [-1, 0.8, 0], ro);
+    b.cyl('metal', W / 2, D / 2, hy, hy + 0.35, 0.05, 0.0, 6, { tint: [0.2, 0.2, 0.2] });
   },
 
-  // 34. Budka telefoniczna
+  // 34. Budka telefoniczna: czerwony szkielet, okna ze szprosami, świecący szyld, kopułka
   booth(b, W, H, D, p) {
-    const fo = { tint: p.color || [0.75, 0.12, 0.1] };
-    for (const [x, z] of [[0, 0], [W - 0.08, 0], [0, D - 0.08], [W - 0.08, D - 0.08]]) b.box('paint', x, 0, z, x + 0.08, 2.3, z + 0.08, 'xXzZ', fo);
-    b.box('paint', -0.05, 2.3, -0.05, W + 0.05, 2.5, D + 0.05, 'xXyYzZ', fo);
-    b.box('paint', 0, 0, 0, W, 0.08, D, 'xXYzZ', fo);
-    for (const z of [0.04, D - 0.04]) { b.rect('glass', 0.08, 0.3, W - 0.08, 2.25, z, { tint: [0.7, 0.75, 0.75] }); b.rectBack('glass', 0.08, 0.3, W - 0.08, 2.25, z, { tint: [0.7, 0.75, 0.75] }); }
-    b.rectX('glass', W - 0.04, 0.08, 0.3, D - 0.08, 2.25, 1, { tint: [0.7, 0.75, 0.75] });
-    b.box('metal', 0.08, 1.2, D - 0.3, 0.3, 1.6, D - 0.12, 'xXyYzZ', { tint: [0.15, 0.15, 0.15] });
+    const fo = { tint: p.color || [0.75, 0.12, 0.1] }, gl = { tint: [0.72, 0.78, 0.78] };
+    const y0 = 0.32, y1 = 2.12, bar = 0.016;
+    b.box('paint', -0.02, 0, -0.02, W + 0.02, 0.3, D + 0.02, 'xXyYzZ', fo);
+    for (const [x, z] of [[0, 0], [W - 0.08, 0], [0, D - 0.08], [W - 0.08, D - 0.08]]) b.box('paint', x, 0.3, z, x + 0.08, 2.3, z + 0.08, 'xXzZ', fo);
+    // szyby z krzyżem szprosów: 3 kolumny × 6 rzędów
+    const cols = [W / 3, (2 * W) / 3], rows = [];
+    for (let i = 1; i < 6; i++) rows.push(y0 + ((y1 - y0) * i) / 6);
+    for (const z of [0.04, D - 0.04]) {
+      b.rect('glass', 0.08, y0, W - 0.08, y1, z, { tint: gl.tint });
+      b.rectBack('glass', 0.08, y0, W - 0.08, y1, z, { tint: gl.tint });
+      for (const x of cols) b.box('paint', x - bar, y0, z - bar, x + bar, y1, z + bar, 'xXzZ', fo);
+      for (const y of rows) b.box('paint', 0.08, y - bar, z - bar, W - 0.08, y + bar, z + bar, 'yYzZ', fo);
+      b.box('paint', 0.08, y0 - 0.03, z - 0.03, W - 0.08, y0 + 0.03, z + 0.03, 'yYzZ', fo);
+      b.box('paint', 0.08, y1 - 0.03, z - 0.03, W - 0.08, y1 + 0.03, z + 0.03, 'yYzZ', fo);
+    }
+    for (const x of [0.04, W - 0.04]) {
+      b.rectX('glass', x, 0.08, y0, D - 0.08, y1, x < W / 2 ? 1 : -1, { tint: gl.tint });
+      b.rectX('glass', x, 0.08, y0, D - 0.08, y1, x < W / 2 ? -1 : 1, { tint: gl.tint });
+      for (const z of [D / 3, (2 * D) / 3]) b.box('paint', x - bar, y0, z - bar, x + bar, y1, z + bar, 'xXzZ', fo);
+      for (const y of rows) b.box('paint', x - bar, y - bar, 0.08, x + bar, y + bar, D - 0.08, 'xXyY', fo);
+    }
+    // świecący szyld i dach dwustopniowy z kopułką
+    b.rect('light', 0.12, 2.14, W - 0.12, 2.28, -0.03, { tint: [1, 0.95, 0.78] });
+    b.rectBack('light', 0.12, 2.14, W - 0.12, 2.28, D + 0.03, { tint: [1, 0.95, 0.78] });
+    b.box('paint', -0.06, 2.3, -0.06, W + 0.06, 2.46, D + 0.06, 'xXyYzZ', fo);
+    b.box('paint', 0.04, 2.46, 0.04, W - 0.04, 2.58, D - 0.04, 'xXyYzZ', fo);
+    b.cyl('paint', W / 2, D / 2, 2.58, 2.74, W * 0.32, W * 0.12, 10, fo, 'Y');
+    // aparat w środku
+    b.box('metal', 0.2, 1.1, D - 0.28, W - 0.2, 1.5, D - 0.12, 'xXyYz', { tint: [0.15, 0.15, 0.15] });
   },
 
-  // 35. Przystanek z wiatą
+  // 35. Przystanek z wiatą: dach ze spadkiem i rynną, szyby z ramami, ławka, słup z tablicą
   busstop(b, W, H, D, p) {
-    const mo = { tint: [0.22, 0.26, 0.28] };
-    for (const x of [0.05, W - 0.13]) b.box('metal', x, 0, D - 0.15, x + 0.08, 2.4, D - 0.07, 'xXzZ', mo);
-    b.box('metal', -0.1, 2.4, 0, W + 0.1, 2.5, D, 'xXyYzZ', mo);
-    b.rectBack('glass', 0.15, 0.2, W - 0.15, 2.3, D - 0.1, { tint: [0.6, 0.7, 0.72] });
-    b.rect('glass', 0.15, 0.2, W - 0.15, 2.3, D - 0.12, { tint: [0.6, 0.7, 0.72] });
-    b.box('wood', 0.3, 0.45, D - 0.55, W - 0.3, 0.5, D - 0.15, 'xXyYzZ', { tint: [0.5, 0.36, 0.22] });
-    b.box('metal', W + 0.3, 0, 0.2, W + 0.38, 2.6, 0.28, 'xXzZ', mo);
-    b.box('paint', W + 0.05, 2.6, 0.18, W + 0.65, 3.0, 0.3, 'xXyYzZ', { tint: [0.95, 0.8, 0.15] });
+    const mo = { tint: [0.22, 0.26, 0.28] }, gl = { tint: [0.6, 0.7, 0.72] };
+    for (const x of [0.05, W - 0.13]) b.box('metal', x, 0, D - 0.16, x + 0.08, 2.4, D - 0.08, 'xXzZ', mo);
+    for (const x of [0.05, W / 2 - 0.04, W - 0.13]) b.box('metal', x, 0.05, D - 0.14, x + 0.08, 2.4, D - 0.1, 'xXzZ', mo);
+    b.poly('roof', [[-0.15, 2.45, -0.05], [W + 0.15, 2.45, -0.05], [W + 0.15, 2.62, D], [-0.15, 2.62, D]], [0, 1, 0], { tint: [0.28, 0.32, 0.34] });
+    b.box('metal', -0.15, 2.38, -0.08, W + 0.15, 2.46, 0.02, 'xXyYzZ', mo);
+    // trzy szyby tylne
+    const gw = (W - 0.3) / 3;
+    for (let i = 0; i < 3; i++) {
+      const x0 = 0.15 + i * gw + 0.02, x1 = 0.15 + (i + 1) * gw - 0.02;
+      b.rectBack('glass', x0, 0.3, x1, 2.3, D - 0.12, gl);
+      b.rect('glass', x0, 0.3, x1, 2.3, D - 0.13, gl);
+      b.box('metal', x0 - 0.02, 0.28, D - 0.14, x1 + 0.02, 0.33, D - 0.1, 'xXyYzZ', mo);
+    }
+    // ławka z oparciem
+    b.box('wood', 0.3, 0.45, D - 0.6, W - 0.3, 0.5, D - 0.2, 'xXyYzZ', { tint: [0.5, 0.36, 0.22] });
+    b.box('wood', 0.3, 0.55, D - 0.22, W - 0.3, 0.9, D - 0.18, 'xXyYzZ', { tint: [0.5, 0.36, 0.22] });
+    for (const x of [0.4, W - 0.4]) b.box('metal', x - 0.03, 0, D - 0.55, x + 0.03, 0.45, D - 0.25, 'xXzZ', mo);
+    // słup z tablicą rozkładu i tarczą
+    b.box('metal', W + 0.3, 0, 0.2, W + 0.38, 2.7, 0.28, 'xXzZ', mo);
+    b.tube('paint', [W + 0.34, 2.9, 0.18], [W + 0.34, 2.9, 0.32], 0.38, 0.38, 14, { tint: [0.95, 0.8, 0.15], caps: 1 });
+    b.rect('dark', W + 0.2, 1.4, W + 0.48, 1.9, 0.17, { shade: 0.6 });
   },
 
-  // 36. Kosz na śmieci
+  // 36. Kosz na śmieci: zwężający się korpus, żebra, obręcz, otwór
   bin(b, W, H, D, p) {
-    b.cyl('metal', W / 2, D / 2, 0, 0.85, 0.24, 0.28, 10, { tint: [0.2, 0.32, 0.22] }, 'Y');
-    b.cyl('metal', W / 2, D / 2, 0.85, 0.92, 0.3, 0.3, 10, { tint: [0.15, 0.2, 0.16] }, 'Y');
+    const g = { tint: [0.2, 0.32, 0.22] }, dk = { tint: [0.1, 0.13, 0.11] };
+    b.cyl('metal', W / 2, D / 2, 0, 0.07, 0.2, 0.2, 10, dk, 'y');
+    b.cyl('metal', W / 2, D / 2, 0.07, 0.85, 0.22, 0.27, 12, g);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+      b.box('metal', W / 2 + c * 0.255 - 0.012, 0.12, D / 2 + s * 0.255 - 0.012, W / 2 + c * 0.255 + 0.012, 0.8, D / 2 + s * 0.255 + 0.012, 'xXzZ', dk);
+    }
+    b.cyl('metal', W / 2, D / 2, 0.42, 0.47, 0.262, 0.262, 12, dk);
+    b.cyl('metal', W / 2, D / 2, 0.85, 0.92, 0.3, 0.3, 12, dk, 'Y');
+    b.cyl('dark', W / 2, D / 2, 0.915, 0.92, 0.25, 0.25, 12, {}, 'Y');
   },
 
   // 37. Fontanna
@@ -956,6 +1133,80 @@ Object.assign(M, {
   },
 });
 
+// ── ratusz: wieża z zegarami, latarnią dzwonną i miedzianym hełmem ───────────
+Object.assign(M, {
+  // 42. Wieża ratusza (kostka W×H×W stoi na dachu ratusza; dolne p.hide m chowa połać dachu)
+  townhall(b, W, H, D, p) {
+    const hide = p.hide ?? 3.6, cx = W / 2, cz = D / 2;
+    const so = { tint: [0.92, 0.88, 0.78] }, ko = { tint: [0.84, 0.8, 0.7], shade: 0.9 }, dk = { tint: [0.08, 0.07, 0.07] };
+    const shaftTop = hide + (H - hide) * 0.5, lantTop = shaftTop + (H - hide) * 0.25, roofTop = H - 1.6;
+    // cztery ściany drobną siatką: szum materiału liczony jest w wierzchołkach, więc jeden duży
+    // prostokąt rozmijał się z zegarami i otworami tuż przed nim (wystawały spod ściany)
+    const walls = (x0, y0, z0, x1, y1, z1, o) => {
+      const nx = Math.max(1, Math.round((x1 - x0) / 0.8)), nz = Math.max(1, Math.round((z1 - z0) / 0.8)), ny = Math.max(1, Math.round((y1 - y0) / 0.8));
+      b.grid('stone', x0, y0, x1, y1, z0, nx, ny, o);
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) b.rectBack('stone', x0 + ((x1 - x0) * i) / nx, y0 + ((y1 - y0) * j) / ny, x0 + ((x1 - x0) * (i + 1)) / nx, y0 + ((y1 - y0) * (j + 1)) / ny, z1, o);
+      b.gridX('stone', x0, z0, y0, z1, y1, nz, ny, -1, o);
+      b.gridX('stone', x1, z0, y0, z1, y1, nz, ny, 1, o);
+    };
+    // trzon z narożnymi lizenami
+    walls(0.4, 0, 0.4, W - 0.4, shaftTop, D - 0.4, so);
+    for (const [x, z] of [[0.28, 0.28], [W - 0.62, 0.28], [0.28, D - 0.62], [W - 0.62, D - 0.62]]) b.box('stone', x, 0, z, x + 0.34, shaftTop, z + 0.34, 'xXyYzZ', ko);
+    // ściana wieży (indeks 0–3) → punkt (u w prawo, v w górę, o przed ścianę) i normalna na zewnątrz
+    const NRM = [[0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
+    const onWall = (f, ins) => (u, v, o) => (f === 0 ? [cx + u, v, ins - o] : f === 1 ? [cx - u, v, D - ins + o] : f === 2 ? [ins - o, v, cz - u] : [W - ins + o, v, cz + u]);
+    // zegary: tarcza, obwódka, kreski godzin, wskazówki (inne na każdej ścianie)
+    for (let f = 0; f < 4; f++) {
+      const F = onWall(f, 0.4), y = hide + (shaftTop - hide) * 0.52, R = Math.min(1.25, W * 0.2), n = 20, off = 0.03, hint = NRM[f];
+      const at = (a, r, o) => F(Math.cos(a) * r, y + Math.sin(a) * r, o);
+      for (let i = 0; i < n; i++) {
+        const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+        b.poly('stone', [at(a0, R * 1.22, off * 0.4), at(a1, R * 1.22, off * 0.4), at(a1, R, off * 0.4), at(a0, R, off * 0.4)], hint, { tint: [0.55, 0.5, 0.42] });
+        b.poly('paint', [F(0, y, off), at(a0, R, off), at(a1, R, off)], hint, { tint: [0.97, 0.95, 0.88] });
+      }
+      const bar = (a, r0, r1, w, o) => {
+        const q = (r, t) => F(Math.cos(a) * r - Math.sin(a) * t, y + Math.sin(a) * r + Math.cos(a) * t, o);
+        b.poly('dark', [q(r0, -w), q(r0, w), q(r1, w), q(r1, -w)], hint, dk);
+      };
+      for (let h = 0; h < 12; h++) bar((h / 12) * Math.PI * 2, R * (h % 3 === 0 ? 0.74 : 0.84), R * 0.94, h % 3 === 0 ? 0.045 : 0.025, off * 2);
+      bar(1.1 + f * 0.4, -R * 0.1, R * 0.52, 0.06, off * 3);
+      bar(4.2 + f * 0.9, -R * 0.1, R * 0.8, 0.04, off * 3);
+    }
+    // gzyms nad trzonem
+    b.box('stone', 0.05, shaftTop - 0.05, 0.05, W - 0.05, shaftTop + 0.3, D - 0.05, 'xXyYzZ', ko);
+    // latarnia dzwonna: łukowe otwory z ciemnym wnętrzem i ościeżami
+    const lw = 0.9;
+    walls(lw, shaftTop + 0.3, lw, W - lw, lantTop, D - lw, so);
+    const oy0 = shaftTop + 0.8, ow = (W - 2 * lw) * 0.5, oy1 = lantTop - 0.3 - ow * 0.3 - 0.2;
+    for (let f = 0; f < 4; f++) {
+      const F = onWall(f, lw), hint = NRM[f], e = 0.03;
+      const x0 = -ow / 2, x1 = ow / 2;
+      b.poly('dark', [F(x0, oy0, e), F(x1, oy0, e), F(x1, oy1, e), F(x0, oy1, e)], hint, dk);
+      for (let i = 0; i < 8; i++) {
+        const a0 = Math.PI - (i / 8) * Math.PI, a1 = Math.PI - ((i + 1) / 8) * Math.PI;
+        b.poly('dark', [F(0, oy1, e), F(Math.cos(a0) * ow / 2, oy1 + Math.sin(a0) * ow * 0.3, e), F(Math.cos(a1) * ow / 2, oy1 + Math.sin(a1) * ow * 0.3, e)], hint, dk);
+        b.poly('stone', [F(Math.cos(a0) * ow / 2, oy1 + Math.sin(a0) * ow * 0.3, e * 0.5), F(Math.cos(a1) * ow / 2, oy1 + Math.sin(a1) * ow * 0.3, e * 0.5), F(Math.cos(a1) * (ow / 2 + 0.14), oy1 + Math.sin(a1) * (ow * 0.3 + 0.14), e * 0.5), F(Math.cos(a0) * (ow / 2 + 0.14), oy1 + Math.sin(a0) * (ow * 0.3 + 0.14), e * 0.5)], hint, ko);
+      }
+      b.poly('stone', [F(x0 - 0.14, oy0, e * 0.5), F(x0, oy0, e * 0.5), F(x0, oy1, e * 0.5), F(x0 - 0.14, oy1, e * 0.5)], hint, ko);
+      b.poly('stone', [F(x1, oy0, e * 0.5), F(x1 + 0.14, oy0, e * 0.5), F(x1 + 0.14, oy1, e * 0.5), F(x1, oy1, e * 0.5)], hint, ko);
+    }
+    b.box('stone', lw - 0.25, lantTop - 0.05, lw - 0.25, W - lw + 0.25, lantTop + 0.28, D - lw + 0.25, 'xXyYzZ', ko);
+    // miedziany hełm: czworoboczna piramida z lekkim wybrzuszeniem + iglica z kulą
+    const cu = { tint: [0.4, 0.66, 0.56] }, r0 = lw - 0.15, ry = lantTop + 0.28;
+    const mid = ry + (roofTop - ry) * 0.42;
+    const ring = (y, k) => { const hx = (W / 2 - r0) * k, hz = (D / 2 - r0) * k; return [[cx - hx, y, cz - hz], [cx + hx, y, cz - hz], [cx + hx, y, cz + hz], [cx - hx, y, cz + hz]]; };
+    const rA = ring(ry, 1), rB = ring(mid, 0.7), rC = ring(roofTop, 0.05);
+    for (const [lo, hi] of [[rA, rB], [rB, rC]])
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        b.poly('roof', [lo[i], lo[j], hi[j], hi[i]], [(lo[i][0] + lo[j][0]) / 2 - cx, 0.8, (lo[i][2] + lo[j][2]) / 2 - cz], cu);
+      }
+    b.cyl('metal', cx, cz, roofTop - 0.1, H - 0.4, 0.07, 0.04, 6, { tint: [0.85, 0.65, 0.25] });
+    cubeSphere(b, 'metal', [cx, H - 0.55, cz], [0.28, 0.28, 0.28], 1, { tint: [0.9, 0.7, 0.28] });
+    b.cyl('metal', cx, cz, H - 0.35, H, 0.04, 0.0, 5, { tint: [0.85, 0.65, 0.25] });
+  },
+});
+
 // sześcian dzielony na siatkę i "nadmuchany" w stronę kuli — reszta kształtu
 // pochodzi z szumu materiału 'leaf' (wob), więc każda korona jest inna
 function cubeSphere(b, mat, c, R, n, o) {
@@ -978,8 +1229,147 @@ function cubeSphere(b, mat, c, R, n, o) {
       }
 }
 
+// ── komin fabryczny: stożkowy trzon z cegły, pasy i żeliwny wieniec ──────────
+Object.assign(M, {
+  factorychimney(b, W, H, D, p) {
+    const cx = W / 2, cz = D / 2, br = { tint: [0.6, 0.31, 0.22] }, st = { tint: [0.62, 0.6, 0.56] }, dk = { tint: [0.14, 0.13, 0.13] };
+    b.cyl('stone', cx, cz, -1.2, 1.6, 1.85, 1.7, 12, st, 'Y');
+    const seg = 12, n = Math.max(6, Math.round(H / 2.2));
+    for (let i = 0; i < n; i++) {
+      const y0 = 1.6 + ((H - 3.2) * i) / n, y1 = 1.6 + ((H - 3.2) * (i + 1)) / n;
+      const r = (y) => 1.45 - 0.62 * ((y - 1.6) / (H - 3.2));
+      b.cyl('brick', cx, cz, y0, y1, r(y0), r(y1), seg, { tint: [0.6 + (i % 3) * 0.02, 0.31, 0.22], shade: 1 - (i % 2) * 0.04 });
+    }
+    for (const f of [0.7, 0.82]) { const y = 1.6 + (H - 3.2) * f, r = 1.45 - 0.62 * f; b.cyl('stone', cx, cz, y - 0.18, y + 0.1, r + 0.08, r + 0.08, seg, st); }
+    const yt = H - 1.6, rt = 1.45 - 0.62;
+    b.cyl('brick', cx, cz, yt, H - 0.5, rt + 0.1, rt + 0.22, seg, br);
+    b.cyl('stone', cx, cz, H - 0.5, H - 0.25, rt + 0.3, rt + 0.3, seg, st, 'Y');
+    b.cyl('dark', cx, cz, H - 0.25, H - 0.2, rt + 0.1, rt - 0.2, seg, dk);
+    for (const y of [3.5, 9.5, 15.5]) if (y < H - 4) b.cyl('metal', cx, cz, y, y + 0.1, 1.5 - 0.62 * ((y - 1.6) / (H - 3.2)) + 0.05, 1.5 - 0.62 * ((y - 1.6) / (H - 3.2)) + 0.05, seg, dk);
+  },
+});
+
+// ── kościół: nawa z dachem dwuspadowym, wieża z iglicą, wieloboczne prezbiterium ──
+//  Oś budynku wzdłuż x, wieża przy x = 0 (od strony ulicy), prezbiterium przy x = W.
+Object.assign(M, {
+  church(b, W, H, D, p) {
+    const brick = !!p.brick, wm = brick ? 'brick' : 'plaster';
+    const wo = { tint: p.wall || (brick ? [0.6, 0.33, 0.25] : [0.92, 0.88, 0.8]) };
+    const ko = { tint: [0.84, 0.8, 0.7], shade: 0.9 };
+    const ro = { tint: p.roof || [0.3, 0.32, 0.36] };
+    const cu = { tint: p.spire || [0.38, 0.5, 0.44] };
+    const dk = { tint: [0.07, 0.06, 0.06] };
+    const tw = 7.4, tz0 = (D - tw) / 2, tz1 = tz0 + tw, nz0 = 0.6, nz1 = D - 0.6, nx0 = tw, nx1 = W - 6.4;
+    const hn = 10, rise = 5.6, ha = hn - 1.8, ac = D / 2;
+    const hs = Math.min(H * 0.5, 23), hb = hs + 5.4, tipY = H - 1.4;
+    // cztery ściany prostopadłościanu drobną siatką (szum materiału liczony jest w wierzchołkach)
+    const walls = (x0, y0, z0, x1, y1, z1, o, mat = wm, skipX0 = false) => {
+      const nx = Math.max(1, Math.round((x1 - x0) / 0.8)), nz = Math.max(1, Math.round((z1 - z0) / 0.8)), ny = Math.max(1, Math.round((y1 - y0) / 0.8));
+      b.grid(mat, x0, y0, x1, y1, z0, nx, ny, o);
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) b.rectBack(mat, x0 + ((x1 - x0) * i) / nx, y0 + ((y1 - y0) * j) / ny, x0 + ((x1 - x0) * (i + 1)) / nx, y0 + ((y1 - y0) * (j + 1)) / ny, z1, o);
+      if (!skipX0) b.gridX(mat, x0, z0, y0, z1, y1, nz, ny, -1, o);
+      b.gridX(mat, x1, z0, y0, z1, y1, nz, ny, 1, o);
+    };
+    // cokół z kamienia wokół całości
+    b.box('stone', 0, 0, tz0 - 0.15, tw + 0.15, 0.7, tz1 + 0.15, 'xXyYzZ', ko);
+    b.box('stone', nx0, 0, nz0 - 0.15, nx1 + 0.15, 0.7, nz1 + 0.15, 'yYzZ', ko);
+    // ── wieża ──
+    walls(0.1, 0.6, tz0, tw, hs, tz1, wo);
+    for (const [x, z] of [[0, tz0 - 0.25], [0, tz1 - 0.45], [tw - 0.55, tz0 - 0.25], [tw - 0.55, tz1 - 0.45]])
+      b.box('stone', x, 0.6, z, x + 0.65, hs * 0.78, z + 0.7, 'xXyYzZ', ko);
+    for (const y of [hs * 0.34, hs * 0.66, hs]) b.box('stone', -0.05, y - 0.12, tz0 - 0.1, tw + 0.1, y + 0.12, tz1 + 0.1, 'xXyYzZ', ko);
+    // portal od ulicy (ściana x = 0, na zewnątrz −x): łuk ostry z kamiennym obramieniem
+    const cz = D / 2, pw = 1.3, py = 3.4, e = 0.04;
+    b.poly('dark', [[-e, 0.7, cz - pw], [-e, 0.7, cz + pw], [-e, py, cz + pw], [-e, py, cz - pw]], [-1, 0, 0], dk);
+    b.poly('dark', [[-e, py, cz - pw], [-e, py, cz + pw], [-e, py + 1.5, cz]], [-1, 0, 0], dk);
+    b.box('stone', -0.22, 0.7, cz - pw - 0.32, 0.0, py + 0.2, cz - pw, 'xXyYzZ', ko);
+    b.box('stone', -0.22, 0.7, cz + pw, 0.0, py + 0.2, cz + pw + 0.32, 'xXyYzZ', ko);
+    b.poly('stone', [[-0.2, py, cz - pw - 0.32], [-0.2, py, cz + pw + 0.32], [-0.2, py + 1.9, cz]], [-1, 0, 0], ko);
+    // wysokie okno nad portalem + okna strzeliste na pozostałych ścianach trzonu
+    const lancet = (u, v0, v1, w, F, hint) => {
+      const x0 = u - w / 2, x1 = u + w / 2;
+      b.poly('dark', [F(x0, v0), F(x1, v0), F(x1, v1), F(x0, v1)], hint, dk);
+      b.poly('dark', [F(x0, v1), F(x1, v1), F(u, v1 + w * 0.95)], hint, dk);
+    };
+    lancet(cz, py + 3.2, hs * 0.62, 1.1, (u, v) => [-e, v, u], [-1, 0, 0]);
+    lancet(tz0 + tw / 2 - 0.0, hs * 0.74 - 3.2, hs * 0.74, 0.9, (u, v) => [u - tz0 - tw / 2 + tw / 2, v, tz0 - e], [0, 0, -1]);
+    // ── komora dzwonowa: łukowe otwory z żaluzjami ──
+    walls(0.35, hs, tz0 + 0.25, tw - 0.25, hb, tz1 - 0.25, wo);
+    b.box('stone', 0.15, hs - 0.05, tz0 + 0.05, tw - 0.05, hs + 0.28, tz1 - 0.05, 'xXyYzZ', ko);
+    const bo = (F, hint, wi) => { lancet(0, hs + 1.0, hb - 1.7, wi, F, hint); };
+    bo((u, v) => [0.35 - e, v, cz + u], [-1, 0, 0], 1.5);
+    bo((u, v) => [tw - 0.25 + e, v, cz + u], [1, 0, 0], 1.5);
+    bo((u, v) => [tw / 2 + u, v, tz0 + 0.25 - e], [0, 0, -1], 1.5);
+    bo((u, v) => [tw / 2 + u, v, tz1 - 0.25 + e], [0, 0, 1], 1.5);
+    b.box('stone', 0.1, hb - 0.05, tz0 + 0.0, tw - 0.0, hb + 0.3, tz1 - 0.0, 'xXyYzZ', ko);
+    // ── iglica: ośmioboczny hełm z lekkim wybrzuszeniem ──
+    const sx = tw / 2, sz = D / 2, r0 = tw / 2 - 0.2, ymid = hb + (tipY - hb) * 0.45, y0 = hb + 0.3;
+    const ringP = (y, r) => Array.from({ length: 8 }, (_, i) => { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; return [sx + Math.cos(a) * r, y, sz + Math.sin(a) * r]; });
+    const R0 = ringP(y0, r0 * 1.0), R1 = ringP(ymid, r0 * 0.62), R2 = ringP(tipY, 0.04);
+    for (const [lo, hi] of [[R0, R1], [R1, R2]])
+      for (let i = 0; i < 8; i++) {
+        const j = (i + 1) % 8, mx = (lo[i][0] + lo[j][0]) / 2 - sx, mz = (lo[i][2] + lo[j][2]) / 2 - sz;
+        b.poly('roof', [lo[i], lo[j], hi[j], hi[i]], [mx, 0.9, mz], cu);
+      }
+    b.tube('metal', [sx, tipY - 0.2, sz], [sx, H - 0.3, sz], 0.08, 0.05, 6, { tint: [0.85, 0.65, 0.25] });
+    b.box('metal', sx - 0.5, H - 1.0, sz - 0.05, sx + 0.5, H - 0.8, sz + 0.05, 'xXyYzZ', { tint: [0.85, 0.65, 0.25] });
+    b.box('metal', sx - 0.05, H - 1.7, sz - 0.05, sx + 0.05, H - 0.3, sz + 0.05, 'xXyYzZ', { tint: [0.85, 0.65, 0.25] });
+    // ── nawa ──
+    walls(nx0, 0.7, nz0, nx1, hn, nz1, wo, wm, true);
+    const nWin = Math.max(2, Math.floor((nx1 - nx0 - 2) / 3.6)), pitch = (nx1 - nx0) / nWin;
+    for (let i = 0; i < nWin; i++) {
+      const u = nx0 + pitch * (i + 0.5);
+      lancet(u, 2.6, hn - 3.0, 1.2, (uu, v) => [uu, v, nz0 - e], [0, 0, -1]);
+      lancet(u, 2.6, hn - 3.0, 1.2, (uu, v) => [uu, v, nz1 + e], [0, 0, 1]);
+      for (const [z0, z1] of [[nz0, nz0 - 0.18], [nz1, nz1 + 0.18]]) {
+        for (const sg of [-1, 1]) b.box('stone', u + sg * 0.75 - 0.07, 2.5, Math.min(z0, z1), u + sg * 0.75 + 0.07, hn - 2.6, Math.max(z0, z1), 'xXyYzZ', ko);
+      }
+    }
+    // przypory między oknami
+    for (let i = 0; i <= nWin; i++) {
+      const u = nx0 + pitch * i;
+      for (const [z0, z1] of [[nz0 - 0.55, nz0 + 0.05], [nz1 - 0.05, nz1 + 0.55]]) b.box('stone', u - 0.28, 0.6, z0, u + 0.28, hn - 1.6, z1, 'xXyYzZ', ko);
+    }
+    b.box('stone', nx0, hn - 0.05, nz0 - 0.2, nx1, hn + 0.22, nz1 + 0.2, 'xXyYzZ', ko);
+    // dach dwuspadowy z okapem i szczytem od strony prezbiterium
+    const eo = 0.55;
+    b.poly('roof', [[nx0, hn + 0.1, nz0 - eo], [nx1 + 0.4, hn + 0.1, nz0 - eo], [nx1 + 0.4, hn + rise, ac], [nx0, hn + rise, ac]], [0, 1, -0.9], ro);
+    b.poly('roof', [[nx1 + 0.4, hn + 0.1, nz1 + eo], [nx0, hn + 0.1, nz1 + eo], [nx0, hn + rise, ac], [nx1 + 0.4, hn + rise, ac]], [0, 1, 0.9], ro);
+    b.poly(wm, [[nx1 + 0.02, hn, nz0], [nx1 + 0.02, hn, nz1], [nx1 + 0.02, hn + rise - 0.05, ac]], [1, 0, 0], wo);
+    // ── prezbiterium: trzy ściany pod stożkowym dachem ──
+    const A = [[nx1, nz0 + 2.4], [nx1 + 2.6, nz0 + 2.4], [W, ac], [nx1 + 2.6, nz1 - 2.4], [nx1, nz1 - 2.4]];
+    for (let i = 0; i < A.length - 1; i++) {
+      const a = A[i], c = A[i + 1], mx = (a[0] + c[0]) / 2 - (nx1 + 1.5), mz = (a[1] + c[1]) / 2 - ac;
+      const nx = Math.max(1, Math.round(Math.hypot(c[0] - a[0], c[1] - a[1]) / 0.8)), ny = Math.max(1, Math.round((ha - 0.7) / 0.8));
+      for (let u = 0; u < nx; u++) for (let v = 0; v < ny; v++) {
+        const t0 = u / nx, t1 = (u + 1) / nx, y0 = 0.7 + ((ha - 0.7) * v) / ny, y1 = 0.7 + ((ha - 0.7) * (v + 1)) / ny;
+        b.poly(wm, [[a[0] + (c[0] - a[0]) * t0, y0, a[1] + (c[1] - a[1]) * t0], [a[0] + (c[0] - a[0]) * t1, y0, a[1] + (c[1] - a[1]) * t1], [a[0] + (c[0] - a[0]) * t1, y1, a[1] + (c[1] - a[1]) * t1], [a[0] + (c[0] - a[0]) * t0, y1, a[1] + (c[1] - a[1]) * t0]], [mx, 0, mz], wo);
+      }
+      // okno w ścianie prezbiterium
+      const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2], dl = Math.hypot(c[0] - a[0], c[1] - a[1]), tx = (c[0] - a[0]) / dl, tz = (c[1] - a[1]) / dl, ox = mx / (Math.hypot(mx, mz) || 1) * 0.04, oz = mz / (Math.hypot(mx, mz) || 1) * 0.04;
+      if (dl > 2) {
+        const w = 0.55, q = (s, y) => [mid[0] + tx * s + ox, y, mid[1] + tz * s + oz];
+        b.poly('dark', [q(-w, 2.8), q(w, 2.8), q(w, ha - 2.4), q(-w, ha - 2.4)], [mx, 0, mz], dk);
+        b.poly('dark', [q(-w, ha - 2.4), q(w, ha - 2.4), q(0, ha - 2.4 + w * 1.9)], [mx, 0, mz], dk);
+      }
+    }
+    const apex = [nx1 + 1.6, ha + rise * 0.78, ac];
+    for (let i = 0; i < A.length - 1; i++) {
+      const a = A[i], c = A[i + 1], mx = (a[0] + c[0]) / 2 - apex[0], mz = (a[1] + c[1]) / 2 - apex[2];
+      b.poly('roof', [[a[0], ha, a[1]], [c[0], ha, c[1]], apex], [mx, 0.8, mz], ro);
+    }
+    b.poly('roof', [[A[A.length - 1][0], ha, A[A.length - 1][1]], [A[0][0], ha, A[0][1]], apex], [-1, 0.2, 0], ro);
+    b.poly('roof', [[A[0][0], ha, A[0][1]], [A[A.length - 1][0], ha, A[A.length - 1][1]], apex], [-1, 0.2, 0], ro);
+  },
+});
+
+installProps(M, { cubeSphere }); // ~40 nowych rekwizytów (propmods.js)
+
 export function gateWidth(W) {
   return clamp(W * 0.8, 2.6, 3.3);
 }
+
+// wozy (oldcar, carwheel) — osobny plik; nadpisują ewentualne stare wersje
+Object.assign(M, vehicleModules);
 
 export const MODULE_NAMES = Object.keys(M);
