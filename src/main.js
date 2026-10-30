@@ -149,7 +149,7 @@ async function start() {
 
   const clock = new THREE.Clock();
   let fpsAcc = 0, fpsN = 0, fps = 60, streamAcc = 0, frameNo = 0, prCool = 3;
-  const prMax = Math.min(devicePixelRatio, LOW ? 1 : 1.5), prMin = 0.6;
+  const prMax = Math.min(devicePixelRatio, LOW ? 1 : 1.5), prMin = LOW ? 0.8 : 0.6;
   const tmp = new THREE.Vector3();
   function frame() {
     const dt = Math.min(0.05, clock.getDelta());
@@ -189,7 +189,8 @@ async function start() {
       prCool -= 0.5;
       if (playing && prCool <= 0) {
         const pr = renderer.getPixelRatio();
-        const next = fps < 42 ? Math.max(prMin, pr - 0.1) : fps > 57 ? Math.min(prMax, pr + 0.05) : pr;
+        const lo = LOW ? 24 : 42, hi = LOW ? 40 : 57; // telefon rzadko trzyma 60, więc 28 FPS nie obniża już rozdzielczości
+        const next = fps < lo ? Math.max(prMin, pr - 0.1) : fps > hi ? Math.min(prMax, pr + 0.05) : pr;
         if (Math.abs(next - pr) > 1e-3) { renderer.setPixelRatio(next); renderer.setSize(innerWidth, innerHeight); prCool = 2; }
       }
     }

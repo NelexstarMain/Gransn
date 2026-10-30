@@ -488,15 +488,15 @@ vec3 wCobble(vec3 base, out float hgt, out float rgh){
   float stain = smoothstep(0.76, 0.95, nW.r);
   sc *= 1.0 - stain * 0.45;
 
-  float gr = 1.0 - smoothstep(0.0, 0.07, -sd);
+  float gr = 1.0 - smoothstep(-px * 0.6, 0.07 + px * 0.8, -sd);   // spoina szersza niż piksel: bez postrzępienia
   vec3 groutC = wlin(vec3(0.27, 0.23, 0.18)) * (0.65 + 0.7 * nG.a);
   float moss = smoothstep(0.6, 0.9, nG.g) * (1.0 - smoothstep(0.0, 2.0, edgeD));
   groutC = mix(groutC, wlin(vec3(0.2, 0.27, 0.12)), moss * 0.6);
   vec3 col = mix(sc, groutC, gr);
 
   rgh = 1.0 - 0.3 * lane * st - 0.12 * stain;
-  float lodF = smoothstep(0.3, 1.0, px);
-  hgt *= 1.0 - lodF;
+  float lodF = smoothstep(0.4, 1.0, px);
+  hgt *= 1.0 - smoothstep(0.1, 0.5, px);
   return mix(col, avg, lodF);
 }
 `;
@@ -507,7 +507,7 @@ vec3 wSlab(vec3 base, out float hgt, out float rgh){
   hgt = 0.0; rgh = 1.0;
   float px = max(length(dFdx(vWUV)), length(dFdy(vWUV)));
   vec3 avg = wlin(vec3(0.6, 0.59, 0.57));
-  if (px > 0.35) return avg;
+  if (px > 0.25) return avg;
   float ang = vWear.x * 255.0 / 255.0 * 3.14159265;
   vec2 p = vec2(cos(ang) * vWUV.x + sin(ang) * vWUV.y, -sin(ang) * vWUV.x + cos(ang) * vWUV.y);
   vec4 wv = texture2D(wearTex, p * 0.021 + 0.3);
@@ -519,7 +519,7 @@ vec3 wSlab(vec3 base, out float hgt, out float rgh){
   vec2 h2 = wh22(id + 5.0);
   float eD = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)) * 0.5;   // m do krawędzi płyty
   float gap = 0.003 + 0.005 * h2.x;
-  float inSlab = smoothstep(gap, gap + 0.004, eD);
+  float inSlab = smoothstep(gap - px * 0.5, gap + 0.004 + px * 0.9, eD);   // spoina nigdy węższa niż piksel (bez kropek)
 
   vec4 nF = texture2D(wearTex, p * 1.3 + id * 0.137);
   vec4 nB = texture2D(wearTex, vWP.xz * 0.09);
@@ -545,8 +545,8 @@ vec3 wSlab(vec3 base, out float hgt, out float rgh){
   grout = mix(grout, wlin(vec3(0.22, 0.3, 0.13)), smoothstep(0.6, 0.9, nF.a) * 0.5);   // trawa w spoinach
   vec3 col = mix(grout, c, inSlab);
   hgt = inSlab * 0.003 + (f.x - 0.5) * (h2.x - 0.5) * 0.004 - crk * 0.002;
-  float lodF = smoothstep(0.12, 0.35, px);
-  hgt *= 1.0 - lodF;
+  float lodF = smoothstep(0.03, 0.2, px);
+  hgt *= 1.0 - smoothstep(0.01, 0.06, px);
   return mix(col, avg, lodF);
 }
 `;
