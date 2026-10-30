@@ -26,6 +26,31 @@ for (let q = 0; q < g.quads.length / 4; q++) {
     for (const p of [G.m[i], G.c, G.m[(i + 3) % 4]]) if (R.clearance(p[0], p[1]) < 0) { wallOnRoad++; break; }
   }
 }
+// ogrodzenia ogrodów: nie na jezdni, w rzece, na moście ani trasie, nie przecinają rekwizytów
+const segDist = (x, z, a, b) => {
+  const dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1;
+  const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2));
+  return Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t));
+};
+let fenceOnRoad = 0, fenceInRiver = 0, fenceOnBridge = 0, fenceHitsProp = 0;
+const hitKinds = {};
+for (const f of c.fences) {
+  let road = false, river = false, bridge = false;
+  for (let k = 0; k <= 4; k++) {
+    const x = f.a[0] + (f.b[0] - f.a[0]) * k / 4, z = f.a[1] + (f.b[1] - f.a[1]) * k / 4;
+    if (R.clearance(x, z) < 0) road = true;
+    if (T.river(x, z).d < T.hw + 0.5) river = true;
+    if (c.bridges.some((b) => onBridge(b, x, z, 0.5))) bridge = true;
+  }
+  if (road) fenceOnRoad++; if (river) fenceInRiver++; if (bridge) fenceOnBridge++;
+  for (const p of all) {
+    if (p.k === 'tree') continue;
+    if (segDist(p.p[0], p.p[1], f.a, f.b) < Math.min(p.r, 1) * 0.6) { fenceHitsProp++; hitKinds[p.k] = (hitKinds[p.k] || 0) + 1; break; }
+  }
+}
+let postOnRoad = 0, postInRiver = 0;
+for (const po of c.posts) { if (R.clearance(po.p[0], po.p[1]) < 0) postOnRoad++; if (T.river(po.p[0], po.p[1]).d < T.hw + 0.5) postInRiver++; }
+console.log({ fences: c.fences.length, posts: c.posts.length, fenceOnRoad, fenceInRiver, fenceOnBridge, fenceHitsProp, hitKinds, postOnRoad, postInRiver });
 const shapes = {};
 const seen = new Set();
 for (let v = 0; v < g.N; v++) if (g.TY[v] === 1 && g.BID[v] >= 0 && !seen.has(g.BID[v])) { seen.add(g.BID[v]); const s = g.design.get(g.BID[v]).shape; shapes[s] = (shapes[s] || 0) + 1; }

@@ -623,7 +623,58 @@ export function decorate(city) {
     else props.push(item);
     void zone; void cl;
   }
-  Object.assign(city, { lamps, trees, benches, screens: [], props });
+
+  // ── pachołki wzdłuż krawężników głównych ulic (jak przy torowiskach i przejściach na zdjęciach) ──
+  //  Rekwizyty liniowe: co ~3,2 m, po jednej albo obu stronach wybranych ulic. Przechodzą przez
+  //  te same sprawdzenia co reszta (odstęp od jezdni, budynków, rzeki, mostów i innych rekwizytów).
+  const bollR = PROPS.bollard.r;
+  const nearV = (x, z) => {
+    let best = -1, bd = 1e9;
+    for (const v of g.vAt(x, z)) { const d = (X[v] - x) ** 2 + (g.Z[v] - z) ** 2; if (d < bd) { bd = d; best = v; } }
+    return best;
+  };
+  city.streets.forEach((st, si) => {
+    if (!st.town || st.bridge || st.mat !== 'cobble') return;
+    const len = Math.hypot(st.b[0] - st.a[0], st.b[1] - st.a[1]);
+    if (len < 18 || hash(seed, si, 8123) % 100 >= (st.rw >= 4 ? 55 : 14)) return;
+    const u = [(st.b[0] - st.a[0]) / len, (st.b[1] - st.a[1]) / len], nrm = [-u[1], u[0]], mode = hash(seed, si, 8124) % 3;
+    for (const sd of [-1, 1]) {
+      if ((mode === 1 && sd > 0) || (mode === 2 && sd < 0)) continue;
+      for (let t = 4; t < len - 4; t += 3.2) {
+        const off = st.rw + 0.85;
+        const p = [st.a[0] + u[0] * t + nrm[0] * sd * off, st.a[1] + u[1] * t + nrm[1] * sd * off];
+        if (!fits(p, bollR, { roadGap: 0.5 })) continue;
+        const v = nearV(p[0], p[1]);
+        put(p, bollR);
+        props.push({ p, n: [nrm[0] * sd, nrm[1] * sd], e: u, y: v >= 0 && raised(city, v) ? 0.15 : 0, kind: 'bollard', seed: hash(seed, si, Math.round(t * 10)) });
+      }
+    }
+  });
+  // ── ogrodzenia ogrodów od strony ulicy i podwórza (jak na zdjęciach): kratka z kutego żelaza
+  //  na ceglanym cokole między ceglanymi słupkami z kamienną głowicą; co któryś odcinek to bramka.
+  //  Słupki są osobno (dzielone przez sąsiednie odcinki), żeby w narożach nie dublowały się.
+  const fences = [], postAt = new Map();
+  for (let q = 0; q < g.quads.length / 4; q++) {
+    const G = quadGeom(g, q);
+    for (let i = 0; i < 4; i++) {
+      const a = G.v[i];
+      if (TY[a] !== T_GARDEN) continue;
+      for (const side of [0, 1]) {
+        const nb = side === 0 ? G.v[(i + 1) % 4] : G.v[(i + 3) % 4];
+        if (TY[nb] !== T_STREET && TY[nb] !== T_COURT) continue;
+        const f0 = side === 0 ? G.m[i] : G.m[(i + 3) % 4], c = G.c;
+        const mid = [(f0[0] + c[0]) / 2, (f0[1] + c[1]) / 2], len = Math.hypot(c[0] - f0[0], c[1] - f0[1]);
+        if (len < 1.2 || roads.clearance(mid[0], mid[1]) < 1.2 || !dry(mid) || onRoute(mid, 0.4)) continue;
+        let nx = -(c[1] - f0[1]) / len, nz = (c[0] - f0[0]) / len;
+        if ((G.p[i][0] - f0[0]) * nx + (G.p[i][1] - f0[1]) * nz < 0) { nx = -nx; nz = -nz; }
+        for (const pt of [f0, c]) postAt.set(Math.round(pt[0] * 10) + ',' + Math.round(pt[1] * 10), pt);
+        if (hash(seed, a, q, side, 91) % 7 === 0) continue; // bramka: słupki bez kratki
+        fences.push({ p: mid, a: f0, b: c, n: [nx, nz], iron: hash(seed, a, 93) % 3 });
+      }
+    }
+  }
+  const posts = [...postAt.values()].map((p) => ({ p }));
+  Object.assign(city, { lamps, trees, benches, screens: [], props, fences, posts });
 }
 
 // podział na fragmenty do strumieniowania
@@ -633,7 +684,7 @@ export function makeChunks(city, size = 80) {
   for (let j = 0; j < n; j++)
     for (let i = 0; i < n; i++) {
       const cx = -city.half + (i + 0.5) * size, cz = -city.half + (j + 0.5) * size;
-      chunks.push({ id: chunks.length, center: [cx, cz], radius: size * 0.72, quads: [], lamps: [], trees: [], benches: [], monuments: [], billboards: [], props: [], rail: [], extras: [], roads: [] });
+      chunks.push({ id: chunks.length, center: [cx, cz], radius: size * 0.72, quads: [], lamps: [], trees: [], benches: [], monuments: [], billboards: [], props: [], rail: [], extras: [], roads: [], fences: [], posts: [] });
     }
   const at = (x, z) => {
     const i = Math.min(n - 1, Math.max(0, Math.floor((x + city.half) / size))), j = Math.min(n - 1, Math.max(0, Math.floor((z + city.half) / size)));
@@ -644,7 +695,7 @@ export function makeChunks(city, size = 80) {
     for (let k = 0; k < 4; k++) { cx += X[quads[q * 4 + k]] / 4; cz += Z[quads[q * 4 + k]] / 4; }
     at(cx, cz).quads.push(q);
   }
-  for (const k of ['lamps', 'trees', 'benches', 'billboards', 'props', 'monuments', 'extras']) for (const it of city[k]) at(it.p[0], it.p[1])[k].push(it);
+  for (const k of ['lamps', 'trees', 'benches', 'billboards', 'props', 'monuments', 'extras', 'fences', 'posts']) for (const it of city[k]) at(it.p[0], it.p[1])[k].push(it);
   const P = city.routes.rail.pts;
   for (let i = 0; i < P.length - 1; i++) at((P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2).rail.push(i);
   city.streets.forEach((st, i) => at((st.a[0] + st.b[0]) / 2, (st.a[1] + st.b[1]) / 2).roads.push(i));

@@ -176,6 +176,11 @@ export function doorParts(b, x0, x1, y0, y1, W, p) {
   b.box('stone', x1, 0.3, -0.1, x1 + 0.38, y1 + 0.05, 0, 'xXz');
   b.box('stone', x0 - 0.52, y1 + 0.05, -0.17, x1 + 0.52, y1 + 0.42, 0, 'xXyYz');
   b.box('stone', x0 - 0.25, 0, -0.5, x1 + 0.25, 0.3, 0.42, 'xXYz', { shade: 0.9 });
+  // głowice i bazy pilastrów portalu
+  for (const [xa, xb] of [[x0 - 0.46, x0 + 0.04], [x1 - 0.04, x1 + 0.46]]) {
+    b.box('stone', xa, y1 - 0.2, -0.17, xb, y1 + 0.05, 0, 'xXyYz');
+    b.box('stone', xa + 0.02, 0.3, -0.15, xb - 0.02, 0.62, 0, 'xXYz', { shade: 0.9 });
+  }
 }
 
 export const M = {
@@ -468,6 +473,11 @@ export const M = {
     }
   },
 
+  // 17b. Pas małej kostki (ok. 5 cm) za krawężnikiem — jasny granit przy jezdni
+  sett(b, W, H, D) {
+    b.rectY('sett', H, 0, 0, W, D, 1);
+  },
+
   // 18. Bruk (kocie łby) — nawierzchnia jezdni
   cobble(b, W, H, D, p) {
     const s = p.step || 4;
@@ -682,6 +692,8 @@ Object.assign(M, {
   },
 });
 
+const IRON_FENCE = [[0.12, 0.13, 0.13], [0.15, 0.24, 0.2], [0.2, 0.24, 0.3]];
+
 Object.assign(M, {
   // 28. Okap domu — deska czołowa + wysunięty pas dachu. W wypukłym narożniku dwa pasy
   //     schodzą się w „czapkę”: dwa trójkąty połaci, dwa podsufitki i narożny słupek deski
@@ -695,6 +707,15 @@ Object.assign(M, {
     const g = { tint: [0.45, 0.47, 0.48] };
     const tx1 = p.endKind === 'concave' ? W - 0.62 : W;
     b.tube('metal', [x0, H - 0.4, -0.62], [tx1, H - 0.4, -0.62], 0.075, 0.075, 6, g);
+    // zastrzały pod okapem (drewniane wsporniki, jak w willach z cegły)
+    if (p.brackets) {
+      const n = Math.max(1, Math.round((W - 0.5) / 1.3));
+      for (let i = 0; i < n; i++) {
+        const x = 0.25 + ((i + 0.5) * (W - 0.5)) / n;
+        b.tube('wood', [x, H - 0.95, -0.02], [x, H - 0.36, -0.5], 0.045, 0.045, 4, { tint: [0.28, 0.2, 0.15] });
+        b.box('wood', x - 0.05, H - 0.96, -0.06, x + 0.05, H - 0.5, 0, 'xXz', { tint: [0.28, 0.2, 0.15] });
+      }
+    }
     if (convex) {
       // połać: y = H − 0,3765·(0,3 − z) wzdłuż ściany A i y = H − 0,3765·(0,3 + x − W) wzdłuż B
       const yw = H - 0.113, yo = H - 0.32;
@@ -708,6 +729,28 @@ Object.assign(M, {
       b.tube('metal', [W, H - 0.4, -0.62], [W + 0.62, H - 0.4, -0.62], 0.075, 0.075, 6, g);
       b.tube('metal', [W + 0.62, H - 0.4, -0.62], [W + 0.62, H - 0.4, 0], 0.075, 0.075, 6, g);
     }
+  },
+
+  // 28b. Ogrodzenie ogrodu: kratka z kutego żelaza na ceglanym cokole (odcinek między słupkami).
+  //      x wzdłuż płotu, z = grubość (płot stoi pośrodku). Słupki to osobny moduł `fencepost`.
+  fence(b, W, H, D, p) {
+    const cz = D / 2, brick = { tint: [0.66, 0.34, 0.25] }, iron = { tint: IRON_FENCE[p.iron % 3] };
+    b.box('brick', 0, 0, cz - 0.13, W, 0.4, cz + 0.13, 'yYzZ', brick);
+    b.box('stone', 0, 0.4, cz - 0.16, W, 0.46, cz + 0.16, 'yYzZ');
+    for (let x = 0.3; x < W - 0.2; x += 0.13) {
+      b.box('metal', x, 0.46, cz - 0.013, x + 0.026, 1.5, cz + 0.013, 'xXzZ', iron);
+      b.cyl('metal', x + 0.013, cz, 1.5, 1.62, 0.022, 0.0, 4, iron);
+    }
+    b.box('metal', 0, 0.55, cz - 0.02, W, 0.6, cz + 0.02, 'yYzZ', iron);
+    b.box('metal', 0, 1.36, cz - 0.02, W, 1.41, cz + 0.02, 'yYzZ', iron);
+  },
+  // słupek ogrodzenia: ceglany trzon, kamienna głowica z kulą
+  fencepost(b, W, H, D, p) {
+    const cx = W / 2, cz = D / 2, brick = { tint: [0.66, 0.34, 0.25] };
+    b.box('brick', cx - 0.2, 0, cz - 0.2, cx + 0.2, 1.5, cz + 0.2, 'xXzZ', brick);
+    b.box('stone', cx - 0.25, 1.5, cz - 0.25, cx + 0.25, 1.62, cz + 0.25, 'xXyYzZ');
+    b.box('stone', cx - 0.15, 1.62, cz - 0.15, cx + 0.15, 1.7, cz + 0.15, 'xXyYzZ');
+    b.cyl('stone', cx, cz, 1.7, 1.86, 0.1, 0.0, 8, {});
   },
 
   // 29. Billboard Partii — rama, plakat z dwóch stron, słupy

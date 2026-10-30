@@ -28,19 +28,24 @@ export function levelClass(L, top, zone) {
 const ST = {
   classic: { w: [1.05, 1.25], h: { g: [1.5, 1.8], n: [1.95, 2.15], m: [1.75, 1.95], t: [1.4, 1.6] },
     fr: { g: ['band'], n: ['ped', 'segm', 'cornice'], m: ['lintel', 'band'], t: ['plain', 'lintel'] },
-    balc: 0.7, rail: ['bars', 'balust'], quoin: 0.6, lizena: 0.5, arch: 0, orn: 0.55, bay: 0.3, portal: 0.35 },
+    balc: 0.7, rail: ['bars', 'balust'], quoin: 0.6, lizena: 0.5, arch: 0, orn: 0.55, bay: 0.3, portal: 0.35,
+    frieze: 0.5, sillb: 0.45, cons: 0.35, rust: 0.5, archG: 0.3, stripe: 0 },
   ornate: { w: [1.1, 1.3], h: { g: [1.5, 1.8], n: [2.0, 2.2], m: [1.8, 2.0], t: [1.5, 1.7] },
     fr: { g: ['band', 'lintel'], n: ['ped', 'cornice', 'segm'], m: ['segm', 'cornice', 'lintel'], t: ['lintel', 'band'] },
-    balc: 0.9, rail: ['balust', 'bars'], quoin: 0.8, lizena: 0.7, arch: 0.15, orn: 0.85, bay: 0.55, portal: 0.5 },
+    balc: 0.9, rail: ['balust', 'bars'], quoin: 0.8, lizena: 0.7, arch: 0.15, orn: 0.85, bay: 0.55, portal: 0.5,
+    frieze: 0.85, sillb: 0.75, cons: 0.6, rust: 0.7, archG: 0.5, stripe: 0 },
   plain: { w: [1.0, 1.2], h: { g: [1.4, 1.7], n: [1.7, 1.9], m: [1.6, 1.85], t: [1.35, 1.55] },
     fr: { g: ['plain', 'lintel'], n: ['lintel', 'band'], m: ['plain', 'lintel'], t: ['plain'] },
-    balc: 0.3, rail: ['bars'], quoin: 0, lizena: 0.15, arch: 0, orn: 0.2, bay: 0.1, portal: 0.1 },
+    balc: 0.3, rail: ['bars'], quoin: 0, lizena: 0.15, arch: 0, orn: 0.2, bay: 0.1, portal: 0.1,
+    frieze: 0.1, sillb: 0.1, cons: 0.1, rust: 0.2, archG: 0.1, stripe: 0 },
   brick: { w: [0.95, 1.15], h: { g: [1.5, 1.8], n: [1.8, 2.05], m: [1.7, 1.9], t: [1.4, 1.6] },
     fr: { g: ['band', 'lintel'], n: ['band', 'lintel'], m: ['band', 'plain'], t: ['plain', 'lintel'] },
-    balc: 0.35, rail: ['bars'], quoin: 0, lizena: 0.3, arch: 0.45, orn: 0.4, bay: 0.25, portal: 0.6 },
+    balc: 0.35, rail: ['bars'], quoin: 0, lizena: 0.3, arch: 0.45, orn: 0.4, bay: 0.25, portal: 0.6,
+    frieze: 0.7, sillb: 0, cons: 0, rust: 0, archG: 0, stripe: 0.9 },
   house: { w: [0.8, 1.0], h: { g: [1.2, 1.4], n: [1.2, 1.45], m: [1.2, 1.45], t: [1.0, 1.25] },
     fr: { g: ['band', 'lintel', 'plain'], n: ['band', 'lintel', 'plain'], m: ['band', 'lintel', 'plain'], t: ['plain', 'band'] },
-    balc: 0.05, rail: ['bars'], quoin: 0.1, lizena: 0, arch: 0.1, orn: 0.3, bay: 0, portal: 0.15 },
+    balc: 0.05, rail: ['bars'], quoin: 0.1, lizena: 0, arch: 0.1, orn: 0.3, bay: 0, portal: 0.15,
+    frieze: 0.05, sillb: 0, cons: 0.05, rust: 0, archG: 0.05, stripe: 0 },
 };
 const SILL = { g: 1.1, n: 0.85, m: 0.85, t: 1.0 };
 const FR_ORN = { plain: 0, lintel: 0.3, band: 0.5, segm: 0.8, cornice: 0.9, ped: 1 };
@@ -48,7 +53,7 @@ const FR_ORN = { plain: 0, lintel: 0.3, band: 0.5, segm: 0.8, cornice: 0.9, ped:
 const baseKey = (s) => segKey(s.a, s.nb, s.q, s.side, 0);
 
 function tokens(info) {
-  if (info.zone === Z_HOUSES) return info.style === 'brick' ? { ...ST.house, arch: 0.35 } : ST.house;
+  if (info.zone === Z_HOUSES) return info.style === 'brick' ? { ...ST.house, arch: 0.35, stripe: 0.8, frieze: 0.5 } : ST.house;
   return ST[info.style] || ST.classic;
 }
 
@@ -64,6 +69,8 @@ function sampleProgram(rng, info, st) {
     arch: { n: rng.chance(st.arch), m: rng.chance(st.arch * 0.8) },
     balc: rng.chance(st.balc), rail: rng.pick(st.rail),
     quoin: rng.chance(st.quoin), lizena: rng.chance(st.lizena),
+    frieze: rng.chance(st.frieze), sillb: rng.chance(st.sillb), cons: rng.chance(st.cons), stripe: rng.chance(st.stripe),
+    rust: rng.chance(st.rust), archG: rng.chance(st.archG),
     band: info.zone === Z_TENEMENT && rng.chance(0.85),
     bands2: info.style === 'ornate' || rng.chance(0.3),
     shut: !!info.shutters, ent: new Set(), shops: new Set(), cols: new Set(),
@@ -125,7 +132,7 @@ function scoreProgram(prog, segs, st, ent) {
   }
   fit = nf ? fit / nf : 0.7;
   const orn = (FR_ORN[prog.fr.n] * 0.5 + FR_ORN[prog.fr.m] * 0.35 + FR_ORN[prog.fr.t] * 0.15) * 0.7 +
-    (prog.balc ? 0.12 : 0) + (prog.bay ? 0.1 : 0) + (prog.quoin ? 0.08 : 0) + (prog.arch.n ? 0.06 : 0) + (prog.lizena ? 0.04 : 0);
+    (prog.balc ? 0.12 : 0) + (prog.bay ? 0.1 : 0) + (prog.frieze ? 0.05 : 0) + (prog.sillb ? 0.04 : 0) + (prog.rust ? 0.04 : 0) + (prog.quoin ? 0.08 : 0) + (prog.arch.n ? 0.06 : 0) + (prog.lizena ? 0.04 : 0);
   return 2.2 * ent + 2 * fit + 1.4 * (1 - Math.min(1, Math.abs(orn - st.orn) * 1.8)) + (prog.cols.size ? 0.4 : 0);
 }
 
@@ -151,19 +158,22 @@ export function programOf(city, bid, info) {
 }
 
 // ── 2. plan panelu ──────────────────────────────────────────────────────────
-function windowFrag(prog, info, s, cls, W, H, ends, simple, axis) {
+function windowFrag(prog, info, s, cls, W, H, ends, simple, axis, maxTop = H - 0.38) {
   const w = Math.min(prog.w + (axis ? 0.08 : 0), W - 0.5);
   if (w < 0.6) return null;
-  const y = SILL[cls], y1 = Math.min(y + prog.h[cls], H - 0.38), h = y1 - y;
+  // parter z boniowaniem ma wysokie okna łukowe (jak w kamienicach z arkadowym parterem)
+  const tall = cls === 'g' && prog.rust && prog.archG && !simple && s.street && H - 0.95 >= w / 2 + 1.4;
+  const y = tall ? 0.55 : SILL[cls], y1 = Math.min(tall ? Math.min(0.55 + 2.55, H - 0.95) : y + prog.h[cls], maxTop), h = y1 - y;
   if (h < 1.0) return null;
   // okno odsunięte od narożnika: przy narożniku zostaje szerszy filar
   const room = (W - w) / 2 - 0.25;
   const shift = clamp((ends.m === 'convex' || ends.m === 'party' ? 0.12 : 0) - (ends.c === 'convex' || ends.c === 'party' ? 0.12 : 0), -room, room);
-  const arch = (cls === 'n' || cls === 'm') && prog.arch[cls] && h >= w / 2 + 0.85;
+  const arch = tall || ((cls === 'n' || cls === 'm') && prog.arch[cls] && h >= w / 2 + 0.85);
   const frame = simple ? 'plain' : axis && prog.frAxis[cls] ? prog.frAxis[cls] : cls === 'n' && prog.frAlt !== prog.fr.n && s.idx % 2 ? prog.frAlt : prog.fr[cls];
   return {
     k: 'win', x: W / 2 + shift, w, y, h, frame, arch,
     shut: prog.shut && W - w >= w + 0.15, flow: cls === 'g' ? null : info.flowers, bars: cls === 'g' && info.bars,
+    cons: prog.cons && !simple && (cls === 'n' || cls === 'm') && frame !== 'cornice',
     under: !simple && cls === 'm' && (frame === 'plain' || frame === 'lintel') && info.style === 'ornate',
   };
 }
@@ -174,6 +184,10 @@ export function panelPlan(city, info, prog, s, L, top, W, H, simple, hh) {
   const house = info.zone === Z_HOUSES;
   const spec = [];
   const out = { mod: 'panel', spec, string: false, poster: false };
+  const street = s.street && !simple;
+  // fryz pod gzymsem na ostatnim piętrze: okno niższe, żeby zmieściła się taśma
+  const topFrieze = prog.frieze && street && L === top - 1 && L > 0;
+  const u0 = s.flip ? s.s0 + W : s.s0, u1 = s.flip ? s.s0 : s.s0 + W;
   if (cls === 'g') {
     if (s.street && prog.ent.has(key)) {
       spec.push({ k: 'door', x: W / 2, w: Math.min(house ? 1.2 : 1.5, W - 0.9), arch: prog.portal });
@@ -188,6 +202,10 @@ export function panelPlan(city, info, prog, s, L, top, W, H, simple, hh) {
       if (!f) { out.mod = 'wall'; return out; }
       spec.push(f);
     }
+    if (prog.rust && street && out.mod === 'panel') {
+      const holes = spec.map((f) => (f.k === 'door' ? [f.x - f.w / 2 - 0.55, f.x + f.w / 2 + 0.55, 3.7] : [f.x - f.w / 2 - 0.3, f.x + f.w / 2 + 0.3, f.y + f.h + 0.4]));
+      spec.push({ k: 'rust', holes });
+    }
   } else if (s.street && prog.bay && prog.bay.key === key && L <= prog.bay.to && L <= top - 1 && W >= 2.6) {
     const last = Math.min(prog.bay.to, top - 1);
     spec.push({ k: 'bay', x: W / 2, w: clamp(W - 0.8, 1.5, 1.9), out: 0.62, from: L === 1, to: L === last });
@@ -197,10 +215,14 @@ export function panelPlan(city, info, prog, s, L, top, W, H, simple, hh) {
     spec.push({ k: 'jul', x: W / 2, w: clamp(W * 0.4, 0.95, 1.2), h: 2.3 });
   } else {
     const axis = s.street && (prog.ent.has(key) || prog.cols.has(key));
-    const f = windowFrag(prog, info, s, cls, W, H, ends, simple, axis);
+    const f = windowFrag(prog, info, s, cls, W, H, ends, simple, axis, topFrieze ? H - 0.58 : H - 0.38);
     if (!f) { out.mod = 'wall'; return out; }
     spec.push(f);
+    // pas podokienny z reliefem pod oknami piano nobile
+    if (prog.sillb && street && cls === 'n') spec.push({ k: 'frieze', kind: 'stucco', y: f.y - 0.56, h: 0.4, u0, u1 });
   }
+  if (topFrieze) spec.push({ k: 'frieze', kind: info.wallMat === 'brick' ? 'brick' : 'stucco', y: H - 0.5, h: 0.4, u0, u1 });
+  if (prog.stripe && street && info.wallMat === 'brick') spec.push({ k: 'stripe', ys: L === 0 ? [0.5, H - 0.6] : [0.02, 0.62] });
   if (!simple) {
     // narożniki wypukłe (boniowanie) i styk kamienic (lizena) — ta sama decyzja dla obu ścian narożnika
     if (prog.quoin && s.street) for (const at of ['m', 'c']) if (ends[at] === 'convex') spec.push({ k: 'quoin', at, w: 0.42 });

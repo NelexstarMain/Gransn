@@ -11,6 +11,9 @@
 //    jul     { x, w, h }                                            okno-drzwi z balustradą
 //    quoin   { at: 'm'|'c', w }                                     boniowanie narożne
 //    lizena  { at: 'm'|'c' }                                        pas na styku kamienic
+//    frieze  { y, h, kind: 'stucco'|'brick', u0, u1 }               fryz z reliefem (tekstura; u w m wzdłuż fasady)
+//    rust    { holes: [[x0, x1, yTop], …] }                         boniowanie parteru, rzędy omijają otwory
+//    stripe  { ys: […] }                                            ciemne pasy klinkieru (styl ceglany)
 // ─────────────────────────────────────────────────────────────────────────────
 import { M, glassFrame, plinth, surround, windowParts, doorParts, balconyParts } from './modules.js';
 
@@ -171,6 +174,8 @@ const DRAW = {
     const fp = { ...p, frame: f.frame, panes: f.panes, shutters: f.shut ?? false, flowers: f.flow || null, bars: f.bars || false };
     if (f.arch) archWindow(b, f, H, fp);
     else windowParts(b, x0, f.y, x1, y1, H, fp);
+    // konsole pod parapetem: dwie małe kroksztyny
+    if (f.cons) for (const cx of [x0 + 0.04, x1 - 0.16]) b.box('stone', cx, f.y - 0.3, -0.13, cx + 0.12, f.y - 0.07, 0, 'xXyz', { shade: 0.9 });
     // parapet podokienny: płycina pod oknem
     if (f.under) b.box('stone', x0 - 0.02, Math.max(0.12, f.y - 0.62), -0.03, x1 + 0.02, f.y - 0.1, 0, 'xXyYz', { shade: 0.95 });
   },
@@ -201,6 +206,33 @@ const DRAW = {
       const xa = f.at === 'm' ? at : at - w, xb = f.at === 'm' ? at + w : at;
       b.box('stone', xa, y0 + i * h + 0.02, -0.05, xb, y0 + (i + 1) * h - 0.02, 0, f.at === 'm' ? 'xYz' : 'XYz', { shade: i % 2 ? 0.92 : 1 });
     }
+  },
+  // fryz: pas z reliefem między listwami (sztukateria albo cegła z krzyżami)
+  frieze(b, f, W, H, p) {
+    const stucco = f.kind !== 'brick', v0 = stucco ? 0.4 : 0, tint = stucco ? p.trim : p.brickTint;
+    b.rect('frieze', 0, f.y, W, f.y + f.h, -0.045, { uv: [[f.u0, v0], [f.u1, v0], [f.u1, v0 + 0.4], [f.u0, v0 + 0.4]], tint });
+    b.box('stone', 0, f.y + f.h, -0.075, W, f.y + f.h + 0.05, 0, 'yYz');
+    b.box('stone', 0, f.y - 0.05, -0.075, W, f.y, 0, 'yYz');
+  },
+  // boniowanie: poziome rzędy bloków z fugą; w wysokości otworów rzędy kończą się przy ościeżu
+  rust(b, f, W, H, p) {
+    const gm = p.groundMat, y0 = 0.5, rows = Math.max(3, Math.round((H - 0.9) / 0.55)), rh = (H - 0.9) / rows;
+    for (let r = 0; r < rows; r++) {
+      const ya = y0 + r * rh, yb = ya + rh - 0.04;
+      let segs = [[0, W]];
+      for (const [hx0, hx1, top] of f.holes) if (ya < top) segs = segs.flatMap(([a, c]) => [[a, Math.min(c, hx0)], [Math.max(a, hx1), c]]).filter(([a, c]) => c - a > 0.06);
+      for (const [a, c] of segs) {
+        b.rect(gm, a, ya, c, yb, -0.05);
+        b.rectY(gm, yb, a, -0.05, c, 0, 1, { shade: 1.05 });
+        b.rectY(gm, ya, a, -0.05, c, 0, -1, { shade: 0.6 });
+        b.rect(gm, a, yb, c, ya + rh, -0.025, { shade: 0.55 });
+      }
+    }
+  },
+  // pasy z ciemnego klinkieru: wąskie, lekko wysunięte listwy z cegły
+  stripe(b, f, W, H, p) {
+    const dark = (p.brickTint || [0.7, 0.4, 0.3]).map((c) => c * 0.42);
+    for (const y of f.ys) b.box('brick', 0, y, -0.05, W, y + 0.1, 0, 'yYz', { tint: dark });
   },
   // lizena: pionowy pas na styku dwóch kamienic
   lizena(b, f, W, H, p) {

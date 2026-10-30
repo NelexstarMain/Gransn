@@ -19,7 +19,8 @@ export const SURFACE = {
   slab:    { layer: 5, y: 0.15 },  // chodnik z płyt
   lawn:    { layer: 5, y: 0.15 },  // trawnik w mieście
   cobblep: { layer: 5, y: 0.15 },  // bruk placu i podwórza
-  curb:    { layer: 6, y: 0.16 },  // krawężnik
+  sett:    { layer: 6, y: 0.152 }, // pas małej kostki przy krawężniku
+  curb:    { layer: 7, y: 0.16 },  // krawężnik
 };
 
 // wysokości nad terenem dla geometrii (jedno źródło prawdy)
