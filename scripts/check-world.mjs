@@ -1,5 +1,5 @@
 import { generateCity } from '../src/city/layout.js';
-import { quadGeom, filled, buildingInfo } from '../src/city/grid.js';
+import { quadGeom, filled } from '../src/city/grid.js';
 const c = generateCity(Number(process.argv[2]) || 1984), g = c.grid, R = c.roads;
 const all = [
   ...c.lamps.map((p) => ({ ...p, r: 0.35, k: 'lamp' })), ...c.benches.map((p) => ({ ...p, r: 1.0, k: 'bench' })),
@@ -23,6 +23,6 @@ for (let q = 0; q < g.quads.length / 4; q++) {
 }
 const shapes = {};
 const seen = new Set();
-for (let v = 0; v < g.N; v++) if (g.TY[v] === 1 && g.BID[v] >= 0 && !seen.has(g.BID[v])) { seen.add(g.BID[v]); const s = buildingInfo(c.seed, g.BID[v], g.ZN[v]).shape; shapes[s] = (shapes[s] || 0) + 1; }
+for (let v = 0; v < g.N; v++) if (g.TY[v] === 1 && g.BID[v] >= 0 && !seen.has(g.BID[v])) { seen.add(g.BID[v]); const s = g.design.get(g.BID[v]).shape; shapes[s] = (shapes[s] || 0) + 1; }
 const mats = {}; for (const s of c.streets) mats[s.mat] = (mats[s.mat] || 0) + 1;
 console.log(bad); console.log({ props: all.length, onRoad, overlap, wallOnRoad, bldQuarters: quarters, buildings: seen.size, shapes, roads: c.streets.length, mats, minRw: Math.min(...c.streets.map((s) => s.rw)) });

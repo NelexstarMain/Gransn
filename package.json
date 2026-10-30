@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "check": "node scripts/check-world.mjs",
     "sim": "node scripts/sim-traffic.mjs",
-    "build-world": "node scripts/build-all.mjs"
+    "build-world": "node scripts/build-all.mjs",
+    "design": "node scripts/check-design.mjs",
+    "view": "node scripts/view.mjs"
   },
   "dependencies": {
     "three": "0.170.0"
