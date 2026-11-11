@@ -63,10 +63,10 @@ export class Ink {
           // „zamazanie” dali: ostro blisko, coraz bardziej rozmyte od ok. 30 m (jak słabszy wzrok)
           float haze = smoothstep(30.0, 170.0, dist);
           float edge = smoothstep(0.1, 0.42, bend) * (1.0 - 0.55 * haze) * (1.0 - smoothstep(200.0, 330.0, dist));
-          if (haze > 0.02) {
+          if (haze > 0.12) {
             float br = haze * 4.5, wsum = 1.0;
-            for (int i = 0; i < 8; i++) {
-              float a = float(i) * 2.399963 + 0.7, rr = sqrt((float(i) + 0.5) / 8.0) * br;
+            for (int i = 0; i < 5; i++) {
+              float a = float(i) * 2.399963 + 0.7, rr = sqrt((float(i) + 0.5) / 5.0) * br;
               vec2 uv = vUv + vec2(cos(a), sin(a)) * rr * texel;
               float w = step(0.6 * dist, zdist(rawZ(uv)));   // nie wciągaj tego, co stoi bliżej (auto, słup)
               c += texture2D(tColor, uv).rgb * w; wsum += w;
@@ -87,10 +87,10 @@ export class Ink {
             float vl = length(vel);
             if (vl > 0.045) vel *= 0.045 / vl;
             speed = min(vl, 0.045);
-            if (speed > 0.0012) {
+            if (speed > 0.002) {
               float wsum = 1.0;
-              for (int i = 1; i <= 5; i++) {
-                vec2 uv = clamp(vUv - vel * (float(i) / 5.0), vec2(0.001), vec2(0.999));
+              for (int i = 1; i <= 4; i++) {
+                vec2 uv = clamp(vUv - vel * (float(i) / 4.0), vec2(0.001), vec2(0.999));
                 float zt = rawZ(uv);
                 float dt = 2.0 * near * far / (far + near - (zt * 2.0 - 1.0) * (far - near));
                 float w = step(2.5, dt);

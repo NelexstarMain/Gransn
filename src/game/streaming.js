@@ -8,8 +8,8 @@ import * as THREE from 'three';
 import { WorldMesh } from './worldmesh.js';
 import { isSurface, surfaceOrder } from '../render/layers.js';
 
-export const DETAIL_IN = 170;  // m od krawędzi fragmentu
-export const DETAIL_OUT = 230;
+export const DETAIL_IN = 125;  // m od krawędzi fragmentu
+export const DETAIL_OUT = 175;
 const FAR = 600;               // dalej gęsta mgła (FogExp2 0,0038) zakrywa >99% — LOD niewidoczny, nie rysujemy
 const PRELOAD_R = 260;         // m od startu: pełny detal budowany przed grą
 

@@ -87,7 +87,7 @@ function bake(w, h, fn, strength = 2, opts = {}) {
   const normalMap = new THREE.CanvasTexture(nc);
   for (const t of [map, normalMap]) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = opts.aniso ?? 8;
+    t.anisotropy = opts.aniso ?? 4;
     t.generateMipmaps = true;
     t.minFilter = THREE.LinearMipmapLinearFilter;
   }
