@@ -31,26 +31,47 @@ export function createAtmosphere(scene, renderer) {
   scene.add(sun, sun.target);
   const sunDir = new THREE.Vector3(...LIGHTS.sunDir).normalize();
 
-  // kopuła nieba z gradientem (bez mgły)
+  // kopuła nieba: gradient, poświata słońca, chmury (szum w shaderze, bez tekstur).
+  // Rysowana NA KOŃCU z głębią na płaszczyźnie dalekiej: karta liczy niebo tylko tam, gdzie nic go
+  // nie zasłania (wcześniej cały ekran był cieniowany pod miastem). Dithering usuwa pasy w gradiencie.
+  const skyUni = { top: { value: new THREE.Color(LIGHTS.skyTop) }, horizon: { value: FOG_COLOR.clone() }, sunDir: { value: sunDir }, time: { value: 0 } };
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(1300, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
+      depthTest: true,
       fog: false,
-      uniforms: { top: { value: new THREE.Color(LIGHTS.skyTop) }, horizon: { value: FOG_COLOR.clone() }, sunDir: { value: sunDir } },
-      vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;
-        void main(){ float h = clamp(vDir.y, 0.0, 1.0);
-          vec3 c = mix(horizon, top, pow(h, 0.6));
-          float d = max(dot(normalize(vDir), sunDir), 0.0);
-          c += vec3(0.35, 0.28, 0.18) * pow(d, 12.0) + vec3(1.6, 1.4, 1.1) * pow(d, 900.0);
+      uniforms: skyUni,
+      vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = (projectionMatrix * modelViewMatrix * vec4(position,1.0)).xyww; }',
+      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform float time; varying vec3 vDir;
+        float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+        float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h21(i), h21(i + vec2(1,0)), f.x), mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), f.x), f.y); }
+        void main(){
+          vec3 dir = normalize(vDir);
+          float h = clamp(dir.y, 0.0, 1.0);
+          vec3 c = mix(horizon, top, pow(h, 0.55));
+          float d = max(dot(dir, sunDir), 0.0);
+          vec3 sunC = vec3(1.0, 0.82, 0.58);
+          c += sunC * (0.22 * pow(d, 6.0) + 0.16 * pow(d, 24.0)) + vec3(1.6, 1.4, 1.1) * pow(d, 900.0);
+          // chmury: warstwa płaska nad miastem, zanikają ku horyzontowi (w mgle)
+          if (dir.y > 0.03) {
+            vec2 uv = dir.xz / (dir.y + 0.18) * 1.6 + vec2(time * 0.012, time * 0.004);
+            float n = vn(uv) * 0.55 + vn(uv * 2.1 + 7.3) * 0.3 + vn(uv * 4.3 + 2.7) * 0.15;
+            float cl = smoothstep(0.52, 0.82, n) * smoothstep(0.03, 0.30, dir.y);
+            vec3 cc = mix(vec3(0.62, 0.66, 0.72), vec3(1.0, 0.96, 0.9), smoothstep(0.5, 0.95, n));
+            cc += sunC * 0.35 * pow(d, 3.0);            // srebrne krawędzie od strony słońca
+            c = mix(c, cc, cl * 0.85);
+          }
           gl_FragColor = vec4(c, 1.0);
           #include <colorspace_fragment>
+          gl_FragColor.rgb += (h21(gl_FragCoord.xy + fract(time)) - 0.5) / 255.0;
         }`,
     }),
   );
-  sky.renderOrder = -1;
+  sky.renderOrder = 1e6;
+  sky.frustumCulled = false;
   scene.add(sky);
 
   // mapa otoczenia dla odbić w szybach
@@ -89,8 +110,9 @@ export function createAtmosphere(scene, renderer) {
       sun.shadow.map?.dispose();
       sun.shadow.map = null;
     },
-    update(camPos) {
+    update(camPos, t = 0) {
       sky.position.copy(camPos);
+      skyUni.time.value = t;
       // cienie podążają za graczem, przyciągnięte do siatki tekseli (bez migotania)
       const step = 160 / shadowRes;
       const tx = Math.round(camPos.x / step) * step, tz = Math.round(camPos.z / step) * step;
