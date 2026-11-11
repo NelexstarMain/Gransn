@@ -106,9 +106,11 @@ export class Ink {
           c *= mix(vec3(1.0), vec3(0.2, 0.12, 0.1), edge * inkK);   // ciepły, ciemnobrązowy tusz
           // blask rozlany we mgle: rozmyte kopie obrazu (mipmapy) dodane z powrotem. Nocą obraz jest ciemny,
           // więc świeci to, co świeci — okna, latarnie, reflektory — a im dalej (gęstsza mgła), tym szerzej.
-          vec3 glow = textureLod(tColor, vUv, 2.5).rgb * 0.25 + textureLod(tColor, vUv, 4.0).rgb * 0.35 + textureLod(tColor, vUv, 5.5).rgb * 0.4 + textureLod(tColor, vUv, 7.0).rgb * 0.3;
+          vec3 glow = min(textureLod(tColor, vUv, 2.5).rgb, vec3(4.0)) * 0.25 + min(textureLod(tColor, vUv, 4.0).rgb, vec3(3.0)) * 0.35 + min(textureLod(tColor, vUv, 5.5).rgb, vec3(2.0)) * 0.4 + min(textureLod(tColor, vUv, 7.0).rgb, vec3(1.5)) * 0.3;
+          if (!(glow.r < 50.0 && glow.g < 50.0 && glow.b < 50.0)) glow = vec3(0.0); // NaN/inf w mipmapach: bez kwadratów
           c += glow * glowK * (0.6 + 0.9 * haze);
-          c = max(min(c, vec3(40.0)), vec3(0.0)); // bez inf/NaN (czarne plamy)
+          c = max(min(c, vec3(8.0)), vec3(0.0)); // bez inf/NaN (kwadraty)
+          if (!(c.r < 50.0 && c.g < 50.0 && c.b < 50.0)) c = vec3(0.0);
           gl_FragColor = vec4(c, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>

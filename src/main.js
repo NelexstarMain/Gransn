@@ -304,8 +304,9 @@ async function start() {
   const chimneys = chimneyList(city); // dym z kominów (fx.ambient)
   // noc: poświaty latarni i aut, reflektory taksówki (jedno prawdziwe światło, bez cieni)
   const glow = new NightGlow(scene, city, grid);
-  const head = new THREE.SpotLight(0xffd9a8, 90, 55, 0.62, 1, 1.5);
-  head.position.set(car.L / 2, 1.0, 0); head.target.position.set(car.L / 2 + 12, 0.2, 0);
+  // źródło 1,2 m przed zderzakiem i słaby zanik: powierzchnie tuż przy punktowym świetle dawały gigantyczne wartości (białe/czarne kwadraty)
+  const head = new THREE.SpotLight(0xffd9a8, 22, 55, 0.62, 1, 0.6);
+  head.position.set(car.L / 2 + 1.2, 1.0, 0); head.target.position.set(car.L / 2 + 14, 0.2, 0);
   car.mesh.add(head, head.target);
   const clock = new THREE.Clock();
   let fpsAcc = 0, fpsN = 0, fps = 0, streamAcc = 0, frameNo = 0, perfAcc = 0, perfN = 0, perfBad = 0, perfGood = 0, infoAcc = 1, info = '';
