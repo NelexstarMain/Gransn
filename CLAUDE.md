@@ -160,6 +160,9 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - Czworokąty działek nie rysują gruntu ani nie wpisują typu chodnika do kolizji; grunt pod domem pochodzi z siatki miasta (`grid.COVER[v]` = punkt siatki pod domem: bez rekwizytów i pasażerów).
 - `grid.lotDist(x, z)` = odległość od obrysu najbliższej działki; `grid.LU/LV` = położenie punktu w pierzei (wzdłuż ulicy / w głąb), z tego liczy się dach.
 - Ścięte boki działek (trapezy) pojawiają się tylko na ostrych narożnikach i rzadko (ok. 2% działek).
+- Chodnik to pas stałej szerokości (`SIDEWALK_W = 2,4 m` w `assemble.js`) wzdłuż każdej miejskiej ulicy; pola gruntu są cięte po linii równej odległości od jezdni (`layCut`). Dalej: trawnik (dzielnice domów, środki podwórzy, parki) albo bruk (przy kamienicach, rynek).
+- `city/subdivide.js` dzieli za duże kwartały (ściany grafu ulic > 6200 m²) uliczką w poprzek; na seedzie 1984 nic nie dodaje, bo kwartały są już małe.
+- Aparat (`scripts/photo.mjs`) podstawia pod bruk i płyty tekstury z LOD, więc jezdnię widać na zdjęciach.
 - Boty jeżdżą modelem IDM (`traffic.js`, płynne przyspieszanie i hamowanie).
 
 ### Ostatnie wyniki weryfikacji (seed 1984)

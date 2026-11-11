@@ -16,6 +16,7 @@ import { growRoads } from './roads.js';
 import { RoadNet } from './roadnet.js';
 import { Terrain } from './terrain.js';
 import { makeTownPlan, applyPlan } from './town.js';
+import { subdivideBlocks } from './subdivide.js';
 
 export const HALF = 520; // wyspa ~0,45 km² lądu (było 460)
 
@@ -516,6 +517,8 @@ export function generateCity(seed = 1984) {
     terrain.bridgeZones.push({ p: hwBridge.p, axis: hwBridge.axis, perp: hwBridge.perp, L: hwBridge.L, hw: hwBridge.width / 2 + 6 });
     for (const st of streets) if (st.type === 'H' && onBridge(hwBridge, (st.a[0] + st.b[0]) / 2, (st.a[1] + st.b[1]) / 2, 1)) st.bridge = true;
   }
+  // za duże kwartały: uliczki w poprzek (subdivide.js) — krótsze pierzeje, więcej frontów pod działki
+  subdivideBlocks({ streets, terrain, seed, plan, extras: extras0, rail: routes.rail, kindAt: (x, z) => plan.overrideKind(x, z) || kindAt(x, z) });
   const roads = new RoadNet(streets);
   const extras = makeExtras(terrain, routes, rng);
   // komin fabryczny w środku każdej większej komórki przemysłowej

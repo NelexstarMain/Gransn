@@ -511,29 +511,52 @@ function groundQuarter(b, city, G, i, q) {
   const clampAll = sidewalkClamp(city, G, i);
   if (!clampAll) return;
   const raw = [G.p[i], G.m[i], G.m[(i + 3) % 4], G.c];
-  const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && g.ZN[a] === Z_HOUSES) || lawn(city, a) ? 'lawn'
-    : ty === T_COURT || ty === T_PLAZA ? 'cobblep' : 'slab';
-  const lay = (pts, minArea) => {
+  // Nawierzchnia w głębi: trawnik (parki, ogrody, dzielnice domów, skwery), bruk podwórzy i rynku
+  // albo płyty (zwarta zabudowa, bulwary). Wzdłuż każdej miejskiej ulicy biegnie PAS CHODNIKA
+  // stałej szerokości — jego granica to linia równej odległości od jezdni (gładka, równoległa
+  // do krawężnika), a nie łamana po ćwiartkach siatki.
+  const houses = g.ZN[a] === Z_HOUSES;
+  const mat = ty === T_PARK || ty === T_GARDEN || (ty === T_COURT && (houses || !g.nearBld[a])) ? 'lawn' // podwórze: bruk tylko przy domach, środek zielony
+    : ty === T_COURT || ty === T_PLAZA ? 'cobblep'
+    : (houses || lawn(city, a)) && T.river(G.p[i][0], G.p[i][1]).d > T.hw + 10 ? 'lawn' : 'slab';
+  const nr0 = roads.nearest(G.c[0], G.c[1]);
+  const band = mat !== 'slab' && ty !== T_PLAZA && nr0 && nr0.s.town && nr0.s.mat !== 'dirt';
+  const slabAng = (pts) => {
+    // płyty leżą wzdłuż najbliższej jezdni (kąt w bajcie)
+    const nr = roads.nearest((pts[0][0] + pts[pts.length - 1][0]) / 2, (pts[0][1] + pts[pts.length - 1][1]) / 2);
+    const ang = nr ? Math.atan2(nr.s.b[1] - nr.s.a[1], nr.s.b[0] - nr.s.a[0]) : 0;
+    return Math.round(((((ang % Math.PI) + Math.PI) % Math.PI) / Math.PI) * 255);
+  };
+  const lay = (pts, minArea, m = mat) => {
     if (quadArea(pts) < minArea) return; // zjedzone przez jezdnię
     // narożniki rzucone na przeciwne brzegi rzeki → pas nad wodą; pomijamy
     if (Math.max(dist(pts[0], pts[1]), dist(pts[0], pts[2]), dist(pts[1], pts[3]), dist(pts[2], pts[3])) > 9) return;
     const W = Math.max(0.3, dist(pts[0], pts[1])), D = Math.max(0.3, dist(pts[0], pts[2]));
-    if (mat === 'slab') {
-      // płyty leżą wzdłuż najbliższej jezdni (kąt w bajcie)
-      const nr = roads.nearest((pts[0][0] + pts[3][0]) / 2, (pts[0][1] + pts[3][1]) / 2);
-      const ang = nr ? Math.atan2(nr.s.b[1] - nr.s.a[1], nr.s.b[0] - nr.s.a[0]) : 0;
-      const ab = Math.round(((((ang % Math.PI) + Math.PI) % Math.PI) / Math.PI) * 255);
-      place(b, 'sidewalk', cage4(T, null, pts, NONE, 0, 0.15), W, 0.15, D, { mat: 'slab', o: { drape: 0.15, wear: [ab, 0, 0, 0] } });
+    if (m === 'slab') place(b, 'sidewalk', cage4(T, null, pts, NONE, 0, 0.15), W, 0.15, D, { mat: 'slab', o: { drape: 0.15, wear: [slabAng(pts), 0, 0, 0] } });
+    else place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat: m, step: 3, o: { drape: 0.15, tint: ty === T_PLAZA ? [1, 0.96, 0.9] : undefined } });
+  };
+  // pole przecięte granicą pasa chodnika: dwie części wielokąta (cięcie po izolinii odległości od jezdni)
+  const layCut = (pts, cl) => {
+    const ring = [0, 1, 3, 2], A = [], B = [];
+    for (let k = 0; k < 4; k++) {
+      const i0 = ring[k], i1 = ring[(k + 1) % 4], f0 = cl[i0] - SIDEWALK_W, f1 = cl[i1] - SIDEWALK_W;
+      (f0 < 0 ? A : B).push(pts[i0]);
+      if (f0 < 0 !== f1 < 0) { const x = lerp2(pts[i0], pts[i1], f0 / (f0 - f1)); A.push(x); B.push(x); }
     }
-    else place(b, 'cobble', cage4(T, null, pts, NONE, 0, 1), W, 1, D, { mat, step: 3, o: { drape: 0.15, tint: ty === T_PLAZA ? [1, 0.96, 0.9] : undefined } });
+    for (const [poly, m] of [[A, 'slab'], [B, mat]]) {
+      if (poly.length < 3) continue;
+      const o = m === 'slab' ? { drape: 0.15, wear: [slabAng(poly), 0, 0, 0] } : { drape: 0.15 };
+      for (let k = 1; k + 1 < poly.length; k++) b.wpoly(m, [poly[0], poly[k + 1], poly[k]].map((p) => [p[0], 0, p[1]]), [0, 1, 0], o);
+    }
   };
   // Przy jezdni ćwiartka dzielona jest na drobne pola, każde docinane osobno.
   // Docięcie samych narożników całej ćwiartki zostawiało pola rozpięte NAD
   // jezdnią (narożniki po obu stronach ulicy) — płyty przykrywały bruk.
   const bil = (u, w) => lerp2(lerp2(raw[0], raw[1], u), lerp2(raw[2], raw[3], u), w);
-  let nearRoad = false;
-  for (let k = 0; k <= 4 && !nearRoad; k++) for (let j = 0; j <= 4; j++) if (roads.clearance(...clampAll(bil(k / 4, j / 4))) < 0.45) { nearRoad = true; break; }
-  if (!nearRoad) lay(raw.map(clampAll), 0.15);
+  let nearRoad = false, clMin = 1e9, clMax = -1e9;
+  for (let k = 0; k <= 4; k++) for (let j = 0; j <= 4; j++) { const c = roads.clearance(...clampAll(bil(k / 4, j / 4))); if (c < 0.45) nearRoad = true; clMin = Math.min(clMin, c); clMax = Math.max(clMax, c); }
+  const cut = band && clMin < SIDEWALK_W + 0.2;
+  if (!nearRoad && !cut) lay(raw.map(clampAll), 0.15);
   else {
     const len = Math.max(dist(raw[0], raw[1]), dist(raw[0], raw[2]), dist(raw[1], raw[3]), dist(raw[2], raw[3]));
     const n = Math.min(4, Math.max(2, Math.ceil(len / 1.1)));
@@ -542,8 +565,13 @@ function groundQuarter(b, city, G, i, q) {
         const pts = [bil(k / n, j / n), bil((k + 1) / n, j / n), bil(k / n, (j + 1) / n), bil((k + 1) / n, (j + 1) / n)].map(clampAll);
         const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4, cz = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
         // (przy rzece docięcie do brzegu potrafi wepchnąć narożnik z powrotem na jezdnię)
-        if (roads.clearance(cx, cz) < 0.15 || pts.some((p) => roads.clearance(p[0], p[1]) < 0)) continue;
-        lay(pts, 0.01);
+        const cl = pts.map((p) => roads.clearance(p[0], p[1]));
+        if (roads.clearance(cx, cz) < 0.15 || cl.some((c) => c < 0)) continue;
+        if (!cut) { lay(pts, 0.01); continue; }
+        const lo = Math.min(...cl), hi = Math.max(...cl);
+        if (hi <= SIDEWALK_W) lay(pts, 0.01, 'slab');
+        else if (lo >= SIDEWALK_W) lay(pts, 0.01);
+        else if (quadArea(pts) > 0.01 && Math.max(dist(pts[0], pts[1]), dist(pts[0], pts[2]), dist(pts[1], pts[3]), dist(pts[2], pts[3])) < 9) layCut(pts, cl);
       }
   }
   // obrzeża od strony niskich sąsiadów (las, plaża, tory) — bez szczelin na krawędzi
@@ -558,6 +586,8 @@ function groundQuarter(b, city, G, i, q) {
     place(b, 'curb', cage4(T, null, [c0, c1, lerp2(c0, inn, k0), lerp2(c1, inn, k1)], NONE, -0.7, 0.16), dist(c0, c1), 0.86, 0.3, {});
   }
 }
+
+export const SIDEWALK_W = 2.4; // szerokość pasa chodnika wzdłuż miejskich ulic [m]
 
 // ── jezdnia: ciągła wstęga na kafelkach (kapsuła), krawężniki maskowane ─────
 const ROAD_TINT = { cobble: [0.96, 0.95, 0.94], dirt: [0.78, 0.62, 0.46], asphalt: [1, 1, 1] };
@@ -710,7 +740,7 @@ export function buildChunkLOD(city, id) {
     for (let i = 0; i < 4; i++) {
       const a = V[i];
       if (g.TY[a] !== T_BLD) {
-        if (q < g.Q0 && raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN && !lawn(city, a)) {
+        if (q < g.Q0 && raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN && !lawn(city, a) && !(g.ZN[a] === Z_HOUSES && (g.TY[a] === T_COURT || g.TY[a] === T_STREET)) && !(g.TY[a] === T_COURT && !g.nearBld[a])) {
           const cl = sidewalkClamp(city, G, i);
           if (!cl) continue;
           const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map(cl);

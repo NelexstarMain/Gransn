@@ -56,6 +56,8 @@ function texOf(t, srgb) {
   return e[k2];
 }
 const { M } = await createMaterials();
+// bruk i płyty rysuje w grze shader; aparat podstawia tekstury z LOD, żeby jezdnię dało się odróżnić od chodnika
+M.cobble.map = M.cobblelod.map; M.cobble.normalMap = M.cobblelod.normalMap; M.slab.map = M.lodwalk.map; M.slab.normalMap = M.lodwalk.normalMap;
 const mats = {};
 for (const [name, m] of Object.entries(M)) {
   const em = m.emissive && m.emissiveIntensity ? [m.emissive.r * m.emissiveIntensity, m.emissive.g * m.emissiveIntensity, m.emissive.b * m.emissiveIntensity] : null;
