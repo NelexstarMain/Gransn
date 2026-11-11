@@ -60,8 +60,9 @@ export class Ink {
           vec3 p0 = vpos(vUv, z0);
           vec3 pr = vpos(vUv + vec2(o.x, 0.0), rawZ(vUv + vec2(o.x, 0.0))), pl = vpos(vUv - vec2(o.x, 0.0), rawZ(vUv - vec2(o.x, 0.0)));
           vec3 pu = vpos(vUv + vec2(0.0, o.y), rawZ(vUv + vec2(0.0, o.y))), pd = vpos(vUv - vec2(0.0, o.y), rawZ(vUv - vec2(0.0, o.y)));
-          vec3 n0 = normalize(cross(pr - p0, pu - p0)), n1 = normalize(cross(pl - p0, pd - p0));
-          float bend = 1.0 - dot(n0, n1);
+          vec3 c0 = cross(pr - p0, pu - p0), c1 = cross(pl - p0, pd - p0);
+          vec3 n0 = c0 / max(length(c0), 1e-9), n1 = c1 / max(length(c1), 1e-9);
+          float bend = clamp(1.0 - dot(n0, n1), 0.0, 2.0);
           // „zamazanie” dali: ostro blisko, coraz bardziej rozmyte od ok. 30 m (jak słabszy wzrok)
           float haze = smoothstep(30.0, 170.0, dist);
           float edge = smoothstep(0.1, 0.42, bend) * (1.0 - 0.55 * haze) * (1.0 - smoothstep(200.0, 330.0, dist));
@@ -107,6 +108,7 @@ export class Ink {
           // więc świeci to, co świeci — okna, latarnie, reflektory — a im dalej (gęstsza mgła), tym szerzej.
           vec3 glow = textureLod(tColor, vUv, 2.5).rgb * 0.25 + textureLod(tColor, vUv, 4.0).rgb * 0.35 + textureLod(tColor, vUv, 5.5).rgb * 0.4 + textureLod(tColor, vUv, 7.0).rgb * 0.3;
           c += glow * glowK * (0.6 + 0.9 * haze);
+          c = max(min(c, vec3(40.0)), vec3(0.0)); // bez inf/NaN (czarne plamy)
           gl_FragColor = vec4(c, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
