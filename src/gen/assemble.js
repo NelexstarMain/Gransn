@@ -85,13 +85,17 @@ const LEAF_BY = { oak: [[0.34, 0.48, 0.22], [0.3, 0.42, 0.2], [0.42, 0.5, 0.24]]
 
 // Jesień: część drzew (skupiona w dzielnicach, nie losowo co drzewo) ma żółte, pomarańczowe i
 // rdzawe liście, reszta zostaje zielona; iglaste nie zmieniają koloru.
-const AUTUMN = [[0.76, 0.64, 0.18], [0.72, 0.4, 0.12], [0.58, 0.28, 0.1], [0.62, 0.6, 0.2], [0.8, 0.5, 0.14]];
+const AUTUMN = [[0.86, 0.66, 0.16], [0.84, 0.46, 0.1], [0.7, 0.26, 0.08], [0.78, 0.6, 0.18], [0.9, 0.54, 0.12], [0.6, 0.2, 0.1], [0.92, 0.76, 0.24]];
+// Pełnia jesieni: prawie wszystkie liściaste są złote, pomarańczowe i rdzawe (odcień skupiony
+// w okolicy, nie losowy co drzewo), nieliczne trzymają jeszcze oliwkową zieleń; iglaste bez zmian.
 function leafColor(sp, t, rr) {
   const green = rr.pick(LEAF_BY[sp]);
   if (sp === 'pine') return green;
-  const au = noise3(t.p[0] / 110 + 3.1, 0.7, t.p[1] / 110 - 1.7) + 0.5;
-  const chance = 0.1 + 0.6 * Math.max(0, Math.min(1, (au - 0.35) / 0.4));
-  return hash(t.seed || 1, 5) / 4294967296 < chance ? AUTUMN[hash(t.seed || 1, 6) % AUTUMN.length] : green;
+  const au = noise3(t.p[0] / 110 + 3.1, 0.7, t.p[1] / 110 - 1.7) + 0.5, h = hash(t.seed || 1, 5) / 4294967296;
+  if (h > 0.9) return [green[0] * 1.25, green[1] * 0.98, green[2] * 0.7];
+  const base = Math.floor(Math.max(0, Math.min(0.999, au)) * 3) * 2; // okolica wybiera parę odcieni
+  const c = AUTUMN[(base + (hash(t.seed || 1, 6) % 3)) % AUTUMN.length], k = 0.9 + 0.2 * (hash(t.seed || 1, 8) / 4294967296);
+  return [Math.min(1, c[0] * k), Math.min(1, c[1] * k), c[2] * k];
 }
 
 function placeTree(b, T, t, r) {
@@ -812,7 +816,7 @@ export function buildChunkLOD(city, id) {
     const gy = T.height(t.p[0], t.p[1]), r = 2.4 * t.s, h = 8 * t.s;
     for (let k = 0; k < 4; k++) {
       const a0 = (k / 4) * Math.PI * 2, a1 = ((k + 1) / 4) * Math.PI * 2;
-      b.wpoly('leaf', [[t.p[0] + Math.cos(a0) * r, gy + h * 0.4, t.p[1] + Math.sin(a0) * r], [t.p[0] + Math.cos(a1) * r, gy + h * 0.4, t.p[1] + Math.sin(a1) * r], [t.p[0], gy + h, t.p[1]]], null, { tint: [0.34, 0.45, 0.24] });
+      b.wpoly('leaf', [[t.p[0] + Math.cos(a0) * r, gy + h * 0.4, t.p[1] + Math.sin(a0) * r], [t.p[0] + Math.cos(a1) * r, gy + h * 0.4, t.p[1] + Math.sin(a1) * r], [t.p[0], gy + h, t.p[1]]], null, { tint: AUTUMN[hash(Math.round(t.p[0] * 7), Math.round(t.p[1] * 7), 6) % AUTUMN.length] });
     }
   }
   return b.finish();

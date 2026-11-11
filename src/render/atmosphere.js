@@ -3,10 +3,11 @@ import * as THREE from 'three';
 
 // Wspólne liczby światła — używa ich też aparat do zdjęć (scripts/photo.mjs).
 export const LIGHTS = {
-  fog: 0xa4b2b8, fogDensity: 0.0026,
-  hemiSky: 0xc4d6e8, hemiGround: 0x4a4034, hemiIntensity: 0.62,
-  sun: 0xffd8a8, sunIntensity: 3.0, sunDir: [-0.55, 0.5, 0.42],
-  skyTop: 0x4a78a6, envGround: 0x4a4740, envIntensity: 0.4, exposure: 0.92,
+  // złote jesienne popołudnie: niskie, ciepłe słońce, miodowa mgiełka, brzoskwiniowy horyzont
+  fog: 0xd9b78c, fogDensity: 0.0024,
+  hemiSky: 0xe6c9a8, hemiGround: 0x5a3f2c, hemiIntensity: 0.82,
+  sun: 0xffb974, sunIntensity: 3.2, sunDir: [-0.6, 0.42, 0.42],
+  skyTop: 0x5f86a8, envGround: 0x5a4636, envIntensity: 0.46, exposure: 1.02,
 };
 export const FOG_COLOR = new THREE.Color(LIGHTS.fog);
 
@@ -53,14 +54,14 @@ export function createAtmosphere(scene, renderer) {
           float h = clamp(dir.y, 0.0, 1.0);
           vec3 c = mix(horizon, top, pow(h, 0.55));
           float d = max(dot(dir, sunDir), 0.0);
-          vec3 sunC = vec3(1.0, 0.82, 0.58);
+          vec3 sunC = vec3(1.0, 0.72, 0.42);
           c += sunC * (0.22 * pow(d, 6.0) + 0.16 * pow(d, 24.0)) + vec3(1.6, 1.4, 1.1) * pow(d, 900.0);
           // chmury: warstwa płaska nad miastem, zanikają ku horyzontowi (w mgle)
           if (dir.y > 0.03) {
             vec2 uv = dir.xz / (dir.y + 0.18) * 1.6 + vec2(time * 0.012, time * 0.004);
             float n = vn(uv) * 0.55 + vn(uv * 2.1 + 7.3) * 0.3 + vn(uv * 4.3 + 2.7) * 0.15;
             float cl = smoothstep(0.52, 0.82, n) * smoothstep(0.03, 0.30, dir.y);
-            vec3 cc = mix(vec3(0.62, 0.66, 0.72), vec3(1.0, 0.96, 0.9), smoothstep(0.5, 0.95, n));
+            vec3 cc = mix(vec3(0.78, 0.6, 0.56), vec3(1.0, 0.9, 0.76), smoothstep(0.5, 0.95, n)); // chmury podświetlone na różowo-złoto
             cc += sunC * 0.35 * pow(d, 3.0);            // srebrne krawędzie od strony słońca
             c = mix(c, cc, cl * 0.85);
           }

@@ -23,16 +23,16 @@ const GRADE = `
     vec3 go = gl_FragColor.rgb;
     vec3 gc = go;
     float gl = dot(gc, vec3(0.2126, 0.7152, 0.0722));
-    gc = mix(vec3(gl), gc, 0.80);                         // mniej nasycone
-    gc = pow(max(gc, vec3(0.0)), vec3(1.28));             // ciemniejsze cienie i półtony
-    gc *= mix(vec3(0.86, 0.93, 1.07), vec3(1.06, 1.02, 0.93), smoothstep(0.05, 0.55, gl)); // zimne cienie, ciepłe światła
-    gc = mix(gc, gc * gc * (3.0 - 2.0 * gc), 0.35);       // lekki kontrast S
-    gl_FragColor.rgb = max(mix(go, gc * 0.94, gradeDark), vec3(0.0));
+    gc = mix(vec3(gl), gc, 1.14);                         // pełniejsze barwy (bajkowa ilustracja)
+    gc = pow(max(gc, vec3(0.0)), vec3(1.12));             // lekko głębsze cienie
+    gc *= mix(vec3(0.96, 0.84, 0.98), vec3(1.08, 1.0, 0.86), smoothstep(0.04, 0.5, gl)); // śliwkowe cienie, złote światła
+    gc = mix(gc, gc * gc * (3.0 - 2.0 * gc), 0.25);       // lekki kontrast S
+    gl_FragColor.rgb = max(mix(go, gc * 0.98, gradeDark), vec3(0.0));
   }
 `;
 function grade(m) {
   const prev = m.onBeforeCompile; // np. shader zniszczeń (wear.js) — grading dokłada się na końcu
-  const key = (m.userData.wearKey || '') + 'grade2';
+  const key = (m.userData.wearKey || '') + 'grade3';
   m.onBeforeCompile = (sh, r) => {
     if (prev) prev.call(m, sh, r);
     sh.uniforms.gradeDark = GRADE_UNIFORM;
@@ -116,6 +116,8 @@ export async function createMaterials({ low = false } = {}) {
     const o = depthOffset(name);
     if (o && M[name]) Object.assign(M[name], o);
   }
+  // jesień: trawa oliwkowo-złota
+  M.grass.color.setRGB(1.0, 0.9, 0.62); M.lawn.color.setRGB(1.0, 0.92, 0.66);
   for (const m of Object.values(M)) grade(m);
   return { M, telescreen };
 }
