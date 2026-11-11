@@ -200,7 +200,7 @@ vec3 wFacade(vec3 col, out float hgt, out float rgh){
   float role = floor(wv / 64.0);
   float rest = wv - role * 64.0;
   float di = floor(rest / 8.0);
-  float dmg = di / 7.0;
+  float dmg = di / 7.0 * 0.38; // mniej zniszczeń: skala stopnia zniszczenia (było 1,0)
   float kk = rest - di * 8.0;
   float seed = floor(vWear.z * 255.0 + 0.5);
   vec2 bo = wh22(vec2(seed, 3.0)) * 13.0;
@@ -214,7 +214,7 @@ vec3 wFacade(vec3 col, out float hgt, out float rgh){
   float openH = mix(1.65, 2.0, isG);
   float hw = 0.3 + 0.075 * kk;
   float hasWin = kk > 0.5 ? 1.0 : 0.0;
-  float amt = 0.3 + 0.7 * dmg;
+  float amt = 0.1 + 0.7 * dmg;
   vec3 P = vWP;
   vec4 pa = vProfA, pb = vProfB;
   float dcam = length(P - cameraPosition);
@@ -351,8 +351,8 @@ vec3 wRoof(vec3 col, out float hgt, out float rgh){
   hgt = 0.0; rgh = 1.0;
   float seed = floor(vWear.z * 255.0 + 0.5);
   vec2 bo = wh22(vec2(seed, 5.0)) * 13.0;
-  float dmg = floor(mod(floor(vWear.w * 255.0 + 0.5), 64.0) / 8.0) / 7.0;
-  float amt = 0.25 + 0.75 * dmg;
+  float dmg = floor(mod(floor(vWear.w * 255.0 + 0.5), 64.0) / 8.0) / 7.0 * 0.38;
+  float amt = 0.08 + 0.75 * dmg;
   vec2 q = vWP.xz + vWP.y * 0.7;
   vec4 a = texture2D(wearTex, q * 0.037 + bo);
   vec4 b = texture2D(wearTex, q * 0.21 + bo * 1.9);
