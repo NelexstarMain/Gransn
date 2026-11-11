@@ -24,7 +24,7 @@ export class CollisionGrid {
         const a = G.v[i];
         const poly = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]];
         if (filled(g, a, 0)) this.fill(poly, SOLID);
-        else if (raised(city, a)) this.fill(poly, WALK);
+        else if (q < g.Q0 && raised(city, a)) this.fill(poly, WALK);
       }
     }
     for (const l of city.lamps) this.disc(l.p[0], l.p[1], 0.2);

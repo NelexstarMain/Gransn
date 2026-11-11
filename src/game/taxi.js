@@ -30,7 +30,7 @@ export class TaxiJob {
     const occ = new Set(busy.map((p) => `${Math.round(p[0])},${Math.round(p[1])}`));
     this.stands = [];
     for (let v = 0; v < g.N; v++) {
-      if (g.TY[v] !== T_STREET || !g.nearBld[v] || g.ZN[v] === 3) continue;
+      if (g.TY[v] !== T_STREET || !g.nearBld[v] || g.COVER[v] || g.ZN[v] === 3) continue;
       const c = g.CL[v];
       if (c < 0.6 || c > 3.5 || occ.has(`${Math.round(g.X[v])},${Math.round(g.Z[v])}`)) continue;
       this.stands.push([g.X[v], g.Z[v]]);

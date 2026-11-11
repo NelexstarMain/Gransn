@@ -16,6 +16,7 @@ import { noise3 } from '../core/noise.js';
 import { HALF } from '../city/layout.js';
 import { levelY, filled, quadGeom, wallPlan, designOf, raised, lawn, T_BLD, T_COURT, T_PLAZA, T_PARK, T_GARDEN, T_STREET, T_WATER, Z_HOUSES } from '../city/grid.js';
 import { RoadNet } from '../city/roadnet.js';
+import { lotRoof } from '../city/parcels.js';
 import { CAR_KINDS, PARKED_KINDS } from './vehicles.js';
 import { polyDist } from '../city/routes.js';
 import { SEG, bridgeSegments } from '../city/bridges.js';
@@ -317,7 +318,7 @@ function buildQuad(b, city, q) {
         }
       }
       roofQuarter(b, city, info, G, i, top);
-      if (g.ARCH[a]) groundQuarter(b, city, G, i, q); // posadzka prześwitu / podcieni
+      if (g.ARCH[a] && q < g.Q0) groundQuarter(b, city, G, i, q); // posadzka prześwitu / podcieni (pod działkami leży grunt siatki miasta)
       // rura spustowa na wypukłym narożniku (obie sąsiednie ćwiartki puste na całej wysokości)
       const nA = V[(i + 1) % 4], nB = V[(i + 3) % 4];
       if (top >= 2 && !filled(g, nA, 0) && !filled(g, nB, 0) && !filled(g, nA, top - 1) && !filled(g, nB, top - 1) && hash(seed, a, q, 5) % 3 === 0) {
@@ -329,7 +330,7 @@ function buildQuad(b, city, q) {
       }
       continue;
     }
-    groundQuarter(b, city, G, i, q);
+    if (q < g.Q0) groundQuarter(b, city, G, i, q);
   }
 }
 
@@ -403,7 +404,32 @@ function roofSpec(city, G, i, top, info) {
   const g = city.grid, V = G.v, a = V[i];
   const other = (v) => g.TY[v] !== T_BLD || g.H[v] < top || g.BID[v] !== g.BID[a];
   const R = info.ridge;
+  // dom na działce: dach liczony z położenia w prostokącie działki (dwuspadowy, szczytem do ulicy,
+  // czterospadowy, mansardowy); części wyższe niż korpus (wieżyczki, ryzality) mają własny daszek
+  if (info.lot && a >= g.N0 && top <= info.lot.L0) {
+    const U = g.LU, W = g.LV, lot = info.lot, n1 = V[(i + 1) % 4], n3 = V[(i + 3) % 4];
+    const h = (u, v) => lotRoof(lot, u - lot.u0, v);
+    return [[G.p[i], h(U[a], W[a])], [G.m[i], h((U[a] + U[n1]) / 2, (W[a] + W[n1]) / 2)],
+      [G.c, h((U[V[0]] + U[V[1]] + U[V[2]] + U[V[3]]) / 4, (W[V[0]] + W[V[1]] + W[V[2]] + W[V[3]]) / 4)], [G.m[(i + 3) % 4], h((U[a] + U[n3]) / 2, (W[a] + W[n3]) / 2)]];
+  }
   return [[G.p[i], R], [G.m[i], other(V[(i + 1) % 4]) ? 0 : R], [G.c, V.some(other) ? 0 : R], [G.m[(i + 3) % 4], other(V[(i + 3) % 4]) ? 0 : R]];
+}
+
+// Ściana szczytowa: tam, gdzie krawędź dachu działki kończy się nad okapem (szczyt od ulicy,
+// ściana ogniowa nad niższym sąsiadem, uskok bryły) — mur od okapu do połaci.
+function roofGables(b, city, info, G, i, top, pts, base, mat, o) {
+  const g = city.grid, T = city.terrain, V = G.v, a = V[i];
+  if (!(info.lot && a >= g.N0)) return;
+  for (const side of [0, 1]) {
+    const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
+    if (g.TY[nb] === T_BLD && g.H[nb] >= top && g.BID[nb] === g.BID[a]) continue;
+    const m = side === 0 ? pts[1] : pts[3], c = pts[2];
+    if (m[1] < 0.06 && c[1] < 0.06) continue;
+    const y0 = T.height(m[0][0], m[0][1]) + base, y1 = T.height(c[0][0], c[0][1]) + base;
+    const hint = [m[0][0] + c[0][0] - 2 * G.p[i][0], 0, m[0][1] + c[0][1] - 2 * G.p[i][1]];
+    const P = [[m[0][0], y0 - 0.02, m[0][1]], [c[0][0], y1 - 0.02, c[0][1]], [c[0][0], y1 + c[1], c[0][1]], [m[0][0], y0 + m[1], m[0][1]]];
+    b.wpoly(mat, m[1] < 0.06 ? [P[0], P[1], P[2]] : c[1] < 0.06 ? [P[0], P[1], P[3]] : P, hint, o);
+  }
 }
 
 function roofQuarter(b, city, info, G, i, top) {
@@ -413,8 +439,9 @@ function roofQuarter(b, city, info, G, i, top) {
   const wear = wearOf(city, city.grid.BID[a], info);
   b.setWear(0, wear.d, wear.s);
   b.wpoly(info.roofMat || 'roof', pts.map(([p, h]) => [p[0], T.height(p[0], p[1]) + base + h, p[1]]), [0, 1, 0], { tint: info.roofTint });
+  roofGables(b, city, info, G, i, top, pts, base, info.wallMat, undefined);
   const hv = pts[0][1];
-  if (info.dormers && hv >= 1.7) roofDormers(b, city, info, G, i, top, base);
+  if (info.dormers && hv >= 1.7) roofDormers(b, city, info, G, i, top, base, hv, pts);
   if (hv > 2.2 && hash(city.seed, a, 77) / 4294967296 < 0.12) {
     const pv = G.p[i];
     b.cell(cage4(T, null, boxPts(pv, [1, 0], [0, 1], 1, 1), NONE, base, base + 1), 1, 1, 1);
@@ -426,11 +453,12 @@ function roofQuarter(b, city, info, G, i, top) {
 // Lukarny na krawędziach okapu: w osi odcinka ściany, czyli nad oknami ostatniego piętra.
 // Połać to trójkąt (środek krawędzi, środek czworokąta, punkt narożny): wysokość rośnie
 // liniowo od okapu do kalenicy, stąd nachylenie s = R / odległość punktu od okapu.
-function roofDormers(b, city, info, G, i, top, base) {
-  const g = city.grid, T = city.terrain, V = G.v, a = V[i], R = info.ridge, vp = G.p[i];
+function roofDormers(b, city, info, G, i, top, base, R = info.ridge, pts = null) {
+  const g = city.grid, T = city.terrain, V = G.v, a = V[i], vp = G.p[i];
   for (const side of [0, 1]) {
     const nb = side === 0 ? V[(i + 1) % 4] : V[(i + 3) % 4];
     if (filled(g, nb, top - 1)) continue;
+    if (pts && ((side === 0 ? pts[1][1] : pts[3][1]) > 0.3 || pts[2][1] > 0.3)) continue; // szczyt, nie okap
     const f0 = side === 0 ? G.m[i] : G.m[(i + 3) % 4], c = G.c, W = dist(f0, c);
     if (W < 2.0 || hash(city.seed, a, G.v[(i + 2) % 4], side, 78) / 4294967296 > info.dormerRate) continue;
     const e = [(c[0] - f0[0]) / W, (c[1] - f0[1]) / W];
@@ -682,7 +710,7 @@ export function buildChunkLOD(city, id) {
     for (let i = 0; i < 4; i++) {
       const a = V[i];
       if (g.TY[a] !== T_BLD) {
-        if (raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN && !lawn(city, a)) {
+        if (q < g.Q0 && raised(city, a) && g.TY[a] !== T_PARK && g.TY[a] !== T_GARDEN && !lawn(city, a)) {
           const cl = sidewalkClamp(city, G, i);
           if (!cl) continue;
           const q4 = [G.p[i], G.m[i], G.c, G.m[(i + 3) % 4]].map(cl);
@@ -740,7 +768,9 @@ export function buildChunkLOD(city, id) {
 
 function roofQuarterLOD(b, city, info, G, i, top) {
   const T = city.terrain, base = levelY(top) + info.ce;
-  b.wpoly('lodroof', roofSpec(city, G, i, top, info).map(([p, h]) => [p[0], T.height(p[0], p[1]) + base + h, p[1]]), [0, 1, 0], { tint: info.roofTint });
+  const pts = roofSpec(city, G, i, top, info);
+  b.wpoly('lodroof', pts.map(([p, h]) => [p[0], T.height(p[0], p[1]) + base + h, p[1]]), [0, 1, 0], { tint: info.roofTint });
+  roofGables(b, city, info, G, i, top, pts, base, 'lodroof', { tint: info.wallMat === 'brick' ? [0.7, 0.5, 0.42] : info.tint });
 }
 
 // ── nawierzchnia (bruk) na terenie, przycięta do brzegów rzeki ──────────────
