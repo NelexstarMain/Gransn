@@ -5,6 +5,7 @@ import * as THREE from 'three';
 export class CarFX {
   constructor(scene, city) {
     this.city = city;
+    this.groundY = (x, z) => city.terrain.height(x, z);
     // ── cząsteczki (dym i kurz) ──
     const N = (this.N = 1100);
     this.pos = new Float32Array(N * 3);
@@ -82,6 +83,11 @@ export class CarFX {
       if (dx * dx + dz * dz > 150 * 150 || R() < 0.25) continue;
       const g = 0.72 + R() * 0.12;
       this.emit(c[0], c[1], c[2], wx * 0.5 + (R() - 0.5) * 0.3, 0.9 + R() * 0.4, wz * 0.5 + (R() - 0.5) * 0.3, 0.55 * c[3], 6.5, g, g * 0.97, g * 0.93, 0.3, 0.75 * c[3], 1.004);
+    }
+    // nocna mgiełka: duże, ledwie widoczne kłęby snujące się nisko nad ulicami
+    for (let k = 0; k < 3; k++) {
+      const a = R() * 6.283, d = 6 + R() * 45;
+      this.emit(cam.x + Math.cos(a) * d, this.groundY(cam.x + Math.cos(a) * d, cam.z + Math.sin(a) * d) + 0.6 + R() * 2.5, cam.z + Math.sin(a) * d, wx * 0.4, 0.08, wz * 0.4, 3.5 + R() * 3, 9, 0.5, 0.36, 0.46, 0.07, 0.5, 1.0);
     }
     // klucz ptaków odlatujących na południe: co kilkanaście sekund ciemne punkty w szyku V wysoko nad miastem
     this.birdT = (this.birdT || 6) - 0.3;

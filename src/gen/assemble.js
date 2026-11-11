@@ -362,7 +362,7 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
     shutters: info.shutters, shutterTint: info.shutterTint, flowers: L > 0 ? info.flowers : null,
     simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4], winW: info.winW, winH: info.winH, curtain: info.curtain, awning: info.awning,
     endKind: ek.kind, cornerOwner: ek.owner, trim: info.trim, brickTint: info.brickTint,
-    lit: hash(city.seed, a, nb, L, 606) % 100 < (L > 0 ? 24 : 9), // jesienne popołudnie: w co czwartym oknie światło
+    lit: hash(city.seed, a, nb, L, 606) % 100 < (L > 0 ? 58 : 34), // noc: w większości okien pali się światło // jesienne popołudnie: w co czwartym oknie światło
   };
   // fasada z fragmentów (okna o stałej szerokości, wejścia, balkony, narożniki);
   // Ministerstwo i styl modernistyczny zostają przy starych modułach

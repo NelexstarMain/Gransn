@@ -5,6 +5,7 @@ import { WorkerPool } from './gen/pool.js';
 import { createMaterials } from './render/materials.js';
 import { createAtmosphere, LIGHTS } from './render/atmosphere.js';
 import { Ink } from './render/ink.js';
+import { NightGlow } from './game/glow.js';
 import { CollisionGrid } from './game/collision.js';
 import { Player } from './game/player.js';
 import { Streamer } from './game/streaming.js';
@@ -301,6 +302,11 @@ async function start() {
   });
 
   const chimneys = chimneyList(city); // dym z kominów (fx.ambient)
+  // noc: poświaty latarni i aut, reflektory taksówki (jedno prawdziwe światło, bez cieni)
+  const glow = new NightGlow(scene, city, grid);
+  const head = new THREE.SpotLight(0xffd9a8, 90, 55, 0.62, 1, 1.5);
+  head.position.set(car.L / 2, 1.0, 0); head.target.position.set(car.L / 2 + 12, 0.2, 0);
+  car.mesh.add(head, head.target);
   const clock = new THREE.Clock();
   let fpsAcc = 0, fpsN = 0, fps = 0, streamAcc = 0, frameNo = 0, perfAcc = 0, perfN = 0, perfBad = 0, perfGood = 0, infoAcc = 1, info = '';
   const view = { x: 0, z: -1 };
@@ -355,6 +361,7 @@ async function start() {
     streamAcc += dt;
     if (streamAcc > 0.25) { streamAcc = 0; streamer.update(active); }
     atmo.update(camera.position, clock.elapsedTime);
+    glow.update(traffic.bots, car);
     telescreen.update(dt);
     M.water.normalMap.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
     // cienie co drugą klatkę: odciąża GPU, a ruch cieni i tak jest płynny

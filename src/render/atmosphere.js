@@ -3,11 +3,11 @@ import * as THREE from 'three';
 
 // Wspólne liczby światła — używa ich też aparat do zdjęć (scripts/photo.mjs).
 export const LIGHTS = {
-  // złote jesienne popołudnie: niskie, ciepłe słońce, miodowa mgiełka, brzoskwiniowy horyzont
-  fog: 0xe6ad88, fogDensity: 0.0038,
-  hemiSky: 0xe6c9a8, hemiGround: 0x5a3f2c, hemiIntensity: 0.82,
-  sun: 0xffb974, sunIntensity: 3.2, sunDir: [-0.6, 0.42, 0.42],
-  skyTop: 0x9a7396, envGround: 0x5a4636, envIntensity: 0.46, exposure: 1.02,
+  // noc z różowym niebem: księżycowa poświata, gęsta fioletowo-różowa mgła, światło daje miasto
+  fog: 0x5a3352, fogDensity: 0.0042,
+  hemiSky: 0x7a5488, hemiGround: 0x2a1a24, hemiIntensity: 0.5,
+  sun: 0xc9a6d8, sunIntensity: 0.55, sunDir: [-0.45, 0.62, 0.42],
+  skyTop: 0x2a1840, envGround: 0x241620, envIntensity: 0.3, exposure: 1.3,
 };
 export const FOG_COLOR = new THREE.Color(LIGHTS.fog);
 
@@ -66,13 +66,14 @@ export function createAtmosphere(scene, renderer, low = false) {
           vec2 sh = normalize(sunDir.xz);
           float az = dot(normalize(dir.xz + vec2(0.00001)), sh) * 0.5 + 0.5;   // 1 = strona słońca
           float d = max(dot(dir, sunDir), 0.0);
-          vec3 sunC = vec3(1.0, 0.72, 0.42);
+          vec3 sunC = vec3(0.9, 0.6, 0.8);
           // trzy pasy: mgła przy horyzoncie, pas zorzy (złoty od słońca, lawendowy naprzeciw), błękit w zenicie
-          vec3 band = mix(vec3(0.98, 0.56, 0.62), vec3(1.0, 0.56, 0.22), az * az);          // róż naprzeciw słońca, pomarańcz od słońca
+          vec3 band = mix(vec3(0.62, 0.22, 0.5), vec3(0.95, 0.36, 0.5), az * az);          // róż naprzeciw słońca, pomarańcz od słońca
           vec3 c = mix(horizon, band, smoothstep(0.0, 0.14, h) * (1.0 - smoothstep(0.2, 0.7, h)) * 0.9);
           c = mix(c, top, smoothstep(0.16, 0.85, h));
           c += sunC * (0.3 * pow(d, 5.0) + 0.22 * pow(d, 28.0));
-          c += vec3(1.7, 1.35, 0.9) * smoothstep(0.9988, 0.9996, d);           // duża, miękka tarcza słońca
+          c += vec3(1.5, 1.3, 1.45) * smoothstep(0.9990, 0.9995, d);                 // księżyc
+          { vec2 sg = floor(dir.xz / (abs(dir.y) + 0.25) * 90.0); float st = h21(sg); c += vec3(0.9, 0.8, 1.0) * step(0.9965, st) * smoothstep(0.12, 0.5, h) * (0.5 + 0.5 * sin(time * 2.0 + st * 400.0)); } // gwiazdy           // duża, miękka tarcza słońca
           if (dir.y > 0.02) {
             vec2 uv = dir.xz / (dir.y + 0.16) * 1.1 + vec2(time * 0.008, time * 0.003);
             float n = cloud(uv);
@@ -85,12 +86,12 @@ export function createAtmosphere(scene, renderer, low = false) {
             float lit = clamp((n - cloud(uv + sh * 0.22)) * 4.0 + 0.5, 0.0, 1.0);
             lit = floor(lit * 3.0 + 0.5) / 3.0 * 0.6 + lit * 0.4;               // malarskie stopnie
             #endif
-            vec3 cc = mix(mix(vec3(0.62, 0.4, 0.52), vec3(0.9, 0.5, 0.42), az), mix(vec3(1.0, 0.74, 0.72), vec3(1.0, 0.86, 0.6), az), lit); // różowe i złote kłęby
-            cc += sunC * 0.5 * pow(d, 4.0);
+            vec3 cc = mix(mix(vec3(0.2, 0.1, 0.22), vec3(0.4, 0.16, 0.3), az), mix(vec3(0.7, 0.34, 0.56), vec3(0.95, 0.5, 0.62), az), lit); // różowe i złote kłęby
+            cc += sunC * 0.25 * pow(d, 4.0);
             c = mix(c, cc, cov * fade * 0.92);
             // pierzaste smugi wysoko
             float ci = vn(uv * vec2(0.35, 2.4) + 40.0) * vn(uv * 1.3 + 11.0);
-            c = mix(c, vec3(1.0, 0.72, 0.66), smoothstep(0.32, 0.62, ci) * 0.35 * fade * (1.0 - cov));
+            c = mix(c, vec3(0.75, 0.38, 0.6), smoothstep(0.32, 0.62, ci) * 0.35 * fade * (1.0 - cov));
           }
           gl_FragColor = vec4(c, 1.0);
           #include <colorspace_fragment>

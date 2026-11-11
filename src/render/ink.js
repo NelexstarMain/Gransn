@@ -24,7 +24,8 @@ export class Ink {
     this.calls = 0;
     this.size = new THREE.Vector2();
     this.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true, depthTexture: new THREE.DepthTexture(4, 4), samples: 4 } /* MSAA: bez niego krawędzie i kreski migotały w ruchu */);
-    this.rt.texture.minFilter = this.rt.texture.magFilter = THREE.LinearFilter;
+    this.rt.texture.generateMipmaps = true; // mipmapy = tanie, szerokie rozmycie do blasku
+    this.rt.texture.minFilter = THREE.LinearMipmapLinearFilter; this.rt.texture.magFilter = THREE.LinearFilter;
     this.rt.depthTexture.minFilter = this.rt.depthTexture.magFilter = THREE.NearestFilter;
     this.mat = new THREE.ShaderMaterial({
       depthTest: false, depthWrite: false,
@@ -34,16 +35,17 @@ export class Ink {
         gradeDark: { value: 1 }, inkK: { value: 0.82 },
         invVP: { value: new THREE.Matrix4() }, prevVP: { value: new THREE.Matrix4() }, prevTVP: { value: new THREE.Matrix4() }, blurK: { value: 0 }, blurR: { value: 0 },
         tanF: { value: new THREE.Vector2(1, 1) },
+        glowK: { value: 0.6 },
         inkW: { value: 0.028 }, // grubość kreski w metrach (na odległości 1 m = tyle metrów)
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform mat4 prevTVP; uniform float blurK; uniform float blurR; uniform float inkW; uniform vec2 tanF;
+      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform mat4 prevTVP; uniform float blurK; uniform float blurR; uniform float inkW; uniform vec2 tanF; uniform float glowK;
         varying vec2 vUv;
         float rawZ(vec2 uv){ return texture2D(tDepth, uv).x; }
         float zdist(float z){ return 2.0 * near * far / (far + near - (z * 2.0 - 1.0) * (far - near)); }
         vec3 vpos(vec2 uv, float z){ float d = zdist(z); return vec3((uv * 2.0 - 1.0) * tanF * d, -d); } // pozycja w układzie kamery
         void main(){
-          vec3 c = texture2D(tColor, vUv).rgb;
+          vec3 c = textureLod(tColor, vUv, 0.0).rgb;
           float z0 = rawZ(vUv);
           float speed = 0.0;
           // odległość w metrach; kreska ma grubość „w świecie”: z bliska gruba (do 3,4 px), z daleka
@@ -101,6 +103,10 @@ export class Ink {
           }
           edge *= 1.0 - smoothstep(0.004, 0.018, speed);                // w pędzie kreska rozpływa się w smugę
           c *= mix(vec3(1.0), vec3(0.2, 0.12, 0.1), edge * inkK);   // ciepły, ciemnobrązowy tusz
+          // blask rozlany we mgle: rozmyte kopie obrazu (mipmapy) dodane z powrotem. Nocą obraz jest ciemny,
+          // więc świeci to, co świeci — okna, latarnie, reflektory — a im dalej (gęstsza mgła), tym szerzej.
+          vec3 glow = textureLod(tColor, vUv, 2.5).rgb * 0.25 + textureLod(tColor, vUv, 4.0).rgb * 0.35 + textureLod(tColor, vUv, 5.5).rgb * 0.4 + textureLod(tColor, vUv, 7.0).rgb * 0.3;
+          c += glow * glowK * (0.6 + 0.9 * haze);
           gl_FragColor = vec4(c, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>

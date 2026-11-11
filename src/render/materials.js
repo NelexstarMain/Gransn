@@ -117,10 +117,11 @@ export async function createMaterials({ low = false } = {}) {
     if (o && M[name]) Object.assign(M[name], o);
   }
   // jesień: trawa oliwkowo-złota
-  M.grass.color.setRGB(1.0, 0.9, 0.62); M.lawn.color.setRGB(1.0, 0.92, 0.66);
+  M.grass.color.setRGB(0.9, 0.86, 0.7); M.lawn.color.setRGB(0.9, 0.88, 0.72);
   // po jesiennym deszczu: bruk i płyty lekko mokre — odbijają ciepłe niebo
   M.cobble.roughness = 0.44; M.cobblelod.roughness = 0.5; M.slab.roughness = 0.6; M.cobblep.roughness = 0.5; M.asphalt.roughness = 0.5;
   for (const k of ['cobble', 'cobblelod', 'slab', 'cobblep', 'asphalt']) M[k].envMapIntensity = 1.5;
+  M.light.emissiveIntensity = 3.2; M.tail.emissiveIntensity = 1.6; // noc: okna, klosze latarń i światła aut świecą mocno
   for (const m of Object.values(M)) grade(m);
   return { M, telescreen };
 }
