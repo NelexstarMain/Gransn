@@ -4,6 +4,7 @@ import { GROUND_TILES } from './gen/assemble.js';
 import { WorkerPool } from './gen/pool.js';
 import { createMaterials } from './render/materials.js';
 import { createAtmosphere, LIGHTS } from './render/atmosphere.js';
+import { Ink } from './render/ink.js';
 import { CollisionGrid } from './game/collision.js';
 import { Player } from './game/player.js';
 import { Streamer } from './game/streaming.js';
@@ -74,6 +75,12 @@ async function start() {
   await tick();
   const { M, telescreen } = await createMaterials({ low: LOW });
   const atmo = createAtmosphere(scene, renderer, LOW);
+  // bajkowy rysunek (kontur + stopniowane barwy); K przełącza, błąd shadera wyłącza sam
+  const ink = LOW || params.has('noink') ? null : new Ink();
+  if (ink) {
+    if (renderer.debug) renderer.debug.onShaderError = (gl, program) => { ink.ok = false; console.error('shader:', gl.getProgramInfoLog(program)); };
+    addEventListener('keydown', (e) => { if (e.code === 'KeyK' && !e.ctrlKey && !e.metaKey) ink.on = !ink.on; });
+  }
 
   // morze dookoła wyspy
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000, 1, 1).rotateX(-Math.PI / 2), M.water);
@@ -138,7 +145,10 @@ async function start() {
   const me = crowd.add(meStyle, { sit: 1, sitT: 1 });
   loading.then(async () => {
     setProgress(0.97, 'Scalanie świata i kompilacja shaderów…');
+    // z tuszem scena rysuje się do tekstury — shadery kompilujemy od razu w tym wariancie (bez zacięcia w pierwszej klatce)
+    if (ink) renderer.setRenderTarget(ink.rt);
     try { await renderer.compileAsync(scene, camera); } catch { /* kompilacja przy pierwszej klatce */ }
+    if (ink) renderer.setRenderTarget(null);
     worldReady = true;
     setProgress(1, 'Gotowe. Klienci czekają!');
     document.body.classList.add('ready');
@@ -347,7 +357,8 @@ async function start() {
     M.water.normalMap.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
     // cienie co drugą klatkę: odciąża GPU, a ruch cieni i tak jest płynny
     if (renderer.shadowMap.enabled && (frameNo & 1) === 0) renderer.shadowMap.needsUpdate = true;
-    renderer.render(scene, camera);
+    if (ink && ink.on && ink.ok) ink.render(renderer, scene, camera);
+    else renderer.render(scene, camera);
     // wydajność: gdy klatki są wolne, obniż rozdzielczość; gdy zapas — podnieś (z histerezą).
     // Mnożnik trzyma `Settings` (autoScale), więc ręczna rozdzielczość z menu pozostaje punktem odniesienia.
     fpsAcc += dt; fpsN++; perfAcc += dt; perfN++;
@@ -365,7 +376,7 @@ async function start() {
     infoAcc += dt;
     if (infoAcc > 0.5) {
       infoAcc = 0;
-      info = `${fps.toFixed(0)} FPS · ${settings.resNow.toFixed(2)}× rozdz. · fragmenty: ${streamer.loaded}/${city.chunks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${renderer.info.render.calls} · ludzie ${crowd.count}${player.fly ? ' · LOT' : ''}`;
+      info = `${fps.toFixed(0)} FPS · ${settings.resNow.toFixed(2)}× rozdz. · fragmenty: ${streamer.loaded}/${city.chunks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${ink && ink.on && ink.ok ? ink.calls : renderer.info.render.calls} · ludzie ${crowd.count}${player.fly ? ' · LOT' : ''}`;
     }
     const nearCar = onFoot && Math.hypot(player.pos.x - car.pos.x, player.pos.z - car.pos.z) < 5;
     hud.update(dt, { pos: active, yaw: car.active ? carYaw() : player.yaw }, info, job, car, camera, { onFoot, weapon, player, peds, nearCar });

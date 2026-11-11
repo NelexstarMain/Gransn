@@ -167,6 +167,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - Ściany domów na działkach: promień od ściany decyduje, czy to front (jezdnia), podwórze, czy ściana ślepa (`seg.blind` w `facades.js`: sąsiad bliżej niż 4,3 m albo styk) — ślepa nie ma okien, balkonów ani okapu; pod szczytem dachu też nie ma okapu.
 - Klimat: złote jesienne popołudnie (`LIGHTS` w `atmosphere.js`, korekcja kolorów `GRADE` w `materials.js`, jesienne liście `AUTUMN` w `assemble.js`). Niebo to shader z malowanymi chmurami (wariant `SKY_LOW` na telefonach).
 - Kamera domyślnie z fotela kierowcy (`car.camMode = 'driver'`, klawisz V przełącza na kamerę zza auta). Auto gracza ma wariant `cockpit` modelu: deska z zegarami i taksometrem, bez szyby, kierownica jako osobna obracana siatka (`steerwheel`).
+- `render/ink.js` = bajkowy rysunek: scena idzie do tekstury (kolor + głębia), pełnoekranowy przebieg dorysowuje kontur z drugiej różnicy głębi, robi mapowanie tonów, korekcję kolorów i stopniuje jasność. Na ten czas `GRADE_UNIFORM` w materiałach jest zerowany. Wyłączone w `?low` i `?noink`, klawisz K przełącza, błąd shadera wyłącza samoczynnie. To jedyny postprocessing w grze — nie dokładaj kolejnych przebiegów.
 - Boty jeżdżą modelem IDM (`traffic.js`, płynne przyspieszanie i hamowanie).
 
 ### Ostatnie wyniki weryfikacji (seed 1984)

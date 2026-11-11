@@ -9,6 +9,7 @@ export class WebGLRenderer {
     this.frames = 0;
   }
   setPixelRatio() {} setSize() {} render() { this.frames++; }
+  setRenderTarget() {} getDrawingBufferSize(v) { return v.set(1280, 720); }
 }
 export class PMREMGenerator {
   fromScene() { return { texture: new Texture() }; }
