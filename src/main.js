@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { generateCity } from './city/layout.js';
-import { GROUND_TILES } from './gen/assemble.js';
+import { GROUND_TILES, chimneyList } from './gen/assemble.js';
 import { WorkerPool } from './gen/pool.js';
 import { createMaterials } from './render/materials.js';
 import { createAtmosphere, LIGHTS } from './render/atmosphere.js';
@@ -79,7 +79,7 @@ async function start() {
   const ink = LOW || params.has('noink') ? null : new Ink();
   if (ink) {
     if (renderer.debug) renderer.debug.onShaderError = (gl, program) => { ink.ok = false; console.error('shader:', gl.getProgramInfoLog(program)); };
-    addEventListener('keydown', (e) => { if (e.code === 'KeyK' && !e.ctrlKey && !e.metaKey) ink.on = !ink.on; });
+    addEventListener('keydown', (e) => { if (e.code === 'KeyK' && !e.ctrlKey && !e.metaKey) ink.on = !ink.on; else if (e.code === 'KeyB' && !e.ctrlKey && !e.metaKey) ink.blur = !ink.blur; });
   }
 
   // morze dookoła wyspy
@@ -300,6 +300,7 @@ async function start() {
     else if (e.code === 'KeyV' && car.active) car.camMode = car.camMode === 'driver' ? 'chase' : 'driver'; // kamera: fotel kierowcy / zza auta
   });
 
+  const chimneys = chimneyList(city); // dym z kominów (fx.ambient)
   const clock = new THREE.Clock();
   let fpsAcc = 0, fpsN = 0, fps = 0, streamAcc = 0, frameNo = 0, perfAcc = 0, perfN = 0, perfBad = 0, perfGood = 0, infoAcc = 1, info = '';
   const view = { x: 0, z: -1 };
@@ -333,6 +334,7 @@ async function start() {
       // pieszy blokuje kroki innych: popchnij NPC odsuwając ich od gracza na piechotę
       if (onFoot) for (const w of peds.walkers) { const dx = w.h.x - player.pos.x, dz = w.h.z - player.pos.z, d = Math.hypot(dx, dz); if (d < 0.9 && d > 1e-3 && w.mode !== 'down') { w.fx += (dx / d) * dt * 2.2; w.fz += (dz / d) * dt * 2.2; } }
       fx.update(dt, car, player.keys, grid);
+      fx.ambient(dt, camera.position, chimneys);
       // uderzenia auta: iskry, dźwięk
       if (car.impact > 0.6) {
         sound.thud(car.impact);
@@ -357,7 +359,7 @@ async function start() {
     M.water.normalMap.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
     // cienie co drugą klatkę: odciąża GPU, a ruch cieni i tak jest płynny
     if (renderer.shadowMap.enabled && (frameNo & 1) === 0) renderer.shadowMap.needsUpdate = true;
-    if (ink && ink.on && ink.ok) ink.render(renderer, scene, camera);
+    if (ink && ink.on && ink.ok) ink.render(renderer, scene, camera, dt);
     else renderer.render(scene, camera);
     // wydajność: gdy klatki są wolne, obniż rozdzielczość; gdy zapas — podnieś (z histerezą).
     // Mnożnik trzyma `Settings` (autoScale), więc ręczna rozdzielczość z menu pozostaje punktem odniesienia.

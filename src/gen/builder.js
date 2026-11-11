@@ -53,7 +53,7 @@ export const MATDEF = {
   lodroof: { wob: W, dirt: 1 },
 };
 
-const LEAN = 0.018; // m bocznego "pływania" na metr wysokości (stare kamienice)
+const LEAN = 0.03; // m bocznego "pływania" na metr wysokości (stare kamienice)
 const EMPTY = {};
 const WHITE = [1, 1, 1];
 export const NX = [-1, 0, 0], PX = [1, 0, 0], NY = [0, -1, 0], PY = [0, 1, 0], NZ = [0, 0, -1], PZ = [0, 0, 1];

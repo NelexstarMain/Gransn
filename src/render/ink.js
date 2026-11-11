@@ -32,20 +32,46 @@ export class Ink {
         tColor: { value: this.rt.texture }, tDepth: { value: this.rt.depthTexture },
         texel: { value: new THREE.Vector2(1, 1) }, near: { value: 0.2 }, far: { value: 2200 }, pxa: { value: 0.001 },
         gradeDark: { value: 1 }, inkK: { value: 0.82 },
+        invVP: { value: new THREE.Matrix4() }, prevVP: { value: new THREE.Matrix4() }, blurK: { value: 0 },
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK;
+      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform float blurK;
         varying vec2 vUv;
         float rawZ(vec2 uv){ return texture2D(tDepth, uv).x; }
         void main(){
           vec3 c = texture2D(tColor, vUv).rgb;
           float z0 = rawZ(vUv);
+          float speed = 0.0;
           float zl = rawZ(vUv - vec2(texel.x, 0.0)), zr = rawZ(vUv + vec2(texel.x, 0.0));
           float zd = rawZ(vUv - vec2(0.0, texel.y)), zu = rawZ(vUv + vec2(0.0, texel.y));
           // odległość w metrach i druga różnica głębi przeliczona na względny skok (Δz / z)
           float dist = 2.0 * near * far / (far + near - (z0 * 2.0 - 1.0) * (far - near));
           float lap = (abs(zl + zr - 2.0 * z0) + abs(zd + zu - 2.0 * z0)) * dist / near;
           float edge = smoothstep(0.7 * pxa, 1.9 * pxa, lap) * (1.0 - smoothstep(110.0, 300.0, dist));
+          // rozmycie ruchu: gdzie ten punkt świata był na ekranie klatkę temu (ruch kamery); kolor
+          // uśredniony wzdłuż tej drogi. Wnętrze auta (bliżej niż ~2,5 m) jedzie z kamerą — zostaje ostre
+          // i nie rozmazuje się na drogę.
+          if (blurK > 0.0) {
+            vec4 wp = invVP * vec4(vUv * 2.0 - 1.0, z0 * 2.0 - 1.0, 1.0);
+            vec4 pc = prevVP * vec4(wp.xyz / wp.w, 1.0);
+            vec2 vel = (vUv - (pc.xy / pc.w * 0.5 + 0.5)) * blurK * smoothstep(2.5, 6.0, dist);
+            if (pc.w <= 0.0) vel = vec2(0.0);
+            float vl = length(vel);
+            if (vl > 0.035) vel *= 0.035 / vl;
+            speed = min(vl, 0.035);
+            if (speed > 0.0012) {
+              float wsum = 1.0;
+              for (int i = 1; i <= 5; i++) {
+                vec2 uv = clamp(vUv - vel * (float(i) / 5.0), vec2(0.001), vec2(0.999));
+                float zt = rawZ(uv);
+                float dt = 2.0 * near * far / (far + near - (zt * 2.0 - 1.0) * (far - near));
+                float w = step(2.5, dt);
+                c += texture2D(tColor, uv).rgb * w; wsum += w;
+              }
+              c /= wsum;
+            }
+          }
+          edge *= 1.0 - smoothstep(0.004, 0.018, speed);                // w pędzie kreska rozpływa się w smugę
           c *= mix(vec3(1.0), vec3(0.2, 0.12, 0.1), edge * inkK);   // ciepły, ciemnobrązowy tusz
           gl_FragColor = vec4(c, 1.0);
           #include <tonemapping_fragment>
@@ -70,9 +96,12 @@ export class Ink {
     this.scene = new THREE.Scene();
     this.scene.add(this.quad);
     this.cam = new THREE.Camera();
+    this.vp = new THREE.Matrix4();
+    this.prev = null;
+    this.blur = true; // rozmycie ruchu (klawisz B)
   }
 
-  render(renderer, scene, camera) {
+  render(renderer, scene, camera, dt = 1 / 60) {
     renderer.getDrawingBufferSize(this.size);
     const w = Math.max(4, Math.floor(this.size.x)), h = Math.max(4, Math.floor(this.size.y));
     if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
@@ -85,6 +114,13 @@ export class Ink {
     renderer.setRenderTarget(this.rt);
     renderer.render(scene, camera);
     this.calls = renderer.info.render.calls;
+    // macierze do rozmycia ruchu: bieżąca odwrotna i poprzednia widok×rzut; siła niezależna od FPS
+    this.vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    u.invVP.value.copy(this.vp).invert();
+    if (!this.prev) this.prev = this.vp.clone();
+    u.prevVP.value.copy(this.prev);
+    u.blurK.value = this.blur ? 0.55 * Math.min(2, 1 / 60 / Math.max(1e-3, dt)) : 0;
+    this.prev.copy(this.vp);
     GRADE_UNIFORM.value = g;
     renderer.setRenderTarget(null);
     renderer.render(this.scene, this.cam);

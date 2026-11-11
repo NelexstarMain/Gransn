@@ -20,7 +20,9 @@ export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export function glassFrame(b, x0, y0, x1, y1, z, p, frameMat = 'wood') {
   const ft = 0.07, h = 0.022;
   const fo = { tint: p.frameTint };
-  b.rect('glass', x0, y0, x1, y1, z + 0.035, { tint: p.glassTint });
+  // w części okien pali się już światło (materiał świecący zamiast lustrzanej szyby)
+  if (p.lit) b.rect('light', x0, y0, x1, y1, z + 0.035, { tint: [1, 0.82, 0.52] });
+  else b.rect('glass', x0, y0, x1, y1, z + 0.035, { tint: p.glassTint });
   // firanki (jasne, u góry) albo zasłony (kolorowe, po bokach) — za ramą, przed szybą
   const seedish = Math.abs(Math.sin((x0 + z) * 91.7 + y0 * 13.1));
   if (seedish < 0.35) b.rect('wood', x0 + ft, y1 - (y1 - y0) * 0.35, x1 - ft, y1 - ft, z + 0.03, { tint: [0.93, 0.91, 0.86], shade: 0.95 });

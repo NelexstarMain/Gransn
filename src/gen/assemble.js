@@ -361,6 +361,7 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
     shutters: info.shutters, shutterTint: info.shutterTint, flowers: L > 0 ? info.flowers : null,
     simple: g.TY[nb] === T_COURT, sign: SHOP_SIGNS[hh % 4], winW: info.winW, winH: info.winH, curtain: info.curtain, awning: info.awning,
     endKind: ek.kind, cornerOwner: ek.owner, trim: info.trim, brickTint: info.brickTint,
+    lit: hash(city.seed, a, nb, L, 606) % 100 < (L > 0 ? 24 : 9), // jesienne popołudnie: w co czwartym oknie światło
   };
   // fasada z fragmentów (okna o stałej szerokości, wejścia, balkony, narożniki);
   // Ministerstwo i styl modernistyczny zostają przy starych modułach
@@ -444,6 +445,24 @@ function roofGables(b, city, info, G, i, top, pts, base, mat, o) {
     const P = [[m[0][0], y0 - 0.02, m[0][1]], [c[0][0], y1 - 0.02, c[0][1]], [c[0][0], y1 + c[1], c[0][1]], [m[0][0], y0 + m[1], m[0][1]]];
     b.wpoly(mat, m[1] < 0.06 ? [P[0], P[1], P[2]] : c[1] < 0.06 ? [P[0], P[1], P[3]] : P, hint, o);
   }
+}
+
+// Kominy, z których w grze unosi się dym: te same miejsca i warunki co w roofQuarter + kominy fabryczne.
+export function chimneyList(city) {
+  const g = city.grid, T = city.terrain, out = [], seen = new Set();
+  for (let q = g.Q0; q < g.quads.length / 4; q++) {
+    const G = quadGeom(g, q);
+    for (let i = 0; i < 4; i++) {
+      const a = G.v[i];
+      if (g.TY[a] !== T_BLD || seen.has(a) || hash(city.seed, a, 77) / 4294967296 >= 0.12) continue;
+      const info = designOf(city, g.BID[a], g.ZN[a]), top = g.H[a], hv = roofSpec(city, G, i, top, info)[0][1];
+      if (hv <= 2.2) continue;
+      seen.add(a);
+      out.push([G.p[i][0], T.height(G.p[i][0], G.p[i][1]) + levelY(top) + info.ce + hv + 1.4, G.p[i][1], 1]);
+    }
+  }
+  for (const ex of city.extras) if (ex.kind === 'factorychimney') out.push([ex.p[0], T.height(ex.p[0], ex.p[1]) + ex.H + 0.5, ex.p[1], 2.4]);
+  return out;
 }
 
 function roofQuarter(b, city, info, G, i, top) {

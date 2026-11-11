@@ -168,6 +168,8 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - Klimat: złote jesienne popołudnie (`LIGHTS` w `atmosphere.js`, korekcja kolorów `GRADE` w `materials.js`, jesienne liście `AUTUMN` w `assemble.js`). Niebo to shader z malowanymi chmurami (wariant `SKY_LOW` na telefonach).
 - Kamera domyślnie z fotela kierowcy (`car.camMode = 'driver'`, klawisz V przełącza na kamerę zza auta). Auto gracza ma wariant `cockpit` modelu: deska z zegarami i taksometrem, bez szyby, kierownica jako osobna obracana siatka (`steerwheel`).
 - `render/ink.js` = bajkowy rysunek: scena idzie do tekstury (kolor + głębia), pełnoekranowy przebieg dorysowuje kontur z drugiej różnicy głębi, robi mapowanie tonów, korekcję kolorów i stopniuje jasność. Na ten czas `GRADE_UNIFORM` w materiałach jest zerowany. Wyłączone w `?low` i `?noink`, klawisz K przełącza, błąd shadera wyłącza samoczynnie. To jedyny postprocessing w grze — nie dokładaj kolejnych przebiegów.
+- `ink.js` robi też rozmycie ruchu (reprojekcja głębi z poprzednią macierzą kamery, 5 próbek, wnętrze auta wyłączone progiem 2,5 m; klawisz B).
+- Urok: `p.lit` = świecące okna (`glassFrame`), `chimneyList(city)` + `fx.ambient` = dym z kominów i spadające liście (cząsteczki mają własny przyrost `gr` i opór `dr`), `LEAN = 0,03` w `builder.js` = krzywe kamienice.
 - Boty jeżdżą modelem IDM (`traffic.js`, płynne przyspieszanie i hamowanie).
 
 ### Ostatnie wyniki weryfikacji (seed 1984)

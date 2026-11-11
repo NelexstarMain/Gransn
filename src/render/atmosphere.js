@@ -4,10 +4,10 @@ import * as THREE from 'three';
 // Wspólne liczby światła — używa ich też aparat do zdjęć (scripts/photo.mjs).
 export const LIGHTS = {
   // złote jesienne popołudnie: niskie, ciepłe słońce, miodowa mgiełka, brzoskwiniowy horyzont
-  fog: 0xd9b78c, fogDensity: 0.0024,
+  fog: 0xe6ad88, fogDensity: 0.0024,
   hemiSky: 0xe6c9a8, hemiGround: 0x5a3f2c, hemiIntensity: 0.82,
   sun: 0xffb974, sunIntensity: 3.2, sunDir: [-0.6, 0.42, 0.42],
-  skyTop: 0x5f86a8, envGround: 0x5a4636, envIntensity: 0.46, exposure: 1.02,
+  skyTop: 0x9a7396, envGround: 0x5a4636, envIntensity: 0.46, exposure: 1.02,
 };
 export const FOG_COLOR = new THREE.Color(LIGHTS.fog);
 
@@ -68,9 +68,9 @@ export function createAtmosphere(scene, renderer, low = false) {
           float d = max(dot(dir, sunDir), 0.0);
           vec3 sunC = vec3(1.0, 0.72, 0.42);
           // trzy pasy: mgła przy horyzoncie, pas zorzy (złoty od słońca, lawendowy naprzeciw), błękit w zenicie
-          vec3 band = mix(vec3(0.72, 0.62, 0.74), vec3(1.0, 0.66, 0.36), az * az);
-          vec3 c = mix(horizon, band, smoothstep(0.0, 0.16, h) * (1.0 - smoothstep(0.16, 0.55, h)) * 0.75);
-          c = mix(c, top, smoothstep(0.1, 0.75, h));
+          vec3 band = mix(vec3(0.98, 0.56, 0.62), vec3(1.0, 0.56, 0.22), az * az);          // róż naprzeciw słońca, pomarańcz od słońca
+          vec3 c = mix(horizon, band, smoothstep(0.0, 0.14, h) * (1.0 - smoothstep(0.2, 0.7, h)) * 0.9);
+          c = mix(c, top, smoothstep(0.16, 0.85, h));
           c += sunC * (0.3 * pow(d, 5.0) + 0.22 * pow(d, 28.0));
           c += vec3(1.7, 1.35, 0.9) * smoothstep(0.9988, 0.9996, d);           // duża, miękka tarcza słońca
           if (dir.y > 0.02) {
@@ -85,12 +85,12 @@ export function createAtmosphere(scene, renderer, low = false) {
             float lit = clamp((n - cloud(uv + sh * 0.22)) * 4.0 + 0.5, 0.0, 1.0);
             lit = floor(lit * 3.0 + 0.5) / 3.0 * 0.6 + lit * 0.4;               // malarskie stopnie
             #endif
-            vec3 cc = mix(mix(vec3(0.55, 0.42, 0.52), vec3(0.8, 0.58, 0.5), az), vec3(1.0, 0.9, 0.72), lit);
+            vec3 cc = mix(mix(vec3(0.62, 0.4, 0.52), vec3(0.9, 0.5, 0.42), az), mix(vec3(1.0, 0.74, 0.72), vec3(1.0, 0.86, 0.6), az), lit); // różowe i złote kłęby
             cc += sunC * 0.5 * pow(d, 4.0);
             c = mix(c, cc, cov * fade * 0.92);
             // pierzaste smugi wysoko
             float ci = vn(uv * vec2(0.35, 2.4) + 40.0) * vn(uv * 1.3 + 11.0);
-            c = mix(c, vec3(1.0, 0.86, 0.74), smoothstep(0.32, 0.62, ci) * 0.35 * fade * (1.0 - cov));
+            c = mix(c, vec3(1.0, 0.72, 0.66), smoothstep(0.32, 0.62, ci) * 0.35 * fade * (1.0 - cov));
           }
           gl_FragColor = vec4(c, 1.0);
           #include <colorspace_fragment>

@@ -6,7 +6,7 @@ export class CarFX {
   constructor(scene, city) {
     this.city = city;
     // ── cząsteczki (dym i kurz) ──
-    const N = (this.N = 260);
+    const N = (this.N = 1100);
     this.pos = new Float32Array(N * 3);
     this.col = new Float32Array(N * 4);
     this.size = new Float32Array(N);
@@ -14,6 +14,8 @@ export class CarFX {
     this.life = new Float32Array(N);
     this.max = new Float32Array(N);
     this.a0 = new Float32Array(N);
+    this.gr = new Float32Array(N); // przyrost rozmiaru [m/s]
+    this.dr = new Float32Array(N); // opór poziomy na klatkę
     this.next = 0;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
@@ -56,8 +58,9 @@ export class CarFX {
     this.acc = 0;
   }
 
-  emit(x, y, z, vx, vy, vz, size, life, r, g, b, a) {
+  emit(x, y, z, vx, vy, vz, size, life, r, g, b, a, grow = 1.6, drag = 0.97) {
     const i = this.next;
+    this.gr[i] = grow; this.dr[i] = drag;
     this.next = (this.next + 1) % this.N;
     this.pos.set([x, y, z], i * 3);
     this.vel.set([vx, vy, vz], i * 3);
@@ -66,6 +69,24 @@ export class CarFX {
     this.life[i] = life;
     this.max[i] = life;
     this.a0[i] = a;
+  }
+
+  // Dym z kominów w pobliżu kamery (wiatr wspólny dla miasta) i liście spadające wokół gracza.
+  ambient(dt, cam, chimneys) {
+    this.amb = (this.amb || 0) + dt;
+    if (this.amb < 0.3) return;
+    this.amb = 0;
+    const R = Math.random, wx = 0.9, wz = 0.45;
+    for (const c of chimneys) {
+      const dx = c[0] - cam.x, dz = c[2] - cam.z;
+      if (dx * dx + dz * dz > 150 * 150 || R() < 0.25) continue;
+      const g = 0.72 + R() * 0.12;
+      this.emit(c[0], c[1], c[2], wx * 0.5 + (R() - 0.5) * 0.3, 0.9 + R() * 0.4, wz * 0.5 + (R() - 0.5) * 0.3, 0.55 * c[3], 6.5, g, g * 0.97, g * 0.93, 0.3, 0.75 * c[3], 1.004);
+    }
+    for (let k = 0; k < 5; k++) {
+      const a = R() * 6.283, d = 4 + R() * 26, t = R();
+      this.emit(cam.x + Math.cos(a) * d - wx * 4, cam.y + 2 + R() * 9, cam.z + Math.sin(a) * d - wz * 4, wx * (1.2 + R()), -0.7 - R() * 0.6, wz * (1.2 + R()) + (R() - 0.5), 0.1 + R() * 0.06, 7, 0.86 - t * 0.2, 0.62 - t * 0.36, 0.14 - t * 0.04, 0.95, 0, 1.0);
+    }
   }
 
   addTrack(p0, p1, q0, q1, y, a) {
@@ -84,8 +105,8 @@ export class CarFX {
       this.pos[i * 3] += this.vel[i * 3] * dt;
       this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
       this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
-      this.vel[i * 3] *= 0.97; this.vel[i * 3 + 2] *= 0.97;
-      this.size[i] += dt * 1.6;
+      this.vel[i * 3] *= this.dr[i]; this.vel[i * 3 + 2] *= this.dr[i];
+      this.size[i] += dt * this.gr[i];
       this.col[i * 4 + 3] = Math.max(0, k) * this.a0[i];
     }
     if (car && car.active) {
