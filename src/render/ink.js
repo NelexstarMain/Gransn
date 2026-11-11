@@ -33,12 +33,15 @@ export class Ink {
         texel: { value: new THREE.Vector2(1, 1) }, near: { value: 0.2 }, far: { value: 2200 }, pxa: { value: 0.001 },
         gradeDark: { value: 1 }, inkK: { value: 0.82 },
         invVP: { value: new THREE.Matrix4() }, prevVP: { value: new THREE.Matrix4() }, prevTVP: { value: new THREE.Matrix4() }, blurK: { value: 0 }, blurR: { value: 0 },
+        tanF: { value: new THREE.Vector2(1, 1) },
         inkW: { value: 0.028 }, // grubość kreski w metrach (na odległości 1 m = tyle metrów)
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform mat4 prevTVP; uniform float blurK; uniform float blurR; uniform float inkW;
+      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform mat4 prevTVP; uniform float blurK; uniform float blurR; uniform float inkW; uniform vec2 tanF;
         varying vec2 vUv;
         float rawZ(vec2 uv){ return texture2D(tDepth, uv).x; }
+        float zdist(float z){ return 2.0 * near * far / (far + near - (z * 2.0 - 1.0) * (far - near)); }
+        vec3 vpos(vec2 uv, float z){ float d = zdist(z); return vec3((uv * 2.0 - 1.0) * tanF * d, -d); } // pozycja w układzie kamery
         void main(){
           vec3 c = texture2D(tColor, vUv).rgb;
           float z0 = rawZ(vUv);
@@ -46,15 +49,30 @@ export class Ink {
           // odległość w metrach; kreska ma grubość „w świecie”: z bliska gruba (do 3,4 px), z daleka
           // cienka i coraz bledsza — dal nie zarasta kreskami, a to, co blisko, jest wyraźnie obrysowane
           float dist = 2.0 * near * far / (far + near - (z0 * 2.0 - 1.0) * (far - near));
-          float rad = clamp(inkW / (dist * pxa), 1.3, 3.4);
-          vec2 o = texel * rad, od = o * 0.7071;
-          float zl = rawZ(vUv - vec2(o.x, 0.0)), zr = rawZ(vUv + vec2(o.x, 0.0));
-          float zd = rawZ(vUv - vec2(0.0, o.y)), zu = rawZ(vUv + vec2(0.0, o.y));
-          float za = rawZ(vUv + od), zb = rawZ(vUv - od), zc = rawZ(vUv + vec2(od.x, -od.y)), ze = rawZ(vUv + vec2(-od.x, od.y));
-          // druga różnica głębi w czterech kierunkach, przeliczona na względny skok (Δz / z)
-          float lap = max(max(abs(zl + zr - 2.0 * z0), abs(zd + zu - 2.0 * z0)), max(abs(za + zb - 2.0 * z0), abs(zc + ze - 2.0 * z0))) * dist / near;
-          float thr = pxa * rad;
-          float edge = smoothstep(0.7 * thr, 2.6 * thr, lap) * mix(1.0, 0.35, smoothstep(14.0, 60.0, dist)) * (1.0 - smoothstep(60.0, 130.0, dist)); // szeroki próg i szybkie gaśnięcie w dali: kreska nie zapala się i nie gaśnie co klatkę
+          float rad = clamp(inkW / (dist * pxa), 1.2, 3.4);
+          vec2 o = texel * rad;
+          // Krawędź z KIERUNKU powierzchni: z pięciu próbek głębi powstają dwa wektory normalne tego samego
+          // piksela (z sąsiadów prawy+górny i lewy+dolny). Na płaskiej ścianie są równe; na narożniku różnią
+          // się o kąt narożnika, na sylwetce — mocno. Kąt nie zależy od odległości ani rozdzielczości,
+          // więc kreska jest zawsze albo jej nie ma: nie mruga i widać ją także w dali.
+          vec3 p0 = vpos(vUv, z0);
+          vec3 pr = vpos(vUv + vec2(o.x, 0.0), rawZ(vUv + vec2(o.x, 0.0))), pl = vpos(vUv - vec2(o.x, 0.0), rawZ(vUv - vec2(o.x, 0.0)));
+          vec3 pu = vpos(vUv + vec2(0.0, o.y), rawZ(vUv + vec2(0.0, o.y))), pd = vpos(vUv - vec2(0.0, o.y), rawZ(vUv - vec2(0.0, o.y)));
+          vec3 n0 = normalize(cross(pr - p0, pu - p0)), n1 = normalize(cross(pl - p0, pd - p0));
+          float bend = 1.0 - dot(n0, n1);
+          // „zamazanie” dali: ostro blisko, coraz bardziej rozmyte od ok. 30 m (jak słabszy wzrok)
+          float haze = smoothstep(30.0, 170.0, dist);
+          float edge = smoothstep(0.1, 0.42, bend) * (1.0 - 0.55 * haze) * (1.0 - smoothstep(200.0, 330.0, dist));
+          if (haze > 0.02) {
+            float br = haze * 4.5, wsum = 1.0;
+            for (int i = 0; i < 8; i++) {
+              float a = float(i) * 2.399963 + 0.7, rr = sqrt((float(i) + 0.5) / 8.0) * br;
+              vec2 uv = vUv + vec2(cos(a), sin(a)) * rr * texel;
+              float w = step(0.6 * dist, zdist(rawZ(uv)));   // nie wciągaj tego, co stoi bliżej (auto, słup)
+              c += texture2D(tColor, uv).rgb * w; wsum += w;
+            }
+            c /= wsum;
+          }
           // rozmycie ruchu: gdzie ten punkt świata był na ekranie klatkę temu (ruch kamery); kolor
           // uśredniony wzdłuż tej drogi. Wnętrze auta (bliżej niż ~2,5 m) jedzie z kamerą — zostaje ostre
           // i nie rozmazuje się na drogę.
@@ -94,8 +112,8 @@ export class Ink {
           gc *= mix(vec3(0.96, 0.84, 0.98), vec3(1.08, 1.0, 0.86), smoothstep(0.04, 0.5, gl));
           gc = mix(gc, gc * gc * (3.0 - 2.0 * gc), 0.25);
           float l2 = max(dot(gc, vec3(0.2126, 0.7152, 0.0722)), 0.0001), x = l2 * 6.0;
-          float band = (floor(x) + smoothstep(0.1, 0.9, fract(x))) / 6.0;
-          gc *= mix(1.0, band / l2, 0.3);
+          float band = (floor(x) + smoothstep(0.2, 0.8, fract(x))) / 6.0;
+          gc *= mix(1.0, band / l2, 0.5);
           gl_FragColor.rgb = max(mix(go, gc * 0.98, min(gradeDark, 1.0)) * (gradeDark > 1.0 ? 1.0 / gradeDark : 1.0), vec3(0.0));
         }`,
     });
@@ -120,6 +138,7 @@ export class Ink {
     u.near.value = camera.near; u.far.value = camera.far;
     u.pxa.value = (2 * Math.tan((camera.fov * Math.PI) / 360)) / h; // kąt jednego piksela
     u.gradeDark.value = g;
+    { const t = Math.tan((camera.fov * Math.PI) / 360); u.tanF.value.set(t * camera.aspect, t); }
     GRADE_UNIFORM.value = 0; // materiały bez własnej korekcji: robi ją ten przebieg, po mapowaniu tonów
     renderer.setRenderTarget(this.rt);
     renderer.render(scene, camera);
