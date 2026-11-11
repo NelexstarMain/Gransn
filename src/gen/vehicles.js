@@ -162,18 +162,38 @@ function wheel(b, cx, cy, cz, r, o = {}) {
 // ── wspólne części ───────────────────────────────────────────────────────────
 const DARK = [0.07, 0.07, 0.075], BRASS = [0.86, 0.66, 0.26], LEATHER = [0.32, 0.13, 0.08];
 
-// błotnik: łuk nad kołem (pasek o przekroju spłaszczonej superelipsy)
-function fender(b, S, x, r, z, side, tint, mat = 'body') {
-  const R = r + 0.065, hw = 0.115, K = S.q ? 14 : 8, rings = [];
-  const a0 = -0.42, a1 = Math.PI + 0.42; // rozciągnięty przed i za kołem — spływa w dół
-  for (let k = 0; k <= K; k++) {
-    const a = a0 + ((a1 - a0) * k) / K, ca = Math.cos(a), sa = Math.sin(a);
-    // końce lekko odchylone na zewnątrz (zwinięty rant)
-    const flare = Math.pow(Math.abs(Math.cos(((k / K) * 2 - 1) * Math.PI / 2)), 0.3);
+// błotnik: łuk nad kołem (pasek o przekroju spłaszczonej superelipsy). Z `sweep` (±1 = w którą
+// stronę leży stopień) koniec łuku nie urywa się w powietrzu, tylko spływa falą do stopnia —
+// jak skrzydła wozów z epoki.
+function fender(b, S, x, r, z, side, tint, mat = 'body', sweep = 0) {
+  const R = r + 0.065, hw = 0.132, K = S.q ? 14 : 8, path = [];
+  if (!sweep) {
+    const a0 = -0.42, a1 = Math.PI + 0.42; // rozciągnięty przed i za kołem — spływa w dół
+    for (let k = 0; k <= K; k++) { const a = a0 + ((a1 - a0) * k) / K; path.push([x + Math.cos(a) * R, r + Math.sin(a) * R]); }
+  } else {
+    // łuk od wolnego końca do ok. 55° za szczytem, potem krzywa Béziera do stopnia
+    const a0 = -0.46, a1 = 2.12, KA = Math.round(K * 0.64), KB = K - KA;
+    for (let k = 0; k <= KA; k++) { const a = a0 + ((a1 - a0) * k) / KA; path.push([x - sweep * Math.cos(a) * R, r + Math.sin(a) * R]); }
+    const p0 = path[path.length - 1], tx = sweep * Math.sin(a1), ty = Math.cos(a1);
+    const pb = [x + sweep * (R + 0.34), 0.535], c1 = [p0[0] + tx * 0.2, p0[1] + ty * 0.2], c2 = [pb[0] - sweep * 0.2, pb[1]];
+    for (let k = 1; k <= KB; k++) {
+      const t = k / KB, u = 1 - t;
+      path.push([u * u * u * p0[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * pb[0], u * u * u * p0[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * pb[1]]);
+    }
+  }
+  const n = path.length, rings = [];
+  for (let k = 0; k < n; k++) {
+    const A = path[Math.max(0, k - 1)], B = path[Math.min(n - 1, k + 1)];
+    let nx = -(B[1] - A[1]), ny = B[0] - A[0];
+    const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+    if (nx * (path[k][0] - x) + ny * (path[k][1] - r) < 0 && !(sweep && k > n * 0.7)) { nx = -nx; ny = -ny; }
+    if (sweep && k > n * 0.7 && ny < 0) { nx = -nx; ny = -ny; }
+    // końce lekko zwężone (zwinięty rant), grzbiet wypukły
+    const flare = Math.pow(Math.abs(Math.cos(((k / (n - 1)) * 2 - 1) * Math.PI / 2)), 0.3);
     const ring = [];
     for (let i = 0; i < 8; i++) {
-      const t = (i / 8) * TAU, rad = 0.014 * sp(Math.sin(t), 0.7), ax = hw * sp(Math.cos(t), 0.55);
-      ring.push([x + ca * (R + rad), r + sa * (R + rad), z + side * 0.0 + ax * (0.85 + 0.15 * flare)]);
+      const t = (i / 8) * TAU, ax = hw * sp(Math.cos(t), 0.55), rad = 0.014 * sp(Math.sin(t), 0.7) + 0.012 * (1 - (ax / hw) * (ax / hw));
+      ring.push([path[k][0] + nx * rad, path[k][1] + ny * rad, z + ax * (0.85 + 0.15 * flare)]);
     }
     rings.push(ring);
   }
@@ -212,9 +232,9 @@ function bonnet(b, S, hx0, hx1, h = 0.4, top = 1.04) {
   const { L, zc } = S, c = S.color;
   const y0 = top - h, w = S.hoodW || 0.33;
   const secs = [
-    { x: hx0, zc, y0: y0 + 0.02, y1: top - 0.02, hw: w * 0.94, e: 3.4 },
-    { x: (hx0 + hx1) / 2, zc, y0, y1: top + 0.005, hw: w, e: 3.2 },
-    { x: hx1, zc, y0: y0 - 0.02, y1: top + 0.02, hw: w * 1.04, e: 3.2 },
+    { x: hx0, zc, y0: y0 + 0.02, y1: top - 0.025, hw: w * 0.9, e: 3.4 },
+    { x: (hx0 + hx1) / 2, zc, y0, y1: top + 0.005, hw: w * 1.02, e: 3.0 },
+    { x: hx1, zc, y0: y0 - 0.02, y1: top + 0.03, hw: w * 1.16, e: 2.8 },
   ];
   lofted(b, 'body', secs, c, S.q ? 12 : 8);
   if (S.q) {
@@ -579,7 +599,18 @@ export const vehicleModules = {
       canopy(b, S, 0.2, S.cowl - 0.9, 0.98, 2.0);
       taxiExtras(b, S, 0.2, S.cowl - 0.9, 2.0);
     }
-    for (const [x, r] of [[S.xf, K.rf], [S.xr, K.rr]]) for (const s of [-1, 1]) K.blackFenders ? fender(b, S, x, r, S.zc + s * S.tz, s, [0.07, 0.07, 0.08], 'paint') : fender(b, S, x, r, S.zc + s * S.tz, s, S.color);
+    // błotniki: przedni spływa do stopnia w tył, tylny w przód (auta bez stopni mają zwykłe łuki)
+    for (const [x, r, sw] of [[S.xf, K.rf, -1], [S.xr, K.rr, 1]]) for (const s of [-1, 1]) fender(b, S, x, r, S.zc + s * S.tz, s, K.blackFenders ? [0.07, 0.07, 0.08] : S.color, K.blackFenders ? 'paint' : 'body', K.board ? sw : 0);
+    if (S.q) {
+      // lampki naftowe po bokach podszybia (mosiądz, mleczne szkło)
+      for (const s of [-1, 1]) {
+        const lz = S.zc + s * (S.hoodW + 0.17), lx = S.cowl + 0.1, ly = K.hoodTop + 0.02;
+        b.tube('metal', [lx, ly - 0.1, lz], [lx, ly, lz], 0.012, 0.012, 4, { tint: BRASS });
+        b.tube('metal', [lx, ly, lz], [lx, ly + 0.11, lz], 0.042, 0.042, 8, { tint: BRASS, caps: 1 });
+        b.tube('light', [lx + 0.03, ly + 0.055, lz], [lx + 0.05, ly + 0.055, lz], 0.03, 0.03, 8, { caps: 1 });
+        b.tube('metal', [lx, ly + 0.11, lz], [lx, ly + 0.16, lz], 0.026, 0.012, 6, { tint: BRASS, caps: 1 });
+      }
+    }
     if (p.wheels !== false) {
       const solid = !!K.solid;
       for (const w of wheelPoints(K)) wheel(b, w.x + K.L / 2, w.y, w.z + K.Wd / 2, w.r, { q: S.q, side: Math.sign(w.z), solid, rim: solid ? [0.5, 0.17, 0.12] : undefined, hr: solid ? 0.08 : 0.058, hw: solid ? 0.085 : 0.066 });

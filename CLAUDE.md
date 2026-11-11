@@ -97,6 +97,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 | `city/grid.js` | nieregularna siatka czworokątów (Stålberg), `buildingInfo(seed, bid, zone, k, ctx)` (jedna próba z gramatyki brył + palety HSL; `ctx` = rodzaj dzielnicy i odległość od rynku: Stare Miasto niższe, pierzeje rynku wyższe z podcieniami, wille w ogrodach, hale fabryczne z cegły), `classifyGrid` (działki, wybór projektu → `grid.design`), `designOf`, `raised`, `wallPlan` (tylko Ministerstwo i styl modernistyczny), `decorate` (1 obiekt na punkt, potem pachołki `bollard` wzdłuż krawężników i ogrodzenia ogrodów `city.fences`/`city.posts`), `makeChunks` |
 | `city/design.js` | **najlepsza z N prób etapami**: `lotStats` (wymiary działki), `chooseDesign` (5 prób bryły, potem 4 próby stylu); ocena: smukłość względem działki, ciągłość wysokości z sąsiadami, kontrast dachu/ściany/opaski, odległość odcieni od sąsiadów |
 | `city/facades.js` | `buildFacades`/`facadesOf(city)`: odcinki ścian (środek krawędzi → środek czworokąta) łączone w fasady; narożniki wypukłe/wklęsłe, styk kamienic (`party`), klucz kolumny `segKey` (ten sam na każdym piętrze) |
+| `city/parcels.js` | **działki pod domy**: „geodeta” idzie po obu stronach łańcuchów ulic (od najważniejszych) i odmierza prawie prostokątne parcele wg dzielnicy (`DISTRICT`); kolejne działki tworzą pierzeję z własną regularną kratką punktów doklejoną do siatki (`grid.N0`, `grid.Q0` = początek punktów / czworokątów działek). `lotHeight` = bryła na komórkach działki, `lotRoof`/`pickRoof` = dach (dwuspadowy, szczytem do ulicy, czterospadowy, mansardowy, płaski) |
 | `gen/cage.js` | trójliniowa deformacja kostki (FFD) + poprawne normalne |
 | `gen/builder.js` | budowa geometrii: szum zależny od pozycji w świecie, pochylenie, AO, UV w metrach. `MATDEF` (stała `W`: **jeden szum dla wszystkich materiałów budynków**, inaczej plakaty i ramy „chowają się” w ścianie) |
 | `gen/propmods.js` | ~46 nowych modułów rekwizytów (hydrant, słup ogłoszeniowy, stragany, altana, wiatrak, łódź, nagrobek…), dopinane do `M` przez `installProps` |
@@ -152,6 +153,14 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - **Układ współrzędnych modeli ruchomych:** x = przód, y = góra, z = prawa strona (kierowca siedzi po lewej, z < 0). Kurs `heading` to kąt kierunku jazdy w płaszczyźnie (x, z): przód = (cos, sin), prawa = (−sin, cos); `mesh.rotation.y = −heading`.
 - **Auta w świecie i w grze to ten sam moduł** (`oldcar`). Lakier to materiał `body` (kolor z wierzchołków albo z `instanceColor`), tylne światła `tail`, ludzie `cloth`. Zaparkowane auta mają stałą stopkę 3,6 × 1,7 m (klatka ściska moduł do ≤5%), więc typy parkowane (`PARKED_KINDS`) mają nominalną długość 3,6–3,85 m.
 - **Piesi nie używają `Math.random`** w symulacji (Rng z ziarnem); efekty cząsteczkowe mogą.
+
+### Działki (od listopada 2026)
+
+- Domy NIE powstają już z punktów nieregularnej siatki Stålberga. Siatka miasta daje tylko grunt (chodniki, podwórza, parki) i ratusz; domy stoją na kratkach pierzei z `parcels.js` (punkty `v >= grid.N0`, czworokąty `q >= grid.Q0`).
+- Czworokąty działek nie rysują gruntu ani nie wpisują typu chodnika do kolizji; grunt pod domem pochodzi z siatki miasta (`grid.COVER[v]` = punkt siatki pod domem: bez rekwizytów i pasażerów).
+- `grid.lotDist(x, z)` = odległość od obrysu najbliższej działki; `grid.LU/LV` = położenie punktu w pierzei (wzdłuż ulicy / w głąb), z tego liczy się dach.
+- Ścięte boki działek (trapezy) pojawiają się tylko na ostrych narożnikach i rzadko (ok. 2% działek).
+- Boty jeżdżą modelem IDM (`traffic.js`, płynne przyspieszanie i hamowanie).
 
 ### Ostatnie wyniki weryfikacji (seed 1984)
 

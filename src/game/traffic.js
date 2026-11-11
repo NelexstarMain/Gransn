@@ -306,51 +306,59 @@ export class Traffic {
     const E = G.edges[b.edge];
     const next = b.path[1];
     const fx = Math.cos(b.h), fz = Math.sin(b.h);
-    // 1) odstęp od auta z przodu (boty i gracz) oraz od pieszych na jezdni
-    let target = E.slow ? b.vmax * 0.7 : b.vmax;
+    // 1) przeszkoda z przodu: najbliższe auto (boty i gracz), pieszy albo linia zatrzymania przed
+    //    zajętym skrzyżowaniem. Przyspieszenie liczy model IDM (Treiber i in. 2000): płynne
+    //    dojeżdżanie, odstęp rosnący z prędkością, hamowanie zależne od różnicy prędkości —
+    //    zamiast skoków „gaz / hamulec”. Korki i fale stop-and-go powstają same.
+    let v0 = E.slow ? b.vmax * 0.7 : b.vmax, gap = 1e9, vL = 0;
+    const lead = (g, v) => { if (g < gap) { gap = g; vL = v; } };
     for (const o of this.bots) {
-      if (o === b || Math.abs(o.x - b.x) > 16 || Math.abs(o.z - b.z) > 16) continue;
+      if (o === b || Math.abs(o.x - b.x) > 22 || Math.abs(o.z - b.z) > 22) continue;
       const dx = o.x - b.x, dz = o.z - b.z, along = dx * fx + dz * fz;
-      if (along <= 0 || along >= 16 || Math.abs(-dx * fz + dz * fx) >= 1.8) continue;
+      if (along <= 0 || along >= 22 || Math.abs(-dx * fz + dz * fx) >= 1.8) continue;
       // tylko auto jadące w podobnym kierunku (albo tuż przed maską) — bez zakleszczeń czołowych
-      if (Math.cos(o.h - b.h) > 0.2 || along < (b.len + o.len) / 2 + 0.8) {
-        const gap = along - (b.len + o.len) / 2 - 1.2;
-        target = Math.min(target, Math.max(0, gap * 1.1 + Math.max(0, o.v) * 0.5));
-      }
+      const co = Math.cos(o.h - b.h);
+      if (co > 0.2 || along < (b.len + o.len) / 2 + 0.8) lead(along - (b.len + o.len) / 2, Math.max(0, o.v * co));
     }
     if (car) {
       const dx = car.pos.x - b.x, dz = car.pos.z - b.z, along = dx * fx + dz * fz;
-      if (along > 0 && along < 16 && Math.abs(-dx * fz + dz * fx) < 1.8) target = Math.min(target, Math.max(0, (along - (b.len + car.L) / 2 - 1.2) * 1.1 + Math.max(0, Math.abs(car.v)) * 0.5));
+      if (along > 0 && along < 22 && Math.abs(-dx * fz + dz * fx) < 1.8) lead(along - (b.len + car.L) / 2, Math.max(0, car.v * Math.cos(car.heading - b.h)));
     }
     if (this.peds) {
-      const d = this.peds.ahead(b.x, b.z, fx, fz, 11, 1.7);
-      if (d >= 0) target = Math.min(target, Math.max(0, (d - b.len / 2 - 1.6) * 1.2));
+      const d = this.peds.ahead(b.x, b.z, fx, fz, 13, 1.7);
+      if (d >= 0) lead(d - b.len / 2 - 0.6, 0);
     }
     if (this.foot) {
       const dx = this.foot.x - b.x, dz = this.foot.z - b.z, along = dx * fx + dz * fz;
-      if (along > 0.3 && along < 11 && Math.abs(-dx * fz + dz * fx) < 1.9) target = Math.min(target, Math.max(0, (along - b.len / 2 - 1.6) * 1.2));
+      if (along > 0.3 && along < 13 && Math.abs(-dx * fz + dz * fx) < 1.9) lead(along - b.len / 2 - 0.6, 0);
     }
-    if (b.bump > 0) { b.bump -= dt; target = Math.min(target, 0); }
     // 2) skrzyżowanie: pierwszeństwo ma ten, kto pierwszy je zajął
     const left = E.len - b.s;
     const N = G.nodes[next];
-    if (!b.turn && N.edges.length >= 3 && left < 11) {
-      if (N.lock >= 0 && N.lock !== b.id) target = Math.min(target, Math.max(0, (left - 6.5) * 1.2));
+    if (!b.turn && N.edges.length >= 3 && left < 14) {
+      if (N.lock >= 0 && N.lock !== b.id) lead(left - 5.6, 0);
       else if (left < 7.5) { N.lock = b.id; N.lockT = this.t; b.lock = next; }
     }
     if (N.lock >= 0 && this.t - N.lockT > 8) N.lock = -1; // zabezpieczenie przed zakleszczeniem
     // zwolnij przed ostrym zakrętem
-    if (!b.turn && b.path.length > 2 && left < 14) {
+    if (!b.turn && b.path.length > 2 && left < 16) {
       const n2 = G.nodes[b.path[2]], n0 = G.nodes[b.path[0]];
       const a1 = Math.atan2(N.z - n0.z, N.x - n0.x), a2 = Math.atan2(n2.z - N.z, n2.x - N.x);
       let da = Math.abs(a2 - a1); if (da > Math.PI) da = Math.PI * 2 - da;
-      target = Math.min(target, 12 - da * 5.5);
+      const vt = Math.max(2.2, 12 - da * 5.5);
+      // im bliżej zakrętu, tym niższa prędkość docelowa (hamowanie ~2,5 m/s² zaczyna się w porę)
+      v0 = Math.min(v0, Math.sqrt(vt * vt + 2 * 2.5 * Math.max(0, left - 5)));
     }
     b.wait = b.v < 0.3 ? b.wait + dt : 0;
-    if (b.wait > 12) { target = Math.max(target, 2.5); if (b.bump > 0) b.bump = 0; if (b.wait > 15) b.wait = 0; } // cierpliwość się kończy
-    const acc = target > b.v ? 3.5 : -7.5;
-    b.v = Math.max(0, b.v + acc * dt);
-    if (target < b.v && target < 0.3) b.v = Math.max(0, b.v - 10 * dt);
+    const A = 2.8, B = 3.2, S0 = 1.3, TH = 1.0; // przyspieszenie, komfortowe hamowanie, odstęp stojąc, odstęp czasowy
+    const sStar = S0 + Math.max(0, b.v * TH + (b.v * (b.v - vL)) / (2 * Math.sqrt(A * B)));
+    const vr = b.v / Math.max(0.5, v0);
+    let acc = A * (1 - vr * vr * vr * vr - (gap < 1e8 ? (sStar / Math.max(0.25, gap)) ** 2 : 0));
+    if (gap < 0.4) acc = -10;
+    if (b.bump > 0) { b.bump -= dt; acc = -10; }
+    if (b.wait > 12) { acc = b.v < 2.5 ? 2 : Math.min(acc, 0); if (b.bump > 0) b.bump = 0; if (b.wait > 15) b.wait = 0; } // cierpliwość się kończy
+    b.acc = Math.max(-10, Math.min(A, acc));
+    b.v = Math.max(0, b.v + b.acc * dt);
     const step = b.v * dt;
     // koła: obrót od przebytej drogi
     const K = CAR_KINDS[b.kind];
