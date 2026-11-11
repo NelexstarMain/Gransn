@@ -10,7 +10,7 @@ import { isSurface, surfaceOrder } from '../render/layers.js';
 
 export const DETAIL_IN = 170;  // m od krawędzi fragmentu
 export const DETAIL_OUT = 230;
-const FAR = 900;               // dalej FogExp2 (gęstość 0,0026) zakrywa >99,8% — LOD niewidoczny, nie rysujemy
+const FAR = 600;               // dalej gęsta mgła (FogExp2 0,0038) zakrywa >99% — LOD niewidoczny, nie rysujemy
 const PRELOAD_R = 260;         // m od startu: pełny detal budowany przed grą
 
 // pojedyncze obiekty ruchome (auta, ludzie) — zwykłe siatki, nie część świata

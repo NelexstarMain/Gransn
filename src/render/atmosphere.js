@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // Wspólne liczby światła — używa ich też aparat do zdjęć (scripts/photo.mjs).
 export const LIGHTS = {
   // złote jesienne popołudnie: niskie, ciepłe słońce, miodowa mgiełka, brzoskwiniowy horyzont
-  fog: 0xe6ad88, fogDensity: 0.0024,
+  fog: 0xe6ad88, fogDensity: 0.0038,
   hemiSky: 0xe6c9a8, hemiGround: 0x5a3f2c, hemiIntensity: 0.82,
   sun: 0xffb974, sunIntensity: 3.2, sunDir: [-0.6, 0.42, 0.42],
   skyTop: 0x9a7396, envGround: 0x5a4636, envIntensity: 0.46, exposure: 1.02,

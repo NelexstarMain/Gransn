@@ -83,6 +83,13 @@ export class CarFX {
       const g = 0.72 + R() * 0.12;
       this.emit(c[0], c[1], c[2], wx * 0.5 + (R() - 0.5) * 0.3, 0.9 + R() * 0.4, wz * 0.5 + (R() - 0.5) * 0.3, 0.55 * c[3], 6.5, g, g * 0.97, g * 0.93, 0.3, 0.75 * c[3], 1.004);
     }
+    // klucz ptaków odlatujących na południe: co kilkanaście sekund ciemne punkty w szyku V wysoko nad miastem
+    this.birdT = (this.birdT || 6) - 0.3;
+    if (this.birdT <= 0) {
+      this.birdT = 12 + R() * 14;
+      const a = R() * 6.283, d = 120 + R() * 80, bx = cam.x + Math.cos(a) * d, bz = cam.z + Math.sin(a) * d, by = cam.y + 55 + R() * 30, n = 5 + ((R() * 5) | 0);
+      for (let i = 0; i < n; i++) { const s = i % 2 ? 1 : -1, r = Math.ceil(i / 2); this.emit(bx - r * 2.2 + s * r * 0.3, by + r * 0.2, bz + s * r * 2.0, 7.5, 0.05, 1.2, 0.55, 26, 0.12, 0.09, 0.09, 0.95, 0, 1.0); }
+    }
     for (let k = 0; k < 5; k++) {
       const a = R() * 6.283, d = 4 + R() * 26, t = R();
       this.emit(cam.x + Math.cos(a) * d - wx * 4, cam.y + 2 + R() * 9, cam.z + Math.sin(a) * d - wz * 4, wx * (1.2 + R()), -0.7 - R() * 0.6, wz * (1.2 + R()) + (R() - 0.5), 0.1 + R() * 0.06, 7, 0.86 - t * 0.2, 0.62 - t * 0.36, 0.14 - t * 0.04, 0.95, 0, 1.0);
