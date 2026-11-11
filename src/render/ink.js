@@ -32,33 +32,43 @@ export class Ink {
         tColor: { value: this.rt.texture }, tDepth: { value: this.rt.depthTexture },
         texel: { value: new THREE.Vector2(1, 1) }, near: { value: 0.2 }, far: { value: 2200 }, pxa: { value: 0.001 },
         gradeDark: { value: 1 }, inkK: { value: 0.82 },
-        invVP: { value: new THREE.Matrix4() }, prevVP: { value: new THREE.Matrix4() }, blurK: { value: 0 },
+        invVP: { value: new THREE.Matrix4() }, prevVP: { value: new THREE.Matrix4() }, prevTVP: { value: new THREE.Matrix4() }, blurK: { value: 0 }, blurR: { value: 0 },
+        inkW: { value: 0.028 }, // grubość kreski w metrach (na odległości 1 m = tyle metrów)
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform float blurK;
+      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform mat4 prevTVP; uniform float blurK; uniform float blurR; uniform float inkW;
         varying vec2 vUv;
         float rawZ(vec2 uv){ return texture2D(tDepth, uv).x; }
         void main(){
           vec3 c = texture2D(tColor, vUv).rgb;
           float z0 = rawZ(vUv);
           float speed = 0.0;
-          float zl = rawZ(vUv - vec2(texel.x, 0.0)), zr = rawZ(vUv + vec2(texel.x, 0.0));
-          float zd = rawZ(vUv - vec2(0.0, texel.y)), zu = rawZ(vUv + vec2(0.0, texel.y));
-          // odległość w metrach i druga różnica głębi przeliczona na względny skok (Δz / z)
+          // odległość w metrach; kreska ma grubość „w świecie”: z bliska gruba (do 3,4 px), z daleka
+          // cienka i coraz bledsza — dal nie zarasta kreskami, a to, co blisko, jest wyraźnie obrysowane
           float dist = 2.0 * near * far / (far + near - (z0 * 2.0 - 1.0) * (far - near));
-          float lap = (abs(zl + zr - 2.0 * z0) + abs(zd + zu - 2.0 * z0)) * dist / near;
-          float edge = smoothstep(0.7 * pxa, 1.9 * pxa, lap) * (1.0 - smoothstep(110.0, 300.0, dist));
+          float rad = clamp(inkW / (dist * pxa), 1.0, 3.4);
+          vec2 o = texel * rad, od = o * 0.7071;
+          float zl = rawZ(vUv - vec2(o.x, 0.0)), zr = rawZ(vUv + vec2(o.x, 0.0));
+          float zd = rawZ(vUv - vec2(0.0, o.y)), zu = rawZ(vUv + vec2(0.0, o.y));
+          float za = rawZ(vUv + od), zb = rawZ(vUv - od), zc = rawZ(vUv + vec2(od.x, -od.y)), ze = rawZ(vUv + vec2(-od.x, od.y));
+          // druga różnica głębi w czterech kierunkach, przeliczona na względny skok (Δz / z)
+          float lap = max(max(abs(zl + zr - 2.0 * z0), abs(zd + zu - 2.0 * z0)), max(abs(za + zb - 2.0 * z0), abs(zc + ze - 2.0 * z0))) * dist / near;
+          float thr = pxa * rad;
+          float edge = smoothstep(0.55 * thr, 1.5 * thr, lap) * mix(1.0, 0.4, smoothstep(18.0, 90.0, dist)) * (1.0 - smoothstep(90.0, 230.0, dist));
           // rozmycie ruchu: gdzie ten punkt świata był na ekranie klatkę temu (ruch kamery); kolor
           // uśredniony wzdłuż tej drogi. Wnętrze auta (bliżej niż ~2,5 m) jedzie z kamerą — zostaje ostre
           // i nie rozmazuje się na drogę.
           if (blurK > 0.0) {
             vec4 wp = invVP * vec4(vUv * 2.0 - 1.0, z0 * 2.0 - 1.0, 1.0);
-            vec4 pc = prevVP * vec4(wp.xyz / wp.w, 1.0);
-            vec2 vel = (vUv - (pc.xy / pc.w * 0.5 + 0.5)) * blurK * smoothstep(2.5, 6.0, dist);
-            if (pc.w <= 0.0) vel = vec2(0.0);
+            vec4 pc = prevVP * vec4(wp.xyz / wp.w, 1.0);    // poprzednia klatka: obrót i przesunięcie kamery
+            vec4 pt = prevTVP * vec4(wp.xyz / wp.w, 1.0);   // samo przesunięcie (obrót jak teraz)
+            vec2 vAll = vUv - (pc.xy / pc.w * 0.5 + 0.5), vT = vUv - (pt.xy / pt.w * 0.5 + 0.5);
+            // jazda rozmywa wyraźnie, rozglądanie się — ledwie
+            vec2 vel = (vT * blurK + (vAll - vT) * blurR) * smoothstep(2.5, 6.0, dist);
+            if (pc.w <= 0.0 || pt.w <= 0.0) vel = vec2(0.0);
             float vl = length(vel);
-            if (vl > 0.035) vel *= 0.035 / vl;
-            speed = min(vl, 0.035);
+            if (vl > 0.045) vel *= 0.045 / vl;
+            speed = min(vl, 0.045);
             if (speed > 0.0012) {
               float wsum = 1.0;
               for (int i = 1; i <= 5; i++) {
@@ -117,9 +127,15 @@ export class Ink {
     // macierze do rozmycia ruchu: bieżąca odwrotna i poprzednia widok×rzut; siła niezależna od FPS
     this.vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     u.invVP.value.copy(this.vp).invert();
-    if (!this.prev) this.prev = this.vp.clone();
+    if (!this.prev) { this.prev = this.vp.clone(); this.prevPos = camera.getWorldPosition(new THREE.Vector3()); this.q = new THREE.Quaternion(); this.m = new THREE.Matrix4(); this.one = new THREE.Vector3(1, 1, 1); this.pos = new THREE.Vector3(); }
     u.prevVP.value.copy(this.prev);
-    u.blurK.value = this.blur ? 0.55 * Math.min(2, 1 / 60 / Math.max(1e-3, dt)) : 0;
+    // kamera z poprzedniej pozycji, ale z dzisiejszym obrotem → sam ruch postępowy
+    camera.getWorldQuaternion(this.q);
+    this.m.compose(this.prevPos, this.q, this.one).invert();
+    u.prevTVP.value.multiplyMatrices(camera.projectionMatrix, this.m);
+    const k = this.blur ? Math.min(2, 1 / 60 / Math.max(1e-3, dt)) : 0;
+    u.blurK.value = 1.25 * k; u.blurR.value = 0.1 * k;
+    camera.getWorldPosition(this.prevPos);
     this.prev.copy(this.vp);
     GRADE_UNIFORM.value = g;
     renderer.setRenderTarget(null);

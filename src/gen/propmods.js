@@ -336,6 +336,20 @@ export function installProps(M, { cubeSphere }) {
     },
 
     // trzy beczki z obręczami
+    // sterta dyń: spłaszczone, żebrowane kule w odcieniach pomarańczu, z ogonkami
+    pumpkins(b, W, H, D, p) {
+      const sd = p.seed || 1, rnd = (k) => ((Math.sin(sd * 12.9898 + k * 78.233) * 43758.5453) % 1 + 1) % 1;
+      const one = (x, z, r, k) => {
+        const h = r * (1.1 + rnd(k) * 0.35), t = [0.96 - rnd(k + 1) * 0.12, 0.42 + rnd(k + 2) * 0.16, 0.06 + rnd(k + 3) * 0.06], o = { tint: t };
+        const prof = [[0, 0.45], [0.16, 0.86], [0.5, 1], [0.84, 0.84], [1, 0.4]];
+        for (let i = 0; i < prof.length - 1; i++) b.cyl('paint', x, z, prof[i][0] * h, prof[i + 1][0] * h, prof[i][1] * r, prof[i + 1][1] * r, 9, o, i === prof.length - 2 ? 'Y' : '');
+        b.cyl('wood', x, z, h, h + 0.09, 0.03, 0.02, 5, { tint: [0.3, 0.34, 0.14] }, 'Y');
+      };
+      one(0.42, 0.42, 0.3, 1); one(0.95, 0.5, 0.24, 5); one(0.66, 0.86, 0.2, 9);
+      if (rnd(13) > 0.4) one(0.2, 0.86, 0.15, 13);
+      if (rnd(17) > 0.5) one(1.12, 0.9, 0.13, 17);
+    },
+
     barrels(b, W, H, D, p) {
       const wo = { tint: p.tint || [0.5, 0.34, 0.2] };
       const barrel = (x, z, h = 0.9, r = 0.3) => {

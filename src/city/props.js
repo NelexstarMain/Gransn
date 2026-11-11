@@ -49,6 +49,7 @@ export const PROPS = {
   handcart:  P([1.9, 1.1, 0.9], 1.0, PRIO.furniture, { solid: [0.8, 0.4], orient: 'along' }),
   crates:    P([1.3, 1.2, 1.0], 0.8, PRIO.furniture, { solid: [0.6, 0.45] }),
   barrels:   P([1.4, 1.1, 1.2], 0.8, PRIO.furniture, { solid: [0.65, 0.55] }),
+  pumpkins:  P([1.3, 0.8, 1.1], 0.75, PRIO.furniture, { solid: [0.55, 0.45] }), // jesień: sterta dyń
   wagon:     P([4.3, 1.9, 1.9], 2.3, PRIO.structure, { solid: [2.0, 0.8], orient: 'along', max: 24 }),
   firewood:  P([1.7, 1.3, 1.0], 0.95, PRIO.furniture, { solid: [0.8, 0.45], orient: 'along' }),
   // ── park i plac ────────────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ export const BUDGET = {
   adcolumn: 3, streetclock: 3, stall: 2, fruitstall: 2, flowerstand: 3, cafeset: 4, wagon: 1,
   // ulica
   hydrant: 3, postbox: 3, bollard: 2, signpost: 2, pump: 2, planter: 3, sandwich: 2, trough: 1, lampdouble: 3,
-  bicycle: 2, handcart: 2, crates: 2, barrels: 2, firewood: 1, telegraph: 3, milestone: 2,
+  bicycle: 2, handcart: 2, crates: 2, barrels: 2, pumpkins: 16, firewood: 1, telegraph: 3, milestone: 2,
   // ogród, przyroda, wybrzeże
   shed: 3, beehive: 2, haystack: 2, clothesline: 2, coop: 2, rock: 3, stump: 2, rowboat: 2, deckchair: 2, flowerbed: 2, hedge: 3,
 };
@@ -111,17 +112,17 @@ export const ZONES = {
   walk: [['lamp', 0.16], ['bin', 0.05], ['bench', 0.04], ['booth', 0.02], ['kiosk', 0.02], ['busstop', 0.02], ['bush', 0.03], ['tree', 0.06],
     ['hydrant', 0.022], ['postbox', 0.016], ['bollard', 0.02], ['adcolumn', 0.009], ['streetclock', 0.008], ['signpost', 0.01], ['pump', 0.008], ['planter', 0.02],
     ['sandwich', 0.016], ['trough', 0.006], ['cafeset', 0.014], ['bicycle', 0.01], ['stall', 0.008], ['fruitstall', 0.006], ['flowerstand', 0.007],
-    ['handcart', 0.008], ['crates', 0.01], ['barrels', 0.01], ['wagon', 0.004], ['firewood', 0.005], ['lampdouble', 0.01]],
+    ['handcart', 0.008], ['crates', 0.01], ['barrels', 0.01], ['wagon', 0.004], ['firewood', 0.005], ['lampdouble', 0.01], ['pumpkins', 0.012]],
   plaza: [['lamp', 0.05], ['lampdouble', 0.04], ['bench', 0.06], ['tree', 0.06], ['stall', 0.05], ['fruitstall', 0.03], ['flowerstand', 0.035], ['cafeset', 0.05],
-    ['adcolumn', 0.02], ['planter', 0.035], ['crates', 0.015], ['handcart', 0.015], ['barrels', 0.01], ['statue', 0.006], ['well', 0.004], ['streetclock', 0.01], ['sundial', 0.004]],
+    ['adcolumn', 0.02], ['planter', 0.035], ['crates', 0.015], ['handcart', 0.015], ['barrels', 0.01], ['statue', 0.006], ['well', 0.004], ['streetclock', 0.01], ['sundial', 0.004], ['pumpkins', 0.05]],
   park: [['tree', 0.32], ['bench', 0.08], ['bush', 0.1], ['lamp', 0.03], ['flowerbed', 0.05], ['gazebo', 0.006], ['pergola', 0.008], ['sundial', 0.004], ['swing', 0.005],
     ['sandbox', 0.005], ['hedge', 0.04], ['statue', 0.005], ['well', 0.003], ['planter', 0.01], ['stump', 0.01], ['rock', 0.015], ['lampdouble', 0.01], ['signpost', 0.004]],
   wild: [['tree', 0.45], ['bush', 0.15], ['rock', 0.02], ['stump', 0.01], ['haystack', 0.008], ['shrine', 0.004], ['roadcross', 0.004], ['windmill', 0.003]],
   beach: [['tree', 0.04], ['bench', 0.02], ['deckchair', 0.05], ['rowboat', 0.03], ['rock', 0.02]],
   court: [['tree', 0.1], ['bush', 0.07], ['bench', 0.03], ['car', 0.02], ['barrels', 0.04], ['crates', 0.04], ['firewood', 0.04], ['clothesline', 0.03],
-    ['handcart', 0.02], ['wagon', 0.008], ['pump', 0.012], ['well', 0.008], ['shed', 0.02], ['coop', 0.012], ['planter', 0.02], ['hydrant', 0.01]],
+    ['handcart', 0.02], ['wagon', 0.008], ['pump', 0.012], ['well', 0.008], ['shed', 0.02], ['coop', 0.012], ['planter', 0.02], ['hydrant', 0.01], ['pumpkins', 0.025]],
   garden: [['tree', 0.34], ['bush', 0.2], ['car', 0.03], ['shed', 0.05], ['beehive', 0.04], ['haystack', 0.02], ['clothesline', 0.03], ['coop', 0.03],
-    ['firewood', 0.03], ['flowerbed', 0.05], ['well', 0.01], ['handcart', 0.02], ['stump', 0.01]],
+    ['firewood', 0.03], ['flowerbed', 0.05], ['well', 0.01], ['handcart', 0.02], ['stump', 0.01], ['pumpkins', 0.04]],
   lawn: [['tree', 0.12], ['bush', 0.07], ['bench', 0.02], ['lamp', 0.02], ['flowerbed', 0.04], ['planter', 0.02], ['statue', 0.004], ['sundial', 0.004], ['hedge', 0.03]],
   edge: [['telegraph', 0.12], ['milestone', 0.03], ['roadcross', 0.01], ['shrine', 0.008], ['rock', 0.03], ['haystack', 0.01]],
   cemetery: [['gravestone', 0.5], ['tree', 0.12], ['bush', 0.06], ['bench', 0.012], ['lamp', 0.012], ['roadcross', 0.012], ['statue', 0.004]],

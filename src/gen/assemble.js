@@ -130,6 +130,7 @@ const VARIANT = {
   handcart: (r) => ({ sack: r.pick([[0.78, 0.68, 0.5], [0.7, 0.62, 0.45]]) }),
   crates: (r) => ({ tint: r.pick(WOODS_) }),
   barrels: (r) => ({ tint: r.pick(WOODS_) }),
+  pumpkins: (r) => ({ seed: r.int(1, 999) }),
   wagon: (r) => ({ tint: r.pick([[0.45, 0.3, 0.2], [0.3, 0.4, 0.5], [0.5, 0.25, 0.2]]) }),
   statue: (r) => ({ bronze: r.pick([[0.5, 0.72, 0.62], [0.5, 0.42, 0.32], [0.7, 0.6, 0.4]]) }),
   gazebo: (r) => ({ tint: r.pick([[0.9, 0.88, 0.82], [0.85, 0.9, 0.88]]), roof: r.pick([[0.28, 0.5, 0.42], [0.55, 0.22, 0.18]]) }),
