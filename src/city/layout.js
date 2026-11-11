@@ -17,6 +17,7 @@ import { RoadNet } from './roadnet.js';
 import { Terrain } from './terrain.js';
 import { makeTownPlan, applyPlan } from './town.js';
 import { subdivideBlocks } from './subdivide.js';
+import { simulateGrowth } from './growth.js';
 
 export const HALF = 520; // wyspa ~0,45 km² lądu (było 460)
 
@@ -520,6 +521,8 @@ export function generateCity(seed = 1984) {
   // za duże kwartały: uliczki w poprzek (subdivide.js) — krótsze pierzeje, więcej frontów pod działki
   subdivideBlocks({ streets, terrain, seed, plan, extras: extras0, rail: routes.rail, kindAt: (x, z) => plan.overrideKind(x, z) || kindAt(x, z) });
   const roads = new RoadNet(streets);
+  // symulacja wzrostu: które pola i kiedy się zabudowały, zasięg kanalizacji, dzielnice z historii (growth.js)
+  const growth = simulateGrowth({ streets, roads, terrain, seed, half: HALF, center: plan.F.C, planKind: (x, z) => plan.overrideKind(x, z) || kindAt(x, z) });
   const extras = makeExtras(terrain, routes, rng);
   // komin fabryczny w środku każdej większej komórki przemysłowej
   for (const blk of blocks) {
@@ -527,7 +530,7 @@ export function generateCity(seed = 1984) {
     extras0.push({ kind: 'factorychimney', p: blk.bc, H: 27 + (hash(seed, blk.id, 90) % 11), clear: 7 });
   }
   extras.push(...extras0);
-  const city = { seed, blocks, terrain, bridges, spawn, streets, roads, seedList: seeds, monuments, billboards, routes, extras, plan, size: 2 * HALF, half: HALF };
+  const city = { seed, blocks, terrain, bridges, spawn, streets, roads, growth, seedList: seeds, monuments, billboards, routes, extras, plan, size: 2 * HALF, half: HALF };
   city.grid = makeQuadGrid(seed, HALF);
   classifyGrid(city);
   decorate(city);

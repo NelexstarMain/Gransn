@@ -156,7 +156,9 @@ export function makeParcels(city, kindAt) {
 
   const chains = makeChains(city.streets).map((c, i) => ({ ...c, i, S: sampleChain(c.pts) })).filter((c) => c.S.L > 11);
   // najpierw ulice przy rynku i szerokie, potem boczne
-  const prio = (c) => { const m = c.S.pos(c.S.L / 2, 0, 1); return Math.hypot(m[0] - C0[0], m[1] - C0[1]) - c.rw * 45 - (c.main ? 80 : 0); };
+  const GR = city.growth;
+  // kolejność jak w historii miasta: najpierw ulice zabudowane najwcześniej, potem przy rynku i szerokie
+  const prio = (c) => { const m = c.S.pos(c.S.L / 2, 0, 1), e = GR ? GR.epochAt(m[0], m[1]) || 9 : 0; return e * 400 + Math.hypot(m[0] - C0[0], m[1] - C0[1]) - c.rw * 45 - (c.main ? 80 : 0); };
   chains.sort((a, b) => prio(a) - prio(b) || a.i - b.i);
   let rowId = 0;
 
@@ -194,7 +196,8 @@ export function makeParcels(city, kindAt) {
     };
     while (u < L - 4) {
       const pc = S.pos(u + 4, ch.rw + 8, sg), kind = kindAt(pc[0], pc[1]), DP = DISTRICT[kind];
-      if (!DP) { emit(); u += 5; continue; }
+      const pf = S.pos(u + 4, ch.rw + 4, sg);
+      if (!DP || (GR && !GR.developed(pf[0], pf[1]))) { emit(); u += 5; continue; } // pole nigdy nie zasiedlone: łąka
       if (row && (row.kind !== kind || row.lots.length >= DP.rowMax)) emit();
       if (!row) row = { id: rowId++, kind, sb: rng.float(DP.sb[0], DP.sb[1]), cd: rng.float(DP.cd[0], DP.cd[1]), cols: [], lots: [] };
       // im dalej od rynku, tym więcej pustych parcel
@@ -208,7 +211,7 @@ export function makeParcels(city, kindAt) {
       if (!lot && !first && skewOK && row.cols[row.cols.length - 1].lot) { lot = tryLot(u, W, nz, 0, -0.35) || tryLot(u, W, Math.max(1, nz - 1), 0, -0.6); last = !!lot; }
       if (!lot) { emit(); u += 1.5; skewOK = rng.chance(0.3); continue; }
       const nx = Math.max(1, Math.round(lot.W / 4.4));
-      Object.assign(lot, { id: lots.length, bid: lots.length + 1, row: row.id, kind, nx, cd: row.cd, sb: row.sb, i0: row.cols.length, dc,
+      Object.assign(lot, { id: lots.length, bid: lots.length + 1, row: row.id, kind, nx, epoch: GR ? GR.epochAt(pf[0], pf[1]) : 0, cd: row.cd, sb: row.sb, i0: row.cols.length, dc,
         first, nearStart: lot.u0 < 13, nearEnd: lot.u1 > L - 13, attL: !first && !!row.cols[row.cols.length - 1].lot, attR: false, sg });
       if (lot.attL) row.lots[row.lots.length - 1].attR = true;
       for (let i = 0; i < nx; i++) row.cols.push({ u0: lot.u0 + (lot.W * i) / nx, u1: lot.u0 + (lot.W * (i + 1)) / nx, lot });
@@ -237,7 +240,7 @@ export function makeParcels(city, kindAt) {
       quads.push(...q);
     }
   }
-  return { n: PX.length, X: PX, Z: PZ, LU, LV, pLot, pI, pJ, quads, lots, lotDist: (x, z) => lotDist(x, z) };
+  return { n: PX.length, X: PX, Z: PZ, LU, LV, pLot, pI, pJ, quads, lots, lotDist: (x, z) => lotDist(x, z), lotDistRow: lotDist };
 }
 
 // ── bryła na działce: wysokość komórki (i wzdłuż ulicy, j w głąb) ─────────────

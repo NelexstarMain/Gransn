@@ -184,6 +184,7 @@ export function panelPlan(city, info, prog, s, L, top, W, H, simple, hh) {
   const house = info.zone === Z_HOUSES;
   const spec = [];
   const out = { mod: 'panel', spec, string: false, poster: false };
+  if (s.blind) return out; // ściana ogniowa: goły mur
   const street = s.street && !simple;
   // fryz pod gzymsem na ostatnim piętrze: okno niższe, żeby zmieściła się taśma
   const topFrieze = prog.frieze && street && L === top - 1 && L > 0;

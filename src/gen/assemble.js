@@ -379,6 +379,9 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
     if (mod === 'door' && W < 1.8) mod = 'wall';
     plan.string = L === 1 && info.zone === 1;
   }
+  // dom na działce: ściana ogniowa (styk z sąsiadem, wąska szczelina) to goły mur
+  const lat = a >= g.N0, fs = lat ? seg || facadesOf(city).at(a, nb, q, side, L) : null, blind = !!(fs && fs.blind);
+  if (blind) { mod = 'wall'; plan = { mod, poster: false, string: false }; p.flowers = null; }
   const wear = wearOf(city, g.BID[a], info);
   b.setWear((L === 0 ? 1 : 0) + (L === top - 1 ? 2 : 0), wear.d, wear.s);
   place(b, mod, cage, W, H, D, p);
@@ -391,7 +394,14 @@ function wallSegment(b, city, info, a, nb, q, side, L, pts, top, ek) {
     const ce = info.ce;
     const cg = cage4(T, null, pts, NONE, y1, y1 + ce);
     b.setWear(2, wear.d, wear.s, H);
-    if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint, endKind: ek.kind, cornerOwner: ek.owner, brackets: info.style === 'brick' || info.style === 'ornate' || hash(city.seed, g.BID[a], 63) % 100 < 45 });
+    // pod szczytem i na ścianie ogniowej nie ma okapu ani gzymsu — mur idzie gładko do połaci
+    let plainTop = blind;
+    if (lat && !plainTop && info.lot) {
+      const G = quadGeom(g, q), i = G.v.indexOf(a), rp = roofSpec(city, G, i, top, info);
+      plainTop = Math.max(G.v[(i + 1) % 4] === nb ? rp[1][1] : rp[3][1], rp[2][1]) > 0.3;
+    }
+    if (plainTop) place(b, 'wall', cg, W, ce, D, p);
+    else if (house) place(b, 'eave', cg, W, ce, D, { roofTint: info.roofTint, endKind: ek.kind, cornerOwner: ek.owner, brackets: info.style === 'brick' || info.style === 'ornate' || hash(city.seed, g.BID[a], 63) % 100 < 45 });
     else place(b, 'cornice', cg, W, ce, D, { style: info.style === 'modern' ? 'modern' : info.style, consoles: info.style === 'ornate', endKind: ek.kind, cornerOwner: ek.owner });
   }
   b.clearWear();
@@ -598,6 +608,18 @@ function buildRoad(b, city, s) {
   if (L < 0.5) return;
   const u = [dx / L, dz / L], n = [-u[1], u[0]], rw = s.rw;
   const mat = s.mat === 'dirt' ? 'gravel' : s.mat === 'asphalt' ? 'asphalt' : 'cobble';
+  // właz kanalizacyjny na skanalizowanej ulicy (growth.js): żeliwna pokrywa co kilka odcinków
+  if (s.sewer && !s.bridge && L > 6 && hash(city.seed, Math.round(s.a[0] * 3), Math.round(s.a[1] * 3), 5150) % 3 === 0) {
+    const mx = (s.a[0] + s.b[0]) / 2 + n[0] * rw * 0.3, mz = (s.a[1] + s.b[1]) / 2 + n[1] * rw * 0.3;
+    if (roads.clearance(mx, mz) < -0.6) {
+      const ring = (r) => Array.from({ length: 10 }, (_, k) => [mx + Math.cos((k / 10) * Math.PI * 2) * r, 0, mz + Math.sin((k / 10) * Math.PI * 2) * r]);
+      const o = { drape: s.mat === 'asphalt' ? 0.082 : 0.074, tint: [0.2, 0.2, 0.21], flat: 1, noLean: 1, wob: 0 }, R0 = ring(0.36), R1 = ring(0.27);
+      for (let k = 0; k < 10; k++) {
+        b.wpoly('metal', [R0[k], R1[k], R1[(k + 1) % 10], R0[(k + 1) % 10]], [0, 1, 0], o);
+        b.wpoly('metal', [[mx, 0, mz], R1[(k + 1) % 10], R1[k]], [0, 1, 0], { ...o, tint: [0.13, 0.13, 0.14] });
+      }
+    }
+  }
   // Bruk: rzędy kostek wzdłuż jezdni, całkowita liczba rzędów między krawężnikami. UV w "kostkach"
   // (1 = rząd) ze współrzędnych świata — odcinki tej samej ulicy układają się w jedną całość.
   const cob = mat === 'cobble';

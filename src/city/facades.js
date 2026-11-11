@@ -22,7 +22,7 @@ export const segKey = (a, nb, q, side, L) => (((a * 8191 + nb) * 65537 + q) * 2 
 //  z sąsiednim budynkiem, 'open' = koniec obrysu.
 export function buildFacades(city) {
   const g = city.grid, nq = g.quads.length / 4;
-  const segs = [];
+  const segs = [], rayCache = new Map();
   for (let q = 0; q < nq; q++) {
     const G = quadGeom(g, q), V = G.v;
     for (let i = 0; i < 4; i++) {
@@ -36,10 +36,33 @@ export function buildFacades(city) {
           const f0 = side === 0 ? G.m[i] : G.m[(i + 3) % 4], f1 = G.c;
           const dx = f1[0] - f0[0], dz = f1[1] - f0[1];
           const flip = dx * (G.p[i][1] - f0[1]) - dz * (G.p[i][0] - f0[0]) > 0; // wypełnione po lewej → odwróć
+          let street = g.TY[nb] === T_STREET || g.TY[nb] === T_PLAZA || (g.TY[nb] === T_BLD && L === 0), court = g.TY[nb] === T_COURT, blind = false;
+          if (a >= g.N0) {
+            // dom na działce: co naprawdę leży przed ścianą? Promień od ściany na zewnątrz: jezdnia →
+            // fasada frontowa (drzwi, sklepy, balkony); inny dom bliżej niż 4,3 m albo sąsiad stykający
+            // się ścianą → ściana ślepa (ogniowa), bez okien wchodzących w cudzy dach; reszta → podwórze.
+            const ck = a + ',' + nb + ',' + q;
+            let r = rayCache.get(ck);
+            if (!r) {
+              const l = Math.hypot(dx, dz) || 1, mx = (f0[0] + f1[0]) / 2, mz = (f0[1] + f1[1]) / 2;
+              let nx = -dz / l, nz = dx / l;
+              if (nx * (mx - G.p[i][0]) + nz * (mz - G.p[i][1]) < 0) { nx = -nx; nz = -nz; }
+              const row = g.design.get(g.BID[a])?.lot?.row ?? -1;
+              r = { street: false, near: false };
+              for (let t = 1.2; t <= 12.1; t += 1.2) {
+                const x = mx + nx * t, z = mz + nz * t;
+                if (city.roads.clearance(x, z) < 0.4) { r.street = true; break; }
+                if (g.lotDistRow(x, z, row) < 0.3) { r.near = t <= 4.3; break; }
+              }
+              rayCache.set(ck, r);
+            }
+            const nbB = g.TY[nb] === T_BLD;
+            blind = r.near || (nbB && (g.BID[nb] !== g.BID[a] || L < g.H[nb] + 2));
+            street = !blind && !nbB && r.street; court = !blind && !street;
+          }
           segs.push({
             a, nb, q, side, L, flip, bid: g.BID[a], w: Math.hypot(dx, dz),
-            street: g.TY[nb] === T_STREET || g.TY[nb] === T_PLAZA || (g.TY[nb] === T_BLD && L === 0),
-            court: g.TY[nb] === T_COURT,
+            street, court, blind,
             A: flip ? f1 : f0, B: flip ? f0 : f1, cornerA: 'through', cornerB: 'through',
             fid: -1, idx: 0, n: 1, s0: 0, len: 0,
           });

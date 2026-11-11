@@ -258,7 +258,8 @@ export function classifyGrid(city) {
     let ns = null, nd = 1e18;
     for (const s of seedAt(x, z)) { const d = (s.x - x) ** 2 + (s.z - z) ** 2; if (d < nd) { nd = d; ns = s; } }
     // rodzaj dzielnicy: z planu (rynek i planty wycięte geometrycznie), inaczej z najbliższego ziarna
-    return (plan && plan.overrideKind(x, z)) || (ns ? ns.kind : 'houses');
+    const k = (plan && plan.overrideKind(x, z)) || (ns ? ns.kind : 'houses');
+    return city.growth ? city.growth.kind(x, z, k) : k; // zabudowa: dzielnica z historii wzrostu
   };
   // ── działki i pierzeje (parcels.js): kratki punktów doklejone do siatki miasta ──
   const PR = makeParcels(city, kindAt);
@@ -277,7 +278,7 @@ export function classifyGrid(city) {
     }
     const LU = new Float32Array(N0 + PR.n), LV = new Float32Array(N0 + PR.n);
     for (let k = 0; k < PR.n; k++) { LU[N0 + k] = PR.LU[k]; LV[N0 + k] = PR.LV[k]; }
-    Object.assign(grid, { X: X1, Z: Z1, quads: Q1, N: N0 + PR.n, N0, Q0, LU, LV, lotDist: PR.lotDist, lots: PR.lots });
+    Object.assign(grid, { X: X1, Z: Z1, quads: Q1, N: N0 + PR.n, N0, Q0, LU, LV, lotDist: PR.lotDist, lotDistRow: PR.lotDistRow, lots: PR.lots });
   }
   const { X, Z, N, quads } = grid;
   const H = new Uint8Array(N), TY = new Uint8Array(N), ZN = new Uint8Array(N), ARCH = new Uint8Array(N), KIND = new Uint8Array(N), COVER = new Uint8Array(N), nearLot = new Uint8Array(N);
@@ -348,7 +349,7 @@ export function classifyGrid(city) {
     const hs = (c) => cells.map((k) => lotHeight(c, lot, PR.pI[k], PR.pJ[k], seed)).filter((h) => h > 0);
     const { info, hmax, gain } = chooseDesign(sample, hs, st, decided);
     const rf = pickRoof(seed, lot, info);
-    info.lot = { u0: lot.u0, W: lot.W, D: lot.D, L0: info.levels, roof: rf.roof, R: rf.R };
+    info.lot = { u0: lot.u0, W: lot.W, D: lot.D, L0: info.levels, roof: rf.roof, R: rf.R, row: lot.row };
     info.ridge = rf.R;
     if (rf.roof === 'flat') info.dormers = false;
     design.set(lot.bid, info);

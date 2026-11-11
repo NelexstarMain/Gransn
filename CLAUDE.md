@@ -163,6 +163,8 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - Chodnik to pas stałej szerokości (`SIDEWALK_W = 2,4 m` w `assemble.js`) wzdłuż każdej miejskiej ulicy; pola gruntu są cięte po linii równej odległości od jezdni (`layCut`). Dalej: trawnik (dzielnice domów, środki podwórzy, parki) albo bruk (przy kamienicach, rynek).
 - `city/subdivide.js` dzieli za duże kwartały (ściany grafu ulic > 6200 m²) uliczką w poprzek; na seedzie 1984 nic nie dodaje, bo kwartały są już małe.
 - Aparat (`scripts/photo.mjs`) podstawia pod bruk i płyty tekstury z LOD, więc jezdnię widać na zdjęciach.
+- `city/growth.js` = symulacja wzrostu miasta (8 epok, pola 10 m): dostępność po ulicach od rynku, spadek terenu, powódź, sąsiedztwo, kanalizacja (kolektor z rynku do zrzutu na rzece, zasięg rośnie z epokami; `street.sewer`, włazy na jezdni). Z historii pola wynika dzielnica (`growth.kind`), a pola niezasiedlone zostają łąką bez działek. `city.growth.stats` ma liczby.
+- Ściany domów na działkach: promień od ściany decyduje, czy to front (jezdnia), podwórze, czy ściana ślepa (`seg.blind` w `facades.js`: sąsiad bliżej niż 4,3 m albo styk) — ślepa nie ma okien, balkonów ani okapu; pod szczytem dachu też nie ma okapu.
 - Boty jeżdżą modelem IDM (`traffic.js`, płynne przyspieszanie i hamowanie).
 
 ### Ostatnie wyniki weryfikacji (seed 1984)
