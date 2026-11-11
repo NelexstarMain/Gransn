@@ -10,7 +10,7 @@
 //   • robi mapowanie tonów i korekcję kolorów (te same wzory co GRADE w materials.js, które
 //     na czas rysowania do tekstury jest wyłączane) i spłaszcza jasność w kilka stopni —
 //     plamy barwne zamiast płynnych przejść.
-//  Bez wygładzania krawędzi MSAA (tekstura z głębią) — kreska sama maskuje ząbki.
+//  Tekstura ma wygładzanie MSAA ×4 (głębia jest z niej rozwiązywana do tekstury).
 //  Gdy shader się nie skompiluje (ok = false), gra wraca do zwykłego rysowania.
 //  Wyłączone na telefonach (?low) i przez ?noink; klawisz K przełącza w grze.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,7 +23,7 @@ export class Ink {
     this.on = true;
     this.calls = 0;
     this.size = new THREE.Vector2();
-    this.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true, depthTexture: new THREE.DepthTexture(4, 4) });
+    this.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true, depthTexture: new THREE.DepthTexture(4, 4), samples: 4 } /* MSAA: bez niego krawędzie i kreski migotały w ruchu */);
     this.rt.texture.minFilter = this.rt.texture.magFilter = THREE.LinearFilter;
     this.rt.depthTexture.minFilter = this.rt.depthTexture.magFilter = THREE.NearestFilter;
     this.mat = new THREE.ShaderMaterial({
@@ -46,7 +46,7 @@ export class Ink {
           // odległość w metrach; kreska ma grubość „w świecie”: z bliska gruba (do 3,4 px), z daleka
           // cienka i coraz bledsza — dal nie zarasta kreskami, a to, co blisko, jest wyraźnie obrysowane
           float dist = 2.0 * near * far / (far + near - (z0 * 2.0 - 1.0) * (far - near));
-          float rad = clamp(inkW / (dist * pxa), 1.0, 3.4);
+          float rad = clamp(inkW / (dist * pxa), 1.3, 3.4);
           vec2 o = texel * rad, od = o * 0.7071;
           float zl = rawZ(vUv - vec2(o.x, 0.0)), zr = rawZ(vUv + vec2(o.x, 0.0));
           float zd = rawZ(vUv - vec2(0.0, o.y)), zu = rawZ(vUv + vec2(0.0, o.y));
@@ -54,7 +54,7 @@ export class Ink {
           // druga różnica głębi w czterech kierunkach, przeliczona na względny skok (Δz / z)
           float lap = max(max(abs(zl + zr - 2.0 * z0), abs(zd + zu - 2.0 * z0)), max(abs(za + zb - 2.0 * z0), abs(zc + ze - 2.0 * z0))) * dist / near;
           float thr = pxa * rad;
-          float edge = smoothstep(0.55 * thr, 1.5 * thr, lap) * mix(1.0, 0.4, smoothstep(18.0, 90.0, dist)) * (1.0 - smoothstep(90.0, 230.0, dist));
+          float edge = smoothstep(0.7 * thr, 2.6 * thr, lap) * mix(1.0, 0.35, smoothstep(14.0, 60.0, dist)) * (1.0 - smoothstep(60.0, 130.0, dist)); // szeroki próg i szybkie gaśnięcie w dali: kreska nie zapala się i nie gaśnie co klatkę
           // rozmycie ruchu: gdzie ten punkt świata był na ekranie klatkę temu (ruch kamery); kolor
           // uśredniony wzdłuż tej drogi. Wnętrze auta (bliżej niż ~2,5 m) jedzie z kamerą — zostaje ostre
           // i nie rozmazuje się na drogę.
@@ -94,8 +94,8 @@ export class Ink {
           gc *= mix(vec3(0.96, 0.84, 0.98), vec3(1.08, 1.0, 0.86), smoothstep(0.04, 0.5, gl));
           gc = mix(gc, gc * gc * (3.0 - 2.0 * gc), 0.25);
           float l2 = max(dot(gc, vec3(0.2126, 0.7152, 0.0722)), 0.0001), x = l2 * 6.0;
-          float band = (floor(x) + smoothstep(0.25, 0.75, fract(x))) / 6.0;
-          gc *= mix(1.0, band / l2, 0.5);
+          float band = (floor(x) + smoothstep(0.1, 0.9, fract(x))) / 6.0;
+          gc *= mix(1.0, band / l2, 0.3);
           gl_FragColor.rgb = max(mix(go, gc * 0.98, min(gradeDark, 1.0)) * (gradeDark > 1.0 ? 1.0 / gradeDark : 1.0), vec3(0.0));
         }`,
     });
