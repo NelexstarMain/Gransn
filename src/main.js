@@ -361,7 +361,7 @@ async function start() {
     streamAcc += dt;
     if (streamAcc > 0.25) { streamAcc = 0; streamer.update(active); }
     atmo.update(camera.position, clock.elapsedTime);
-    glow.update(traffic.bots, car);
+    glow.update(traffic.bots, car, camera.position);
     telescreen.update(dt);
     M.water.normalMap.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
     // cienie co drugą klatkę: odciąża GPU, a ruch cieni i tak jest płynny
