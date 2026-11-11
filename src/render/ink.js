@@ -42,6 +42,13 @@ export class Ink {
       fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform mat4 prevTVP; uniform float blurK; uniform float blurR; uniform float inkW; uniform vec2 tanF; uniform float glowK;
         varying vec2 vUv;
         float rawZ(vec2 uv){ return texture2D(tDepth, uv).x; }
+        // szeroki, gładki blask: dziewięć próbek z niskich mipmap rozmieszczonych co ~1,4 teksela tego poziomu
+        // (pojedyncza próbka z wysokiego poziomu daje blokowe, migoczące „kwadraty”)
+        vec3 blurMip(vec2 uv, float lod, float sp){
+          vec2 st = texel * exp2(lod) * sp; vec3 s = vec3(0.0);
+          for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) s += textureLod(tColor, uv + vec2(float(i), float(j)) * st, lod).rgb * (float(2 - abs(i)) * float(2 - abs(j)));
+          return s / 16.0;
+        }
         float zdist(float z){ return 2.0 * near * far / (far + near - (z * 2.0 - 1.0) * (far - near)); }
         vec3 vpos(vec2 uv, float z){ float d = zdist(z); return vec3((uv * 2.0 - 1.0) * tanF * d, -d); } // pozycja w układzie kamery
         void main(){
@@ -106,7 +113,7 @@ export class Ink {
           c *= mix(vec3(1.0), vec3(0.2, 0.12, 0.1), edge * inkK);   // ciepły, ciemnobrązowy tusz
           // blask rozlany we mgle: rozmyte kopie obrazu (mipmapy) dodane z powrotem. Nocą obraz jest ciemny,
           // więc świeci to, co świeci — okna, latarnie, reflektory — a im dalej (gęstsza mgła), tym szerzej.
-          vec3 glow = min(textureLod(tColor, vUv, 2.5).rgb, vec3(4.0)) * 0.25 + min(textureLod(tColor, vUv, 4.0).rgb, vec3(3.0)) * 0.35 + min(textureLod(tColor, vUv, 5.5).rgb, vec3(2.0)) * 0.4 + min(textureLod(tColor, vUv, 7.0).rgb, vec3(1.5)) * 0.3;
+          vec3 glow = min(blurMip(vUv, 2.5, 1.3), vec3(4.0)) * 0.3 + min(blurMip(vUv, 4.0, 1.4), vec3(3.0)) * 0.4 + min(blurMip(vUv, 5.5, 1.4), vec3(2.0)) * 0.45;
           if (!(glow.r < 50.0 && glow.g < 50.0 && glow.b < 50.0)) glow = vec3(0.0); // NaN/inf w mipmapach: bez kwadratów
           c += glow * glowK * (0.6 + 0.9 * haze);
           c = max(min(c, vec3(8.0)), vec3(0.0)); // bez inf/NaN (kwadraty)
