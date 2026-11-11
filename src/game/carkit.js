@@ -36,12 +36,13 @@ export class CarKit {
   }
 
   // karoseria bez kół
-  body(kind, q = 1, color = [1, 1, 1]) {
-    const key = `b|${kind}|${q}|${color.join(',')}`;
+  // cockpit = auto gracza: dopracowana deska, bez szyby i bez stałej kierownicy (obraca się osobna)
+  body(kind, q = 1, color = [1, 1, 1], cockpit = false) {
+    const key = `b|${kind}|${q}|${color.join(',')}|${cockpit}`;
     let v = this.cache.get(key);
     if (!v) {
       const K = CAR_KINDS[kind];
-      v = modelParts(vehicleModules.oldcar, K.L, 2.4, K.Wd, { kind, color, q, wheels: false, taxi: !!K.taxi, seat: [0.3, 0.13, 0.09], band: [0.95, 0.92, 0.82] }, this.M);
+      v = modelParts(vehicleModules.oldcar, K.L, 2.4, K.Wd, { kind, color, q, wheels: false, taxi: !!K.taxi, seat: [0.3, 0.13, 0.09], band: [0.95, 0.92, 0.82], cockpit }, this.M);
       this.cache.set(key, v);
     }
     return v;
@@ -56,6 +57,17 @@ export class CarKit {
       v = modelParts(vehicleModules.carwheel, 1, 1, 1, { r: nom, q, side: 0, solid, rim: solid ? [0.5, 0.17, 0.12] : undefined, hr: solid ? 0.08 : 0.058, hw: solid ? 0.085 : 0.066 }, this.M);
       for (const p of v) { p.geometry.translate(0, -0.5, 0); p.geometry.computeBoundingSphere(); }
       this.cache.set(key, v);
+    }
+    return v;
+  }
+
+  // kierownica o środku w początku układu, oś wzdłuż x
+  steerwheel() {
+    let v = this.cache.get('steerwheel');
+    if (!v) {
+      v = modelParts(vehicleModules.steerwheel, 1, 1, 1, {}, this.M);
+      for (const p of v) { p.geometry.translate(0, -0.5, 0); p.geometry.computeBoundingSphere(); }
+      this.cache.set('steerwheel', v);
     }
     return v;
   }

@@ -27,7 +27,7 @@ const LOADERS = {
   async car() {
     const kind = opt.kind || 'taxi';
     const { L, Wd } = CAR_KINDS[kind];
-    parts.push(build(M.oldcar, L, 2.4, Wd, { kind, color: color || [0.95, 0.76, 0.12], seat: [0.3, 0.12, 0.08], taxi: kind === 'taxi', seed: Number(opt.seed) || 3 }));
+    parts.push(build(M.oldcar, L, 2.4, Wd, { kind, color: color || [0.95, 0.76, 0.12], seat: [0.3, 0.12, 0.08], taxi: kind === 'taxi', seed: Number(opt.seed) || 3, cockpit: !!opt.cockpit }));
     focus = [0, 0.85, 0]; radius = L / 2;
   },
   async wheel() {

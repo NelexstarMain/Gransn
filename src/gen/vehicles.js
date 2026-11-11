@@ -293,6 +293,7 @@ function tailAndPlate(b, S, x, y, plateColor = [0.92, 0.9, 0.82]) {
 function steering(b, S, x, zside = -1) {
   const { zc } = S, z = zc + zside * 0.3;
   b.tube('metal', [x + 0.22, 0.85, z], [x - 0.02, 1.3, z], 0.022, 0.022, 6, { tint: DARK });
+  if (S.cockpit) return; // auto gracza: kierownica jest osobną, obracaną siatką (moduł steerwheel)
   const cx = x - 0.04, cy = 1.33, K = 14, rr = [];
   for (let k = 0; k < K; k++) {
     const a = (k / K) * TAU, ring = [];
@@ -312,6 +313,7 @@ function windscreen(b, S, x, ybot, ytop, hw, tilt = 0.12) {
   for (const s of [-1, 1]) b.tube('metal', [x, ybot, zc + s * hw], [x - tilt, ytop, zc + s * hw], 0.022, 0.02, 6, brass);
   b.tube('metal', [x - tilt, ytop, zc - hw], [x - tilt, ytop, zc + hw], 0.02, 0.02, 6, brass);
   b.tube('metal', [x - tilt * 0.4, ybot + (ytop - ybot) * 0.4, zc - hw], [x - tilt * 0.4, ybot + (ytop - ybot) * 0.4, zc + hw], 0.014, 0.014, 5, brass);
+  if (S.cockpit) return; // auto gracza: sama rama — przez lustrzaną szybę nie byłoby widać drogi z fotela
   const gl = { tint: [0.66, 0.74, 0.78] };
   b.poly('glass', [[x - tilt - 0.002, ytop - 0.02, zc - hw + 0.02], [x - tilt - 0.002, ytop - 0.02, zc + hw - 0.02], [x - 0.002, ybot + 0.02, zc + hw - 0.02], [x - 0.002, ybot + 0.02, zc - hw + 0.02]], [1, 0.1, 0], gl);
   b.poly('glass', [[x - tilt - 0.003, ytop - 0.02, zc + hw - 0.02], [x - tilt - 0.003, ytop - 0.02, zc - hw + 0.02], [x - 0.003, ybot + 0.02, zc - hw + 0.02], [x - 0.003, ybot + 0.02, zc + hw - 0.02]], [-1, -0.1, 0], gl);
@@ -355,6 +357,21 @@ function tourerBody(b, S) {
   rbox(b, 'body', 0.04, 0.5, zc - 0.62, 0.2, 1.02, zc + 0.62, S.color, 3.4, 10);
   bench(b, S, xh - 0.62, xh - 0.12, 0.84, zc - 0.58, zc + 0.58, 0.52);
   bench(b, S, 0.28, 1.0, 0.84, zc - 0.6, zc + 0.6, 0.55);
+  if (S.cockpit) {
+    // deska rozdzielcza: drewniana tablica, dwa mosiężne zegary, taksometr z chorągiewką, włączniki
+    const xd = xh - 0.15;
+    b.box('wood', xd, 0.84, zc - 0.56, xd + 0.03, 1.02, zc + 0.56, 'xXyYzZ', { tint: [0.36, 0.23, 0.12] });
+    for (const [gz, r] of [[-0.3, 0.062], [-0.12, 0.045]]) {
+      b.tube('metal', [xd - 0.022, 0.94, zc + gz], [xd, 0.94, zc + gz], r, r, 14, { tint: BRASS, caps: 1 });
+      b.tube('paint', [xd - 0.026, 0.94, zc + gz], [xd - 0.022, 0.94, zc + gz], r * 0.84, r * 0.84, 14, { tint: [0.93, 0.9, 0.78], caps: 1 });
+      for (let k = 0; k < 9; k++) { const a = -2.2 + k * 0.55, y = 0.94 + Math.cos(a) * r * 0.66, z = zc + gz + Math.sin(a) * r * 0.66; b.box('dark', xd - 0.028, y - 0.004, z - 0.004, xd - 0.026, y + 0.004, z + 0.004, 'xyYzZ', { tint: [0.1, 0.1, 0.1] }); }
+    }
+    rbox(b, 'metal', xd - 0.1, 1.07, zc + 0.14, xd + 0.02, 1.25, zc + 0.3, BRASS, 3, 8);
+    b.box('paint', xd - 0.104, 1.11, zc + 0.165, xd - 0.1, 1.2, zc + 0.275, 'xyYzZ', { tint: [0.93, 0.9, 0.78] });
+    b.tube('metal', [xd - 0.04, 1.25, zc + 0.31], [xd - 0.04, 1.36, zc + 0.31], 0.006, 0.006, 4, { tint: DARK });
+    b.box('paint', xd - 0.045, 1.3, zc + 0.31, xd - 0.035, 1.36, zc + 0.4, 'xXyYzZ', { tint: [0.75, 0.12, 0.08] });
+    for (const kz of [0.02, 0.07]) b.tube('metal', [xd - 0.03, 0.9, zc + kz], [xd, 0.9, zc + kz], 0.012, 0.012, 6, { tint: BRASS, caps: 1 });
+  }
   if (q) {
     // osłona kierowcy: dźwignie przy prawej burcie, mosiężna lampa boczna
     b.tube('metal', [xh - 0.4, 0.78, zc + 0.5], [xh - 0.42, 1.14, zc + 0.5], 0.012, 0.012, 4, { tint: DARK });
@@ -581,7 +598,7 @@ export const vehicleModules = {
     const kx = W / K.L, zc = D / 2; // skala długości (zaparkowane auta mają stałą stopkę 3,6 m)
     const S = {
       L: W / kx, zc, q: p.q ?? 2, color: p.color || [0.5, 0.1, 0.1], seat: p.seat, band: p.band, cargo: p.cargo,
-      rr: K.rr, rf: K.rf, tz: D / 2 - 0.1 - 0.0, hoodW: K.L > 4.2 ? 0.37 : 0.33,
+      rr: K.rr, rf: K.rf, tz: D / 2 - 0.1 - 0.0, hoodW: K.L > 4.2 ? 0.37 : 0.33, cockpit: !!p.cockpit,
     };
     S.L = K.L; S.xr = K.rear; S.xf = K.L - K.front; S.cowl = K.L - K.hood - 0.25;
     S.tz = K.Wd / 2 - 0.1;
@@ -615,6 +632,20 @@ export const vehicleModules = {
       const solid = !!K.solid;
       for (const w of wheelPoints(K)) wheel(b, w.x + K.L / 2, w.y, w.z + K.Wd / 2, w.r, { q: S.q, side: Math.sign(w.z), solid, rim: solid ? [0.5, 0.17, 0.12] : undefined, hr: solid ? 0.08 : 0.058, hw: solid ? 0.085 : 0.066 });
     }
+  },
+
+  // kierownica auta gracza: drewniany wieniec, cztery mosiężne ramiona, piasta. Oś obrotu wzdłuż x,
+  // środek w (W/2, 0.5, D/2); w grze obraca się ze skrętem kół.
+  steerwheel(b, W, H, D) {
+    const R = 0.2, K = 20, rr = [];
+    for (let k = 0; k < K; k++) {
+      const a = (k / K) * TAU, ca = Math.cos(a), sa = Math.sin(a), ring = [];
+      for (let i = 0; i < 6; i++) { const t = (i / 6) * TAU, rad = 0.017 * Math.cos(t), ax = 0.015 * Math.sin(t); ring.push([W / 2 + ax, 0.5 + ca * (R + rad), D / 2 + sa * (R + rad)]); }
+      rr.push(ring);
+    }
+    skin(b, 'wood', rr, { loop: true, tint: [0.34, 0.2, 0.1] });
+    for (let k = 0; k < 4; k++) { const a = (k / 4) * TAU + 0.785; b.tube('metal', [W / 2 + 0.03, 0.5, D / 2], [W / 2, 0.5 + Math.cos(a) * R, D / 2 + Math.sin(a) * R], 0.011, 0.008, 5, { tint: BRASS }); }
+    b.tube('metal', [W / 2 - 0.005, 0.5, D / 2], [W / 2 + 0.05, 0.5, D / 2], 0.04, 0.034, 10, { tint: BRASS, caps: 1 });
   },
 
   // pojedyncze koło (do aut z kręcącymi się kołami): środek komórki → (W/2, 0.5, D/2)

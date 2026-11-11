@@ -73,7 +73,7 @@ async function start() {
   setProgress(0.05, 'Malowanie tekstur…');
   await tick();
   const { M, telescreen } = await createMaterials({ low: LOW });
-  const atmo = createAtmosphere(scene, renderer);
+  const atmo = createAtmosphere(scene, renderer, LOW);
 
   // morze dookoła wyspy
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000, 1, 1).rotateX(-Math.PI / 2), M.water);
@@ -287,6 +287,7 @@ async function start() {
   addEventListener('keydown', (e) => {
     if (e.code === 'KeyC' && !e.ctrlKey && !e.metaKey && (car.active || !playing)) { film.active ? film.stop() : startFilm(); }
     else if (e.code === 'KeyV' && film.active) film.cycleMount();
+    else if (e.code === 'KeyV' && car.active) car.camMode = car.camMode === 'driver' ? 'chase' : 'driver'; // kamera: fotel kierowcy / zza auta
   });
 
   const clock = new THREE.Clock();
@@ -330,7 +331,7 @@ async function start() {
       car.impact = 0;
     }
     // sterowanie kierowcą w widocznym aucie
-    me.hidden = !car.active;
+    me.hidden = !car.active || (car.camMode === 'driver' && !film.active); // z fotela kierowcy własnej postaci nie widać
     if (car.active) {
       car.anchorWorld('driver', bodyV);
       me.x = bodyV.x; me.y = bodyV.y - 0.12; me.z = bodyV.z; me.yaw = car.heading; me.steer = car.steer; me.speed = 0;

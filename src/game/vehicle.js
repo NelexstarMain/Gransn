@@ -35,7 +35,7 @@ export class Vehicle {
     this.tailMat = { emissiveIntensity: 0 };
     if (scene) {
       this.tailMat = M.tail.clone();
-      for (const p of kit.body(kind, 2, color)) {
+      for (const p of kit.body(kind, 2, color, true)) {
         const m = new THREE.Mesh(p.geometry, p.name === 'tail' ? this.tailMat : p.material);
         m.castShadow = p.name !== 'light' && p.name !== 'tail';
         m.receiveShadow = true;
@@ -57,8 +57,22 @@ export class Vehicle {
         this.body.add(pivot);
         this.wheels.push({ pivot, spin, front: w.front, r: w.r });
       }
+      // kierownica: oś pochylona jak kolumna, obrót ze skrętem kół
+      const sa = this.anchors.steer, col = new THREE.Group();
+      col.position.set(sa[0] - 0.02, sa[1] + 0.03, sa[2]);
+      col.rotation.z = -1.08;
+      this.steerWheel = new THREE.Group();
+      for (const p of kit.steerwheel()) this.steerWheel.add(new THREE.Mesh(p.geometry, p.material));
+      col.add(this.steerWheel);
+      this.body.add(col);
+      // wskazówka prędkościomierza na desce (duży zegar po lewej)
+      const cowl = this.K.L - this.K.hood - 0.25;
+      this.needle = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.05, 0.007).translate(0, 0.02, 0), new THREE.MeshBasicMaterial({ color: 0x8a1a10 }));
+      this.needle.position.set(cowl - 0.15 - 0.03 - this.K.L / 2, 0.94, -0.3);
+      this.body.add(this.needle);
       scene.add(this.mesh);
     }
+    this.camMode = 'driver'; // 'driver' = z fotela kierowcy (domyślnie), 'chase' = zza auta (klawisz V)
 
     this.pos = new THREE.Vector3();
     this.heading = 0; // kierunek jazdy w płaszczyźnie (x,z): (cos, sin)
@@ -322,6 +336,7 @@ export class Vehicle {
       w.pivot.rotation.y = w.front ? -this.steerAngle : 0;
       w.spin.rotation.z = -(w.front ? this.spinF : this.spinR);
     }
+    if (this.steerWheel) { this.steerWheel.rotation.x = this.steerAngle * 5.5; this.needle.rotation.x = -2.2 + Math.min(4.4, Math.abs(this.v) * 0.2); }
   }
 
   // kamera zza auta: mysz obraca, po chwili wraca za taksówkę; FOV rośnie z prędkością
@@ -332,6 +347,20 @@ export class Vehicle {
       d = Math.atan2(Math.sin(d), Math.cos(d));
       player.yaw += d * Math.min(1, dt * 2.5);
       player.pitch += (-0.14 - player.pitch) * Math.min(1, dt * 2);
+    }
+    if (this.camMode === 'driver') {
+      // z fotela kierowcy: oko nad siedziskiem, kołysze się razem z nadwoziem; mysz rozgląda się,
+      // po chwili wzrok wraca na drogę
+      const sp = Math.abs(this.v), a = this.anchors.driver, cp = Math.cos(player.pitch), e = this._eye || (this._eye = new THREE.Vector3());
+      this.mesh.updateMatrixWorld(true);
+      e.set(a[0] + 0.04, a[1] + 0.63, a[2]).applyMatrix4(this.body.matrixWorld);
+      camera.position.copy(e);
+      if (this.shake > 0.01) { const s = this.shake * this.shake * 0.05; camera.position.x += (Math.random() - 0.5) * s; camera.position.y += (Math.random() - 0.5) * s; }
+      camera.lookAt(e.x - Math.sin(player.yaw) * cp, e.y + Math.sin(player.pitch) + 0.1, e.z - Math.cos(player.yaw) * cp);
+      camera.rotateZ(-this.br * 0.6 + this.roll * 0.5); // przechył w zakręcie
+      const fov = (camera.userData.baseFov ?? 72) + 4 + Math.min(7, sp * 0.35);
+      if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
+      return;
     }
     const sp = Math.abs(this.v), cp = Math.cos(player.pitch), dist = 7.4 + Math.min(2.2, sp * 0.1);
     const tx = this.pos.x + Math.sin(player.yaw) * cp * dist, tz = this.pos.z + Math.cos(player.yaw) * cp * dist;

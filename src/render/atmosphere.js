@@ -11,7 +11,7 @@ export const LIGHTS = {
 };
 export const FOG_COLOR = new THREE.Color(LIGHTS.fog);
 
-export function createAtmosphere(scene, renderer) {
+export function createAtmosphere(scene, renderer, low = false) {
   scene.background = FOG_COLOR.clone();
   scene.fog = new THREE.FogExp2(FOG_COLOR, LIGHTS.fogDensity);
 
@@ -45,25 +45,52 @@ export function createAtmosphere(scene, renderer) {
       fog: false,
       uniforms: skyUni,
       vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = (projectionMatrix * modelViewMatrix * vec4(position,1.0)).xyww; }',
+      defines: low ? { SKY_LOW: 1 } : {},
       fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform float time; varying vec3 vDir;
         float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
         float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(h21(i), h21(i + vec2(1,0)), f.x), mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), f.x), f.y); }
+          return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+        float fbm(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; } return s; }
+        // kłębiaste chmury: szum wygięty drugim szumem (kształty jak malowane pędzlem)
+        float cloud(vec2 uv){
+          #ifdef SKY_LOW
+          return fbm(uv);
+          #else
+          vec2 w = vec2(fbm(uv * 0.6 + 3.1), fbm(uv * 0.6 - 7.7));
+          return fbm(uv + (w - 0.47) * 1.6);
+          #endif
+        }
         void main(){
           vec3 dir = normalize(vDir);
           float h = clamp(dir.y, 0.0, 1.0);
-          vec3 c = mix(horizon, top, pow(h, 0.55));
+          vec2 sh = normalize(sunDir.xz);
+          float az = dot(normalize(dir.xz + vec2(0.00001)), sh) * 0.5 + 0.5;   // 1 = strona słońca
           float d = max(dot(dir, sunDir), 0.0);
           vec3 sunC = vec3(1.0, 0.72, 0.42);
-          c += sunC * (0.22 * pow(d, 6.0) + 0.16 * pow(d, 24.0)) + vec3(1.6, 1.4, 1.1) * pow(d, 900.0);
-          // chmury: warstwa płaska nad miastem, zanikają ku horyzontowi (w mgle)
-          if (dir.y > 0.03) {
-            vec2 uv = dir.xz / (dir.y + 0.18) * 1.6 + vec2(time * 0.012, time * 0.004);
-            float n = vn(uv) * 0.55 + vn(uv * 2.1 + 7.3) * 0.3 + vn(uv * 4.3 + 2.7) * 0.15;
-            float cl = smoothstep(0.52, 0.82, n) * smoothstep(0.03, 0.30, dir.y);
-            vec3 cc = mix(vec3(0.78, 0.6, 0.56), vec3(1.0, 0.9, 0.76), smoothstep(0.5, 0.95, n)); // chmury podświetlone na różowo-złoto
-            cc += sunC * 0.35 * pow(d, 3.0);            // srebrne krawędzie od strony słońca
-            c = mix(c, cc, cl * 0.85);
+          // trzy pasy: mgła przy horyzoncie, pas zorzy (złoty od słońca, lawendowy naprzeciw), błękit w zenicie
+          vec3 band = mix(vec3(0.72, 0.62, 0.74), vec3(1.0, 0.66, 0.36), az * az);
+          vec3 c = mix(horizon, band, smoothstep(0.0, 0.16, h) * (1.0 - smoothstep(0.16, 0.55, h)) * 0.75);
+          c = mix(c, top, smoothstep(0.1, 0.75, h));
+          c += sunC * (0.3 * pow(d, 5.0) + 0.22 * pow(d, 28.0));
+          c += vec3(1.7, 1.35, 0.9) * smoothstep(0.9988, 0.9996, d);           // duża, miękka tarcza słońca
+          if (dir.y > 0.02) {
+            vec2 uv = dir.xz / (dir.y + 0.16) * 1.1 + vec2(time * 0.008, time * 0.003);
+            float n = cloud(uv);
+            float cov = smoothstep(0.5, 0.72, n);
+            float fade = smoothstep(0.02, 0.26, dir.y);
+            #ifdef SKY_LOW
+            float lit = 0.55;
+            #else
+            // światło: gdzie w stronę słońca chmura rzednie, tam jej brzeg świeci; spód zostaje w cieniu
+            float lit = clamp((n - cloud(uv + sh * 0.22)) * 4.0 + 0.5, 0.0, 1.0);
+            lit = floor(lit * 3.0 + 0.5) / 3.0 * 0.6 + lit * 0.4;               // malarskie stopnie
+            #endif
+            vec3 cc = mix(mix(vec3(0.55, 0.42, 0.52), vec3(0.8, 0.58, 0.5), az), vec3(1.0, 0.9, 0.72), lit);
+            cc += sunC * 0.5 * pow(d, 4.0);
+            c = mix(c, cc, cov * fade * 0.92);
+            // pierzaste smugi wysoko
+            float ci = vn(uv * vec2(0.35, 2.4) + 40.0) * vn(uv * 1.3 + 11.0);
+            c = mix(c, vec3(1.0, 0.86, 0.74), smoothstep(0.32, 0.62, ci) * 0.35 * fade * (1.0 - cov));
           }
           gl_FragColor = vec4(c, 1.0);
           #include <colorspace_fragment>

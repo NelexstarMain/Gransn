@@ -165,6 +165,8 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - Aparat (`scripts/photo.mjs`) podstawia pod bruk i płyty tekstury z LOD, więc jezdnię widać na zdjęciach.
 - `city/growth.js` = symulacja wzrostu miasta (8 epok, pola 10 m): dostępność po ulicach od rynku, spadek terenu, powódź, sąsiedztwo, kanalizacja (kolektor z rynku do zrzutu na rzece, zasięg rośnie z epokami; `street.sewer`, włazy na jezdni). Z historii pola wynika dzielnica (`growth.kind`), a pola niezasiedlone zostają łąką bez działek. `city.growth.stats` ma liczby.
 - Ściany domów na działkach: promień od ściany decyduje, czy to front (jezdnia), podwórze, czy ściana ślepa (`seg.blind` w `facades.js`: sąsiad bliżej niż 4,3 m albo styk) — ślepa nie ma okien, balkonów ani okapu; pod szczytem dachu też nie ma okapu.
+- Klimat: złote jesienne popołudnie (`LIGHTS` w `atmosphere.js`, korekcja kolorów `GRADE` w `materials.js`, jesienne liście `AUTUMN` w `assemble.js`). Niebo to shader z malowanymi chmurami (wariant `SKY_LOW` na telefonach).
+- Kamera domyślnie z fotela kierowcy (`car.camMode = 'driver'`, klawisz V przełącza na kamerę zza auta). Auto gracza ma wariant `cockpit` modelu: deska z zegarami i taksometrem, bez szyby, kierownica jako osobna obracana siatka (`steerwheel`).
 - Boty jeżdżą modelem IDM (`traffic.js`, płynne przyspieszanie i hamowanie).
 
 ### Ostatnie wyniki weryfikacji (seed 1984)
