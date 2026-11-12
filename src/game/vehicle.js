@@ -311,6 +311,7 @@ export class Vehicle {
             this.vx += nx * j * 0.75; this.vz += nz * j * 0.75;
             o.v = Math.max(0, o.v - j * 0.5 * Math.abs(nx * oc + nz * os) - 0.2);
             o.bump = 1.2;
+            if (-rv > 3 && o.cab) this.onBotHit?.(o, -rv); // taksówka-rywal: uszkodzenia od taranowania
             if (-rv > 1.5) { this.impact = Math.max(this.impact, -rv); this.shake = Math.min(1, this.shake + -rv * 0.05); }
           }
         }

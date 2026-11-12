@@ -172,10 +172,52 @@ export class Races {
       this.scene.add(mesh);
       return mesh;
     });
+    this.buildSigns();
     this.placeArrows();
     this.arrows.visible = true;
     this.hud.style.display = 'block';
     this.job.say('Wyścig! Jedź za żółtymi strzałkami, przejedź przez bramki do mety.', 4);
+  }
+
+  // Znaki ostrego skrętu: tam, gdzie trasa zmienia kierunek o > ~55° na 28 m, tablica ze strzałką
+  // stoi przed zakrętem po zewnętrznej stronie łuku, zwrócona do nadjeżdżających.
+  buildSigns() {
+    const tex = (dir) => {
+      const c = document.createElement('canvas');
+      c.width = 128; c.height = 128;
+      const g = c.getContext('2d');
+      g.fillStyle = '#111'; g.fillRect(0, 0, 128, 128);
+      g.fillStyle = '#ffc82e'; g.fillRect(6, 6, 116, 116);
+      g.save(); g.translate(64, 64); g.scale(dir, 1);
+      g.fillStyle = '#111';
+      for (const x of [-26, 10]) { g.beginPath(); g.moveTo(x, -38); g.lineTo(x + 30, 0); g.lineTo(x, 38); g.lineTo(x - 15, 38); g.lineTo(x + 15, 0); g.lineTo(x - 15, -38); g.closePath(); g.fill(); }
+      g.restore();
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    };
+    if (!this.signTex) this.signTex = { 1: tex(1), '-1': tex(-1) };
+    const grp = new THREE.Group(), pole = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    let last = -100;
+    for (let s = 24; s < this.route.len - 20; s += 4) {
+      const hIn = this.at(s - 14)[2], hOut = this.at(s + 14)[2], d = norm(hOut - hIn);
+      if (Math.abs(d) < 0.95 || s - last < 45) continue;
+      const h = this.at(s - 10), ex = Math.sin(h[2]) * -Math.sign(d), ez = -Math.cos(h[2]) * -Math.sign(d); // zewnętrzna strona łuku
+      let pos = null;
+      for (const off of [5.4, 4.4, 6.6]) { const x = h[0] + ex * off, z = h[1] + ez * off; if (!this.grid.solid(x, z) && !this.grid.solid(x + ex, z + ez)) { pos = [x, z]; break; } }
+      if (!pos) continue;
+      last = s;
+      const y = this.grid.height(pos[0], pos[1]), g = new THREE.Group();
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6), pole); post.position.y = 1.2;
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: this.signTex[d > 0 ? 1 : -1], side: THREE.DoubleSide }));
+      board.position.y = 2.7;
+      g.add(post, board);
+      g.position.set(pos[0], y, pos[1]);
+      g.rotation.y = Math.atan2(-Math.cos(h[2]), -Math.sin(h[2]));
+      grp.add(g);
+    }
+    this.signs = grp;
+    this.scene.add(grp);
   }
 
   placeArrows() {
@@ -241,7 +283,8 @@ export class Races {
   stop(msg) {
     for (const r of this.rivals || []) { this.scene.remove(r.v.mesh); if (r.drv) this.crowd.remove(r.drv); }
     for (const g of this.gates) this.scene.remove(g);
-    this.gates = []; this.rivals = null; this.route = null;
+    this.gates = [];
+    if (this.signs) { this.scene.remove(this.signs); this.signs = null; } this.rivals = null; this.route = null;
     this.arrows.visible = false;
     this.hud.style.display = 'none';
     this.big.style.display = 'none';

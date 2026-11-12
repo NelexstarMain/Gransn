@@ -226,27 +226,29 @@ export class Traffic {
     return [A.x + ux * s - uz * off, A.z + uz * s + ux * off, Math.atan2(uz, ux)];
   }
 
-  spawn(near) {
+  spawn(near, force = null, extra = null) {
     const r = this.rng;
     for (let tries = 0; tries < 40; tries++) {
       const n = this.liveNodes[Math.floor(r.next() * this.liveNodes.length)];
       const p = this.nodePos(n);
       const d = Math.hypot(p[0] - near[0], p[1] - near[1]);
       if (d < 40 || d > 380) continue;
-      const kind = r.weighted(KINDS), K = CAR_KINDS[kind];
+      const kind = force || r.weighted(KINDS), K = CAR_KINDS[kind];
       const rgb = kind === 'van' || kind === 'truck' ? r.pick(WORK_COLORS) : kind === 'taxi' ? [0.95, 0.76, 0.12] : r.pick(COLORS);
       const bot = {
         id: this.nextId = (this.nextId || 0) + 1, from: n, path: [n], s: 0, v: 0, vmax: r.float(7.5, 12) * (kind === 'truck' ? 0.8 : 1), kind, len: K.L, rgb: rgb.map(lin), wb: K.L - K.front - K.rear,
         x: p[0], z: p[1], h: 0, turn: null, lock: -1, wait: 0, bump: 0, sf: 0, sr: 0, steer: 0, hPrev: 0, drv: null,
       };
+      if (extra) Object.assign(bot, extra);
       if (!this.plan(bot)) continue;
       if (this.bots.some((b) => Math.hypot(b.x - p[0], b.z - p[1]) < 8)) continue;
       const p0 = this.lanePoint(bot.edge, bot.path[0], 0);
       bot.x = p0[0]; bot.z = p0[1]; bot.h = bot.hPrev = p0[2];
       if (this.crowd && OPEN.has(kind)) bot.drv = this.crowd.addDriver(r);
       this.bots.push(bot);
-      return;
+      return bot;
     }
+    return null;
   }
 
   plan(bot) {
@@ -292,7 +294,7 @@ export class Traffic {
     let w = 0;
     for (let i = 0; i < this.bots.length; i++) {
       const b = this.bots[i];
-      if (Math.hypot(b.x - P[0], b.z - P[1]) < 470) this.bots[w++] = b;
+      if (b.cab || Math.hypot(b.x - P[0], b.z - P[1]) < 470) this.bots[w++] = b;
       else this.remove(b);
     }
     this.bots.length = w;
@@ -391,7 +393,7 @@ export class Traffic {
         // cel osiągnięty — nowa trasa od tego węzła
         b.from = b.path[b.path.length - 1];
         const keep = b.edge;
-        if (!this.plan(b)) { b.edge = keep; b.s = 0; b.path = [b.from, E2.a === b.from ? E2.b : E2.a]; }
+        if (!(b.cab && this.cabPlan ? this.cabPlan(b) : this.plan(b))) { b.edge = keep; b.s = 0; b.path = [b.from, E2.a === b.from ? E2.b : E2.a]; }
         else {
           // nowy plan zaczyna się od węzła, w którym stoimy
           const p = this.lanePoint(b.edge, b.path[0], 0);
@@ -535,6 +537,7 @@ export class Traffic {
 
   // trafienie: kierowca "wciska gaz" — ucieka, ale przez chwilę stoi w szoku
   shot(b) {
+    this.onShot?.(b);
     b.bump = 1.5;
     b.vmax = Math.min(14, b.vmax * 1.25);
   }

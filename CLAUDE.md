@@ -26,6 +26,7 @@ node scripts/audit-roads.mjs 1 40 [--where]  # audyt sieci ulic: przecięcia, wy
 node scripts/sim-film.mjs 1984  # symulacja trybu filmowego (autopilot 150 s, boty, utknięcia)
 node scripts/map.mjs 1984 [--props] [--plan]  # plan miasta z góry (PNG): drogi, budynki, rzeka, mosty; --plan = obrys jądra, plant, rynek i ziarna Voronoi
 node scripts/plans.mjs 1 40 [--table]   # raport planów miasteczek: typ, rzeka, wyspa, rynek, plant, dzielnice, kościół; wyłapuje dziwne przypadki
+node scripts/sim-cabs.mjs 1984 [-v|-d]  # taksówkarze-rywale: zarobki, pasażerowie, trafienia (gracz stoi poza ruchem)
 node scripts/sim-race.mjs 1984 3 [vmax gracza]  # symulacja wyścigów: trasa, bramki, meta, miejsca, NaN (gracza zastępuje autopilot)
 npm run design         # projekt budynków i fasad: determinizm, najlepsza z N, fragmenty w panelach, różnorodność
 ```
@@ -173,6 +174,8 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - Urok: `p.lit` = świecące okna (`glassFrame`), `chimneyList(city)` + `fx.ambient` = dym z kominów i spadające liście (cząsteczki mają własny przyrost `gr` i opór `dr`), `LEAN = 0,03` w `builder.js` = krzywe kamienice.
 - Pora: NOC z różowym niebem (`LIGHTS`). Światła jak w zwykłej grze (`game/lights.js`): pula 8 prawdziwych `PointLight` przypinanych płynnie do najbliższych latarni (stała liczba świateł = shadery kompilują się raz), 2 `SpotLight` reflektorów taksówki, 2 `SpotLight` dla najbliższych botów, miękkie poświaty żarówek jako billboardy w metrach (brzeg = 0, zanikają we mgle). Świecące okna (`p.lit`). **Bez bloomu / blasku ekranowego** — mipmapy i rozmycia dawały kwadraty i kreski (emulacja: `scripts/glowtest.mjs`). Mgiełka przy ziemi w `fx.ambient`.
 - **Wyścigi** (`game/race.js`): 3 punkty startu w mieście (zielony pierścień + słup światła, flaga na minimapie). Wjazd powoli w pierścień = start: trasa A* przez losowe punkty (ok. 1,3–1,8 km, wygładzona Chaikinem), żółte strzałki na jezdni na najbliższe ~170 m, bramki co ~200 m, meta w szachownicę; 3 rywale to `Vehicle` z autopilotem (pure pursuit, wyprzedzanie w lewo, gumowanie −20%…+12%), odliczanie, miejsce na żywo, nagroda 120/60/30 zł. Wyjście z auta albo 12 s ponad 35 m od trasy przerywa. Rywale nie zderzają się fizycznie z taksówką (tylko omijają).
+- **Znaki ostrego skrętu** w wyścigu (`Races.buildSigns`): tablica ze strzałką (kierunek skrętu) przed każdym zakrętem > ~55° na 28 m, po zewnętrznej stronie łuku, min. 45 m odstępu (10–14 na trasę). Znaki w zwykłym mieście NIE istnieją (tylko w wyścigu).
+- **Taksówkarze-rywale** (`game/cabbies.js`): 4 boty `taxi` z flagą `cab` (imię, zdrowie 100, zarobek). `Traffic.cabPlan` zamiast losowej trasy: jadą po najbliższego czekającego pasażera (`job.waiting`), zabierają go (znika z miasta), wożą pod losowy adres i dostają opłatę. Ranking (panel po lewej) i znaczniki z imieniem, zarobkiem i paskiem zdrowia nad autami. Walka: taranowanie (`Vehicle.onBotHit`, > 3 m/s względnej prędkości) i strzały (`Traffic.onShot`, 34 obrażeń), < 40% dymi, 0 = płonie, znika po 10 s, wraca po 25 s; za rozbitą +50 zł. Rywale nie atakują gracza. Boty `cab` nie są usuwane przy oddaleniu; daleko (> 420 m) przenoszą się w okolicę gracza.
 - Boty jeżdżą modelem IDM (`traffic.js`, płynne przyspieszanie i hamowanie).
 
 ### Ostatnie wyniki weryfikacji (seed 1984)

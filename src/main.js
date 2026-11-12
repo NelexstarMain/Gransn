@@ -7,6 +7,7 @@ import { createAtmosphere, LIGHTS } from './render/atmosphere.js';
 import { Ink } from './render/ink.js';
 import { CityLights } from './game/lights.js';
 import { Races } from './game/race.js';
+import { Cabbies } from './game/cabbies.js';
 import { CollisionGrid } from './game/collision.js';
 import { Player } from './game/player.js';
 import { Streamer } from './game/streaming.js';
@@ -142,6 +143,9 @@ async function start() {
   const job = new TaxiJob(scene, city, M, crowd, peds);
   const races = new Races({ scene, city, grid, traffic, M, kit, car, job, crowd }); // wyścigi uliczne (zielone pierścienie w mieście)
   const fx = new CarFX(scene, city);
+  // taksówkarze-rywale: walka o pasażerów, ranking, uszkodzenia (taranowanie i strzały)
+  const cabs = new Cabbies({ traffic, job, fx, camera, grid, city });
+  car.onBotHit = (b, v) => { if (b.cab.ram > 0) return; b.cab.ram = 0.35; cabs.damage(b, Math.min(40, (v - 2) * 7), true); };
   const weapon = new Weapon(scene, camera, M);
   weapon.deps = { grid, player, peds, traffic, fx, sound, say: (t, s) => job.say(t, s) };
   // kierowca (gracz) widoczny w kamerze zza auta
@@ -328,6 +332,7 @@ async function start() {
     const active = car.active ? car.pos : player.pos;
     job.update(dt, car, grid);
     if (playing && !film.active) races.update(dt, car.active);
+    cabs.setVisible(playing && !film.active && !document.body.classList.contains('nohud')); if (playing) cabs.update(dt, car);
     if (playing) {
       // kierunek patrzenia kamery (piesi nie pojawiają się na oczach gracza)
       camera.getWorldDirection(bodyV);

@@ -32,6 +32,7 @@ for (let k = 0; k < Math.min(N, R.starts.length); k++) {
   R.update(dt, true); // wjazd w pierścień → start
   if (R.state !== 'count') { out.push({ k, blad: 'nie wystartował' }); continue; }
   const me = { v: car, s: 10, vmax: Number(process.argv[4] || 17), stuck: 0, lat: 7 };
+  const nSigns = R.signs ? R.signs.children.length : 0;
   let last = null, lastP = 0, stat = null; let nan = 0, warps = 0, time = 0, maxOff = 0; const len = Math.round(R.route.len);
   for (let i = 0; i < 260 / dt && R.state !== 'idle'; i++) {
     t.t += dt; time += dt;
@@ -45,7 +46,7 @@ for (let k = 0; k < Math.min(N, R.starts.length); k++) {
   }
   if (R.state !== 'idle') out.push({ dbg: 'koniec czasu', gracz: Math.round(R.ps), rywale: R.rivals.map((r) => Math.round(r.s) + (r.done ? 'M' : '') + ' v' + r.v.v.toFixed(1)) });
   out.push({ ostatnie: JSON.stringify(last), gracz: lastP, stat: JSON.stringify(stat) });
-  out.push({ k, trasaM: len, czasS: Math.round(time), wynik: job.last, nan, przeskokiGracza: warps, maxOdchylenieM: +maxOff.toFixed(1) });
+  out.push({ k, znakiSkretu: nSigns, trasaM: len, czasS: Math.round(time), wynik: job.last, nan, przeskokiGracza: warps, maxOdchylenieM: +maxOff.toFixed(1) });
   R.cool.clear();
 }
 console.log(out);
