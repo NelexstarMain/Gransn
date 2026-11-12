@@ -26,9 +26,6 @@ export class Ink {
     this.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true, depthTexture: new THREE.DepthTexture(4, 4), samples: 4 } /* MSAA: bez niego krawędzie i kreski migotały w ruchu */);
     this.rt.texture.generateMipmaps = false;
     this.rt.texture.minFilter = this.rt.texture.magFilter = THREE.LinearFilter;
-    // blask: łańcuch małych tekstur (1/4 i 1/16 rozdzielczości) rozmywany prawdziwym gaussem — mipmapy dawały blokowe „kwadraty”
-    const mk = () => { const t = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false }); t.texture.minFilter = t.texture.magFilter = THREE.LinearFilter; t.texture.generateMipmaps = false; return t; };
-    this.g1 = mk(); this.g1b = mk(); this.g2 = mk(); this.g2b = mk(); this.g3 = mk(); this.g3b = mk();
     this.rt.depthTexture.minFilter = this.rt.depthTexture.magFilter = THREE.NearestFilter;
     this.mat = new THREE.ShaderMaterial({
       depthTest: false, depthWrite: false,
@@ -38,11 +35,10 @@ export class Ink {
         gradeDark: { value: 1 }, inkK: { value: 0.82 },
         invVP: { value: new THREE.Matrix4() }, prevVP: { value: new THREE.Matrix4() }, prevTVP: { value: new THREE.Matrix4() }, blurK: { value: 0 }, blurR: { value: 0 },
         tanF: { value: new THREE.Vector2(1, 1) },
-        glowK: { value: 0.6 }, tG1: { value: this.g1.texture }, tG2: { value: this.g2.texture }, tG3: { value: this.g3.texture },
         inkW: { value: 0.028 }, // grubość kreski w metrach (na odległości 1 m = tyle metrów)
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform mat4 prevTVP; uniform float blurK; uniform float blurR; uniform float inkW; uniform vec2 tanF; uniform float glowK; uniform sampler2D tG1; uniform sampler2D tG2; uniform sampler2D tG3;
+      fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform float pxa; uniform float gradeDark; uniform float inkK; uniform mat4 invVP; uniform mat4 prevVP; uniform mat4 prevTVP; uniform float blurK; uniform float blurR; uniform float inkW; uniform vec2 tanF;
         varying vec2 vUv;
         float rawZ(vec2 uv){ return texture2D(tDepth, uv).x; }
         float zdist(float z){ return 2.0 * near * far / (far + near - (z * 2.0 - 1.0) * (far - near)); }
@@ -107,11 +103,6 @@ export class Ink {
           }
           edge *= 1.0 - smoothstep(0.004, 0.018, speed);                // w pędzie kreska rozpływa się w smugę
           c *= mix(vec3(1.0), vec3(0.2, 0.12, 0.1), edge * inkK);   // ciepły, ciemnobrązowy tusz
-          // blask rozlany we mgle: rozmyte kopie obrazu (łańcuch gaussa) dodane z powrotem. Nocą obraz jest ciemny,
-          // więc świeci to, co świeci — okna, latarnie, reflektory — a im dalej (gęstsza mgła), tym szerzej.
-          vec3 glow = min(texture2D(tG1, vUv).rgb, vec3(4.0)) * 0.45 + min(texture2D(tG2, vUv).rgb, vec3(3.0)) * 0.6 + min(texture2D(tG3, vUv).rgb, vec3(2.0)) * 0.6;
-          if (!(glow.r < 50.0 && glow.g < 50.0 && glow.b < 50.0)) glow = vec3(0.0); // NaN/inf w mipmapach: bez kwadratów
-          c += glow * glowK * (0.6 + 0.9 * haze);
           c = max(min(c, vec3(8.0)), vec3(0.0)); // bez inf/NaN (kwadraty)
           if (!(c.r < 50.0 && c.g < 50.0 && c.b < 50.0)) c = vec3(0.0);
           gl_FragColor = vec4(c, 1.0);
@@ -130,18 +121,6 @@ export class Ink {
           gl_FragColor.rgb = max(mix(go, gc * 0.98, min(gradeDark, 1.0)) * (gradeDark > 1.0 ? 1.0 / gradeDark : 1.0), vec3(0.0));
         }`,
     });
-    const PV = 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }';
-    // zmniejszenie 4× (pudełko 4×4 z czterech próbek dwuliniowych); prefilter: tylko jasne, bez NaN/inf
-    this.down = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tSrc: { value: null }, st: { value: new THREE.Vector2() }, pre: { value: 1 } }, vertexShader: PV,
-      fragmentShader: `uniform sampler2D tSrc; uniform vec2 st; uniform float pre; varying vec2 vUv;
-        vec3 fx(vec3 v){ if (!(v.r < 60.0 && v.g < 60.0 && v.b < 60.0)) v = vec3(0.0); return min(v, vec3(6.0)); }
-        void main(){ vec3 s = fx(texture2D(tSrc, vUv + st * vec2(-1.0, -1.0)).rgb) + fx(texture2D(tSrc, vUv + st * vec2(1.0, -1.0)).rgb) + fx(texture2D(tSrc, vUv + st * vec2(-1.0, 1.0)).rgb) + fx(texture2D(tSrc, vUv + st * vec2(1.0, 1.0)).rgb);
-          s *= 0.25; if (pre > 0.5) s = max(s - 0.04, vec3(0.0)); gl_FragColor = vec4(s, 1.0); }` });
-    // gauss separowalny: 5 próbek dwuliniowych = 9 teksów (wagi dwumianowe)
-    this.blurM = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tSrc: { value: null }, dir: { value: new THREE.Vector2() } }, vertexShader: PV,
-      fragmentShader: `uniform sampler2D tSrc; uniform vec2 dir; varying vec2 vUv;
-        void main(){ vec3 s = texture2D(tSrc, vUv).rgb * 0.2270270270 + (texture2D(tSrc, vUv + dir * 1.3846153846).rgb + texture2D(tSrc, vUv - dir * 1.3846153846).rgb) * 0.3162162162 + (texture2D(tSrc, vUv + dir * 3.2307692308).rgb + texture2D(tSrc, vUv - dir * 3.2307692308).rgb) * 0.0702702703;
-          gl_FragColor = vec4(s, 1.0); }` });
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
     this.quad = new THREE.Mesh(g, this.mat);
@@ -159,25 +138,6 @@ export class Ink {
     this.quad.material = mat;
     renderer.setRenderTarget(target);
     renderer.render(this.scene, this.cam);
-  }
-
-  // blask: scena → 1/4 (prefilter) → 1/16 → 1/32, na każdym poziomie gauss 2× (poziomo+pionowo, krok DOKŁADNIE 1 teksel).
-  // Krok większy niż 1 rozrywa rozmycie na siatkę linii (sprawdzone emulacją na CPU), więc szerokość daje kolejny poziom.
-  glowChain(renderer, w, h) {
-    const sz = (f) => [Math.max(4, Math.floor(w / f)), Math.max(4, Math.floor(h / f))];
-    const [w1, h1] = sz(4), [w2, h2] = sz(16), [w3, h3] = sz(32);
-    if (this.g1.width !== w1 || this.g1.height !== h1) { this.g1.setSize(w1, h1); this.g1b.setSize(w1, h1); this.g2.setSize(w2, h2); this.g2b.setSize(w2, h2); this.g3.setSize(w3, h3); this.g3b.setSize(w3, h3); }
-    const D = this.down.uniforms, B = this.blurM.uniforms;
-    const blur = (a, b, tw, th) => { for (let i = 0; i < 2; i++) { B.tSrc.value = a.texture; B.dir.value.set(1 / tw, 0); this.pass(renderer, this.blurM, b); B.tSrc.value = b.texture; B.dir.value.set(0, 1 / th); this.pass(renderer, this.blurM, a); } };
-    D.tSrc.value = this.rt.texture; D.st.value.set(1 / w, 1 / h); D.pre.value = 1;
-    this.pass(renderer, this.down, this.g1);
-    blur(this.g1, this.g1b, w1, h1);
-    D.tSrc.value = this.g1.texture; D.st.value.set(1 / w1, 1 / h1); D.pre.value = 0;
-    this.pass(renderer, this.down, this.g2);
-    blur(this.g2, this.g2b, w2, h2);
-    D.tSrc.value = this.g2.texture; D.st.value.set(0.5 / w2, 0.5 / h2);
-    this.pass(renderer, this.down, this.g3);
-    blur(this.g3, this.g3b, w3, h3);
   }
 
   render(renderer, scene, camera, dt = 1 / 60) {
@@ -208,7 +168,6 @@ export class Ink {
     camera.getWorldPosition(this.prevPos);
     this.prev.copy(this.vp);
     GRADE_UNIFORM.value = g;
-    this.glowChain(renderer, w, h);
     renderer.setRenderTarget(null);
     this.quad.material = this.mat;
     renderer.render(this.scene, this.cam);
