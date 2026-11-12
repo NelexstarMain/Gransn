@@ -107,6 +107,7 @@ export class Hud {
         ctx.fillStyle = 'rgba(255,255,255,0.75)';
         for (const w of st.peds.walkers) { if (w.mode === 'down') continue; const [x, y] = P([w.h.x, w.h.z]); ctx.fillRect(x - 0.7, y - 0.7, 1.4, 1.4); }
       }
+      if (st.race) st.race.drawMap(ctx, P);
       const [px, py] = P([view.pos.x, view.pos.z]);
       ctx.save();
       ctx.translate(px, py);

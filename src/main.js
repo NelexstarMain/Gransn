@@ -6,6 +6,7 @@ import { createMaterials } from './render/materials.js';
 import { createAtmosphere, LIGHTS } from './render/atmosphere.js';
 import { Ink } from './render/ink.js';
 import { CityLights } from './game/lights.js';
+import { Races } from './game/race.js';
 import { CollisionGrid } from './game/collision.js';
 import { Player } from './game/player.js';
 import { Streamer } from './game/streaming.js';
@@ -139,6 +140,7 @@ async function start() {
   car.active = true;
   car.place(city.spawn.x, city.spawn.z, Math.atan2(-Math.cos(city.spawn.yaw), -Math.sin(city.spawn.yaw)));
   const job = new TaxiJob(scene, city, M, crowd, peds);
+  const races = new Races({ scene, city, grid, traffic, M, kit, car, job, crowd }); // wyścigi uliczne (zielone pierścienie w mieście)
   const fx = new CarFX(scene, city);
   const weapon = new Weapon(scene, camera, M);
   weapon.deps = { grid, player, peds, traffic, fx, sound, say: (t, s) => job.say(t, s) };
@@ -325,6 +327,7 @@ async function start() {
     if (playing) weapon.update(dt);
     const active = car.active ? car.pos : player.pos;
     job.update(dt, car, grid);
+    if (playing && !film.active) races.update(dt, car.active);
     if (playing) {
       // kierunek patrzenia kamery (piesi nie pojawiają się na oczach gracza)
       camera.getWorldDirection(bodyV);
@@ -385,7 +388,7 @@ async function start() {
       info = `${fps.toFixed(0)} FPS · ${settings.resNow.toFixed(2)}× rozdz. · fragmenty: ${streamer.loaded}/${city.chunks.length} (+${streamer.pendingCount}) · ${(streamer.tris / 1e6).toFixed(2)} M tri · draw ${ink && ink.on && ink.ok ? ink.calls : renderer.info.render.calls} · ludzie ${crowd.count}${player.fly ? ' · LOT' : ''}`;
     }
     const nearCar = onFoot && Math.hypot(player.pos.x - car.pos.x, player.pos.z - car.pos.z) < 5;
-    hud.update(dt, { pos: active, yaw: car.active ? carYaw() : player.yaw }, info, job, car, camera, { onFoot, weapon, player, peds, nearCar });
+    hud.update(dt, { pos: active, yaw: car.active ? carYaw() : player.yaw }, info, job, car, camera, { onFoot, weapon, player, peds, nearCar, race: races });
     if (!TEST) requestAnimationFrame(frame);
   }
   frame();
