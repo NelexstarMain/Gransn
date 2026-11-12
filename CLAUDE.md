@@ -170,7 +170,7 @@ Wcześniej skill `artifact-design` wymagał wczytania przed publikacją. W nowej
 - `render/ink.js` = bajkowy rysunek: scena idzie do tekstury (kolor + głębia), pełnoekranowy przebieg dorysowuje kontur z drugiej różnicy głębi, robi mapowanie tonów, korekcję kolorów i stopniuje jasność. Na ten czas `GRADE_UNIFORM` w materiałach jest zerowany. Wyłączone w `?low` i `?noink`, klawisz K przełącza, błąd shadera wyłącza samoczynnie. To jedyny postprocessing w grze — nie dokładaj kolejnych przebiegów.
 - `ink.js` robi też rozmycie ruchu (reprojekcja głębi z poprzednią macierzą kamery, 5 próbek, wnętrze auta wyłączone progiem 2,5 m; klawisz B).
 - Urok: `p.lit` = świecące okna (`glassFrame`), `chimneyList(city)` + `fx.ambient` = dym z kominów i spadające liście (cząsteczki mają własny przyrost `gr` i opór `dr`), `LEAN = 0,03` w `builder.js` = krzywe kamienice.
-- Pora: NOC z różowym niebem (`LIGHTS`). Światła bez prawdziwych źródeł: `game/glow.js` (poświaty latarni i aut jako addytywne punkty, plamy na ziemi), świecące okna (`p.lit`, 58% na piętrach), blask rozlany z mipmap w `ink.js` (`glowK`), jeden SpotLight w taksówce gracza. Mgiełka przy ziemi w `fx.ambient`.
+- Pora: NOC z różowym niebem (`LIGHTS`). Światła bez prawdziwych źródeł: `game/glow.js` (poświaty latarni i aut jako addytywne punkty, plamy na ziemi), świecące okna (`p.lit`, 58% na piętrach), blask rozlany w `ink.js` (`glowK`; łańcuch 1/4 → gauss → 1/16 → gauss, NIE mipmapy: dawały blokowe migoczące kwadraty), jeden SpotLight w taksówce gracza. Mgiełka przy ziemi w `fx.ambient`.
 - Boty jeżdżą modelem IDM (`traffic.js`, płynne przyspieszanie i hamowanie).
 
 ### Ostatnie wyniki weryfikacji (seed 1984)
